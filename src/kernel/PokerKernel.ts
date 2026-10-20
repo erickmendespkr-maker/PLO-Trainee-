@@ -1633,7 +1633,9 @@ export class PokerKernel {
                 const cardStrings = cards.map((card) => this.cardToString(card));
                 const hand = Hand.solve(cardStrings, "standard");
 
-                if (!bestHand || hand.rank > bestHand.rank) {
+                // Compare the complete five-card hand, including kickers and tie breakers.
+                // Hand.rank only identifies the hand category.
+                if (!bestHand || Hand.winners([hand, bestHand]).includes(hand)) {
                     bestHand = hand;
                 }
             }
