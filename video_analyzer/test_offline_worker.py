@@ -24,11 +24,11 @@ class OfflineWorkerTests(unittest.TestCase):
 
     def test_valid_job_requires_review(self):
         self.store.enqueue(self.source)
-        with patch('offline_worker.export_evidence', return_value={'requires_manual_review': True}) as sampler:
+        with patch('offline_worker.export_evidence', return_value={'requires_manual_review': True, 'frames': [], 'regions': [], 'timestamp_semantics': 'nominal_sampling_grid_not_exact_source_pts'}) as sampler:
             job = process_next(self.store, self.root / 'out')
         self.assertEqual(job['state'], 'review_required')
         self.assertEqual(job['attempts'], 1)
-        self.assertTrue(job['result_path'].endswith('manifest.json'))
+        self.assertTrue(job['result_path'].endswith('result.json'))
         self.assertEqual(sampler.call_count, 1)
 
     def test_mutated_file_rejected_without_sampling(self):
