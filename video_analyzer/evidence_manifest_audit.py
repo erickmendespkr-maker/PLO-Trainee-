@@ -3,7 +3,9 @@
 This is a consistency audit, not a frame recognizer or exact source-PTS check.
 It never promotes sampled images or OCR to confirmed events.
 """
+import hashlib
 import json
+import re
 import math
 from pathlib import Path, PurePosixPath
 
@@ -26,6 +28,9 @@ def audit_manifest(manifest, *, image_root=None):
             or manifest.get('requires_manual_review') is not True
             or manifest.get('timestamp_semantics') != 'nominal_sampling_grid_not_exact_source_pts'):
         raise ValueError('Only unverified nominal-timestamp evidence is accepted')
+    integrity = manifest.get('frame_integrity')
+    if integrity not in (None, 'sha256_per_png_v1'):
+        raise ValueError('Unsupported frame integrity scheme')
     interval = _positive(manifest.get('interval_seconds'), 'interval_seconds')
     recording = manifest.get('recording')
     if not isinstance(recording, dict):
@@ -43,6 +48,7 @@ def audit_manifest(manifest, *, image_root=None):
         raise ValueError('Expected 1..40000 frames')
     issues, paths, counts, last_times = [], set(), {t: 0 for t in table_ids}, {}
     root = Path(image_root).resolve(strict=True) if image_root is not None else None
+    hashes_verified = bool(integrity and root is not None)
     for index, frame in enumerate(frames):
         if not isinstance(frame, dict):
             raise ValueError(f'Invalid frame {index}')
@@ -63,6 +69,9 @@ def audit_manifest(manifest, *, image_root=None):
                 or path.parts[0] != f'table_{table:02d}'
                 or not path.parts[1].startswith('frame_') or path.suffix.lower() != '.png'):
             raise ValueError(f'Unsafe or mismatched image path {index}')
+        digest = frame.get('sha256')
+        if integrity is not None and (not isinstance(digest, str) or re.fullmatch(r'[0-9a-f]{64}', digest) is None):
+            raise ValueError(f'Frame {index} requires lowercase SHA-256 digest')
         if name in paths:
             issues.append({'index': index, 'reason': 'duplicate_image_path'})
         paths.add(name)
@@ -79,10 +88,21 @@ def audit_manifest(manifest, *, image_root=None):
             file = root.joinpath(*path.parts)
             if file.is_symlink() or file.parent.is_symlink() or not file.is_file():
                 issues.append({'index': index, 'reason': 'missing_or_unsafe_image'})
+                hashes_verified = False
+            elif integrity is not None:
+                hasher = hashlib.sha256()
+                with file.open('rb') as image:
+                    for chunk in iter(lambda: image.read(1024 * 1024), b''):
+                        hasher.update(chunk)
+                if hasher.hexdigest() != digest:
+                    issues.append({'index': index, 'reason': 'frame_sha256_mismatch'})
+                    hashes_verified = False
     return {'schema_version': 1, 'analysis_status': 'unverified_evidence_audit',
             'frame_count': len(frames), 'table_count': len(table_ids),
             'frames_per_table': {str(k): v for k, v in sorted(counts.items())},
             'nominal_timestamps_only': True, 'source_pts_verified': False,
+            'frame_integrity': integrity or 'legacy_unhashed',
+            'frame_hashes_verified': hashes_verified,
             'requires_manual_review': True, 'issues': issues,
             'consistent': not issues}
 
