@@ -6,6 +6,7 @@ from evidence_sampler import export_evidence
 from evidence_ocr import scan_evidence
 from offline_jobs import OfflineJobStore
 from review_packet import build_review_packet
+from temporal_consensus import aggregate_candidates
 
 def process_next(store: OfflineJobStore, output_root, *, interval_seconds=30, max_frames_per_table=150, roi_manifest=None, max_ocr_tasks=4000):
     job = store.claim_next()
@@ -23,10 +24,12 @@ def process_next(store: OfflineJobStore, output_root, *, interval_seconds=30, ma
         destination = Path(output_root) / job_id
         report = export_evidence(source, destination, interval_seconds=interval_seconds,
                                  max_frames_per_table=max_frames_per_table)
+        destination.mkdir(parents=True, exist_ok=True)
         if not report['requires_manual_review']:
             raise RuntimeError('Evidence export did not request review')
         ocr_count = 0
         review_template = None
+        temporal_count = 0
         if roi_manifest is not None:
             ocr_path = destination / 'ocr_candidates.json'
             ocr_report = scan_evidence(destination, roi_manifest, ocr_path,
@@ -38,12 +41,19 @@ def process_next(store: OfflineJobStore, output_root, *, interval_seconds=30, ma
             packet = build_review_packet(ocr_report)
             with review_template.open('x', encoding='utf-8') as output:
                 json.dump(packet, output, ensure_ascii=False, indent=2, allow_nan=False)
+            # Repeated OCR is only an unverified hint; never a confirmed hand.
+            consensus = aggregate_candidates(ocr_report['candidates'], min_samples=3,
+                max_gap_seconds=max(2.0, float(interval_seconds) * 1.1))
+            temporal_count = len(consensus['stable_candidates'])
+            with (destination / 'temporal_candidates.json').open('x', encoding='utf-8') as output:
+                json.dump(consensus, output, ensure_ascii=False, indent=2, allow_nan=False)
         summary = {
             'schema_version': 1, 'job_id': job_id,
             'status': 'review_required',
             'frame_count': len(report['frames']),
             'table_count': len(report['regions']),
             'ocr_candidates': ocr_count,
+            'temporal_candidates_unverified': temporal_count,
             'review_template': review_template.name if review_template else None,
             'timestamp_semantics': report['timestamp_semantics'],
             'requires_manual_review': True,
