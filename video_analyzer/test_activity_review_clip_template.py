@@ -7,18 +7,18 @@ import unittest
 
 from activity_review_clip_export import build_review_clip_plan
 from activity_review_clip_template import build_clip_selection_template, main
-from test_activity_review_clip_export import NeutralReviewClipsTests
+import test_activity_review_clip_export as clip_fixture
 
 
 class ClipTemplateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        NeutralReviewClipsTests.setUpClass()
-        cls.fixture = NeutralReviewClipsTests
+        clip_fixture.NeutralReviewClipsTests.setUpClass()
+        cls.fixture = clip_fixture.NeutralReviewClipsTests
 
     @classmethod
     def tearDownClass(cls):
-        NeutralReviewClipsTests.tearDownClass()
+        clip_fixture.NeutralReviewClipsTests.tearDownClass()
 
     def test_template_is_unapproved_and_sha_bound(self):
         f = self.fixture
