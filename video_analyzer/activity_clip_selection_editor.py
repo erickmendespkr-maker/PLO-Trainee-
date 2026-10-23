@@ -75,6 +75,9 @@ def validate_unapproved_template(template):
 
 SCRIPT = r'''"use strict";
 const initial = __INITIAL__;
+const timelineFrames = __TIMELINE__;
+let currentFrame = 0;
+const reviewedFrames = new Set();
 const regions = document.getElementById("regions");
 const decisions = document.getElementById("decisions");
 const status = document.getElementById("status");
@@ -123,9 +126,46 @@ function updateOverlay() {
   }
 }
 for (const nodes of cropControls) for (const field of ["x", "y", "width", "height"])
-  nodes[field].addEventListener("input", () => { confirmRegions.checked = false; updateOverlay(); });
+  nodes[field].addEventListener("input", () => {
+    confirmRegions.checked = false;
+    reviewedFrames.clear();
+    const check = document.getElementById("frame-reviewed");
+    if (check) check.checked = false;
+    updateOverlay();
+    displayFrame();
+  });
 updateOverlay();
 const confirmRegions = control("checkbox", false, "Conferi manualmente todas as regiões na gravação", regions);
+const frameLabel = document.getElementById("frame-label");
+const frameReview = document.getElementById("frame-reviewed");
+function displayFrame() {
+  if (!timelineFrames.length) return;
+  const item = timelineFrames[currentFrame];
+  preview.src = "data:" + "image/jpeg;base64," + item.jpeg_b64;
+  frameLabel.textContent = "Quadro " + (currentFrame + 1) + "/" + timelineFrames.length +
+    " · busca aproximada " + item.requested_timestamp_seconds.toFixed(3) + "s · SHA-256 " + item.jpeg_sha256;
+  frameReview.checked = reviewedFrames.has(currentFrame);
+  document.getElementById("frame-progress").textContent =
+    reviewedFrames.size + "/" + timelineFrames.length + " quadros conferidos";
+}
+if (timelineFrames.length) {
+  frameReview.addEventListener("change", () => {
+    if (frameReview.checked) reviewedFrames.add(currentFrame);
+    else reviewedFrames.delete(currentFrame);
+    confirmRegions.checked = false;
+    displayFrame();
+  });
+  document.getElementById("frame-prev").addEventListener("click", () => {
+    currentFrame = (currentFrame - 1 + timelineFrames.length) % timelineFrames.length;
+    displayFrame();
+  });
+  document.getElementById("frame-next").addEventListener("click", () => {
+    currentFrame = (currentFrame + 1) % timelineFrames.length;
+    displayFrame();
+  });
+  displayFrame();
+}
+
 const selectionControls = [];
 for (const item of initial.selections) {
   const section = document.createElement("section");
@@ -152,6 +192,8 @@ function finiteNumber(node, min, max, integer) {
   return value;
 }
 function exportSelection() {
+  if (timelineFrames.length && reviewedFrames.size !== timelineFrames.length)
+    throw Error("Confira manualmente todos os quadros da gravação");
   if (!confirmRegions.checked) throw Error("Confirme manualmente as regiões das mesas");
   const output = structuredClone(initial);
   output.regions_human_confirmed = true;
@@ -227,14 +269,44 @@ def _validate_preview(preview, template):
         raise ValueError('Preview JPEG or SHA-256 mismatch')
 
 
-def render_clip_selection_editor(template, *, preview=None):
+def render_clip_selection_editor(template, *, preview=None, preview_timeline=None):
     validate_unapproved_template(template)
-    if preview is not None:
+    if preview is not None and preview_timeline is not None:
+        raise ValueError('Use a single preview OR a preview timeline')
+    if preview_timeline is not None:
+        if (not isinstance(preview_timeline, dict)
+                or set(preview_timeline) != {'schema_version', 'recording_sha256', 'frames'}
+                or type(preview_timeline['schema_version']) is not int
+                or preview_timeline['schema_version'] != 1
+                or preview_timeline['recording_sha256'] != template['recording_sha256']
+                or not isinstance(preview_timeline['frames'], list)
+                or not 2 <= len(preview_timeline['frames']) <= 5):
+            raise ValueError('Invalid preview timeline schema')
+        previous = -1.0
+        total = 0
+        dims = None
+        for frame in preview_timeline['frames']:
+            _validate_preview(frame, template)
+            if frame['requested_timestamp_seconds'] <= previous:
+                raise ValueError('Timeline timestamps must be increasing')
+            previous = frame['requested_timestamp_seconds']
+            if dims is None:
+                dims = (frame['source_width'], frame['source_height'])
+            if dims != (frame['source_width'], frame['source_height']):
+                raise ValueError('Timeline dimensions must be identical')
+            total += len(frame['jpeg_b64']) * 3 // 4
+            if total > 6 * 1024 * 1024:
+                raise ValueError('Oversized preview timeline')
+        preview = preview_timeline['frames'][0]
+    elif preview is not None:
         _validate_preview(preview, template)
     literal = json.dumps(template, ensure_ascii=False, allow_nan=False, separators=(',', ':'))
     literal = (literal.replace('<', r'\u003c').replace('>', r'\u003e')
                .replace('&', r'\u0026').replace('\u2028', r'\u2028').replace('\u2029', r'\u2029'))
-    script = SCRIPT.replace('__INITIAL__', literal)
+    timeline_literal = json.dumps(preview_timeline['frames'] if preview_timeline else [],
+                                  ensure_ascii=False, allow_nan=False, separators=(',', ':'))
+    script = (SCRIPT.replace('__INITIAL__', literal)
+             .replace('__TIMELINE__', timeline_literal))
     digest = base64.b64encode(hashlib.sha256(script.encode('utf-8')).digest()).decode('ascii')
     policy = ("default-src 'none'; script-src 'sha256-" + digest + "'; "
               "style-src 'unsafe-inline'; connect-src 'none'; img-src data:; "
@@ -253,6 +325,15 @@ def render_clip_selection_editor(template, *, preview=None):
                         '<img id="preview-frame" alt="Quadro aproximado da gravação" '
                         'src="data:image/jpeg;base64,' + preview['jpeg_b64'] + '">'
                         '<div id="region-overlay" aria-hidden="true"></div></div>')
+        if preview_timeline is not None:
+            preview_html += ('<p id="frame-label"></p>'
+                             '<p><button type="button" id="frame-prev">Quadro anterior</button> '
+                             '<button type="button" id="frame-next">Próximo quadro</button></p>'
+                             '<label><input type="checkbox" id="frame-reviewed">'
+                             'Conferi manualmente esta imagem e as regiões</label>'
+                             '<p id="frame-progress"></p>'
+                             '<p>É obrigatório conferir todos os quadros antes de confirmar as regiões. '
+                             'Amostras não garantem estabilidade entre quadros.</p>')
     return ('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
             '<meta http-equiv="Content-Security-Policy" content="' + escape(policy, quote=True) + '">'
             '<title>PLO Trainee — seleção offline de cortes</title><style>'
@@ -286,19 +367,28 @@ def main(argv=None):
     parser.add_argument('selection_template_json')
     parser.add_argument('output_html')
     parser.add_argument('--video', help='Local recording to embed an approximate frame preview')
-    parser.add_argument('--timestamp', type=float, default=None, help='Preview seek in seconds')
+    parser.add_argument('--timestamp', type=float, default=None, help='Single preview seek in seconds')
+    parser.add_argument('--timeline', action='store_true', help='Preview 3 spaced timestamps (10/50/90 percent)')
     args = parser.parse_args(argv)
     source, output = Path(args.selection_template_json), Path(args.output_html)
     if output.exists() or output.is_symlink() or source.resolve() == output.resolve():
         raise ValueError('Output must be new and distinct from input')
     template = json.loads(source.read_text(encoding='utf-8'))
+    if args.timeline and args.timestamp is not None:
+        raise ValueError('--timeline cannot be combined with --timestamp')
+    if args.timeline and args.video is None:
+        raise ValueError('--timeline requires --video')
     if args.timestamp is not None and args.video is None:
         raise ValueError('--timestamp requires --video')
     preview = None
-    if args.video is not None:
+    preview_timeline = None
+    if args.timeline:
+        from activity_clip_region_timeline import build_region_preview_timeline
+        preview_timeline = build_region_preview_timeline(args.video, template)
+    elif args.video is not None:
         from activity_clip_region_preview import build_region_preview
         preview = build_region_preview(args.video, template, timestamp=args.timestamp)
-    html = render_clip_selection_editor(template, preview=preview)
+    html = render_clip_selection_editor(template, preview=preview, preview_timeline=preview_timeline)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open('x', encoding='utf-8') as stream:
         stream.write(html)
