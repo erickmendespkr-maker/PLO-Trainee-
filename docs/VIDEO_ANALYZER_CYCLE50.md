@@ -30,4 +30,4 @@ python -m unittest discover -p 'test_*.py' -q
 - Não calcula EV de raise/fold nem situações multiway, rake, apostas futuras ou side pots.
 - A etapa para resultados reais continua exigindo auditoria independente dos quadros e PTS, revisão das ações e validação do modelo de ranges.
 - Falta vídeo autorizado de 3–5 minutos para validar reconhecimento e reconstrução de mãos reais.
-- Testes locais: 634 testes, incluindo 10 novos testes de matemática hipotética; smoke de Chromium: quatro mesas, zero erros JS, JSON validado. CI remoto não verificado.
+- Testes locais: 635 testes, incluindo 11 novos testes de matemática hipotética; smoke de Chromium: quatro mesas, zero erros JS, JSON validado. CI remoto não verificado.
