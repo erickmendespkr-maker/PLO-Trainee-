@@ -49,6 +49,20 @@ class HypotheticalMathTests(unittest.TestCase):
         self.assertEqual(result['call_ev_sampling_ci95'], [100, 100])
         self.assertFalse(result['authorized_for_clips'])
 
+    def test_six_card_plo6_synthetic_what_if(self):
+        worksheet = copy.deepcopy(self.worksheet)
+        worksheet['scenarios'][0]['reviewed_visible_inputs']['hero_cards'] = [
+            'As', 'Ks', '2d', '3c', '4h', '5s']
+        request = copy.deepcopy(self.request)
+        request['worksheet_sha256'] = digest(worksheet)
+        request['scenarios'][0]['opponent_range'] = [{
+            'cards': ['2c', '3d', '4c', '5d', '6h', '7h'], 'weight': 1}]
+        result = build_hypothetical_report(worksheet, request)['results'][0]
+        self.assertEqual(result['variant'], 'PLO6')
+        self.assertEqual(result['equity'], 1)
+        self.assertEqual(result['call_ev_vs_fold'], 100)
+        self.assertFalse(result['ready_for_equity_or_ev'])
+
     def test_other_three_tables_remain_unreviewed(self):
         self.assertEqual(len(self.worksheet['scenarios']), 4)
         self.assertEqual(len(build_hypothetical_report(self.worksheet, self.request)['results']), 1)
