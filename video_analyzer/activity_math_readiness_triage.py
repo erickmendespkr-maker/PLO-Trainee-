@@ -89,7 +89,7 @@ def _same_frame_field(event, field):
         return 'missing_at_decision_pts'
     if field not in OCR_FIELDS:
         return 'human_annotation_not_independently_verified'
-    evidence = event.get('field_evidence', {}).get(field)
+    evidence = event.get('field_evidence', {}).get('bet' if field == 'amount' else field)
     if not isinstance(evidence, dict):
         return 'human_label_without_same_pts_ocr_reference'
     pts = evidence.get('decoded_source_pts')
