@@ -170,8 +170,7 @@ def export_math_review_crop_ocr(video, frames_dir, handoff, triage, packet,
             'strategic_error_established': False,
             'warning': 'Manual ROI and OCR guesses are unverified; decoded PTS is filtergraph time, not capture time or a hand boundary.'}
         (stage / 'math_review_crop_ocr.json').write_text(
-            json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False) + '
-', encoding='utf-8')
+            json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False) + '\n', encoding='utf-8')
         # The stage also contains recheck data; publish only the report.
         final = stage / 'publish'
         final.mkdir()
