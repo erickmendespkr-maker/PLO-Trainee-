@@ -75,6 +75,17 @@ class MathReadinessTriageTests(unittest.TestCase):
         self.assertEqual(out['tasks'][0]['same_pts_field_status']['pot'],
                          'ocr_reference_pts_mismatch_manual_review')
 
+    def test_bet_ocr_provenance_maps_to_amount_without_ev_authority(self):
+        p, t = fixtures()
+        event = t['hands'][0]['events'][2]
+        event['amount_observed'] = 15
+        event['field_evidence']['bet'] = {'decoded_source_pts': 2}
+        p['source_reviewed_timeline_sha256'] = canonical_sha256(t)
+        out = build_math_readiness_triage(p, t)
+        self.assertEqual(out['tasks'][0]['same_pts_field_status']['amount'],
+                         'human_label_with_same_pts_ocr_reference_not_verified')
+        self.assertFalse(out['tasks'][0]['ready_for_equity_or_ev'])
+
     def test_reject_packet_timeline_mismatch_and_sha(self):
         p, t = fixtures()
         t['hands'][0]['events'][2]['timestamp'] = 2.1
