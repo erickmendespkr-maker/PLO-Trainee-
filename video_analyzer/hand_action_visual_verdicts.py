@@ -84,8 +84,17 @@ def validate(gallery, gallery_sha, edited):
         if not isinstance(row, dict) or set(row) != set(expected):
             raise ValueError('Invalid verdict row')
         for key in expected:
-            if key not in EDITABLE and (type(row[key]) is not type(expected[key])
-                                        or row[key] != expected[key]):
+            if key in EDITABLE:
+                continue
+            # JSON.stringify in offline browsers serializes 2.0 as 2. These
+            # represent the same PTS; only this numeric timestamp field may
+            # change int/float representation. Never coerce booleans or IDs.
+            if (key == 'requested_pts_seconds' and type(row[key]) in (int, float)
+                    and type(expected[key]) in (int, float)):
+                equal = math.isfinite(row[key]) and row[key] == expected[key]
+            else:
+                equal = type(row[key]) is type(expected[key]) and row[key] == expected[key]
+            if not equal:
                 raise ValueError('Protected visual reference changed: ' + key)
         verdict = row['verdict']
         if type(verdict) is not str or verdict not in VERDICTS:
