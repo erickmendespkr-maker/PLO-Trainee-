@@ -13,6 +13,8 @@ Only `feature/plo5-plo6-training`. Offline/async analysis of user-recorded PLO5/
 ## Verification
 - `python -m pytest -q test_offline_job_hand_reconstruction_checklist.py`: 27 passed.
 - `python -m pytest -q test_offline_job_hand_reconstruction_checklist.py test_offline_job_hand_evidence_dossier.py test_offline_job_hand_interval_review.py test_offline_job_review_timeline.py test_offline_job_review_windows.py test_offline_job_review_decisions.py test_offline_job_review_handoff.py test_offline_job_evidence_audit.py test_offline_jobs.py`: 195 passed, 28 subtests passed.
+- Expanded local suite including mathematical scenario, report and clip tests: **267 passed, 90 subtests passed**.
+- Four-table, nominal 60-minute JSON-only benchmark: 4,800 observations, 120 dossiers; dossier preparation 0.1775 s and checklist generation 0.0346 s on this runner. No video decoding/OCR was measured.
 - The upstream modules from Cycles 99–105 were hash-matched to the target branch, **except** `offline_jobs.py`, which differs in the local Cycle 98 snapshot. Thus this is not a full exact-tree regression.
 - All tests are synthetic. No real poker session or OCR accuracy benchmark was used.
 
