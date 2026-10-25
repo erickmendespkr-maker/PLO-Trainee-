@@ -57,5 +57,47 @@ class BridgeTests(unittest.TestCase):
             build(packet, labels, 'b'*64)
 
 
+class UpstreamFFmpegIntegration(unittest.TestCase):
+    """Real FFmpeg on synthetic frames; not real poker OCR validation."""
+    @classmethod
+    def setUpClass(cls):
+        import test_activity_boundary_review_handoff as upstream
+        cls.upstream = upstream
+        upstream.ReviewHandoffTests.setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.upstream.ReviewHandoffTests.tearDownClass()
+
+    def test_packet_human_labels_bridge(self):
+        import hashlib
+        import json
+        from pathlib import Path
+        import tempfile
+        from activity_boundary_review_handoff import packet, annotate
+        from boundary_history_bridge import export
+        u = self.upstream.ReviewHandoffTests
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            p = root / 'packet.json'
+            report = packet(u.video, u.temporal, u.boundary, u.evidence,
+                            u.audit, p, u.regions)
+            form = {'schema_version': 1,
+                    'packet_sha256': hashlib.sha256(p.read_bytes()).hexdigest(),
+                    'annotations': []}
+            for task in report['tasks']:
+                form['annotations'].append({
+                    'task_id': task['task_id'], 'verdict': 'confirmed_transition',
+                    'reviewer': 'synthetic', 'timestamp_seconds': task['window_start_seconds'],
+                    'frame_ids': [task['frames'][0]['frame_id']], 'notes': ''})
+            f = root / 'form.json'
+            f.write_text(json.dumps(form))
+            labels = root / 'labels.json'
+            annotate(p, f, labels)
+            result = export(p, labels, root / 'bridge.json')
+            self.assertEqual(len(result['candidate_spans']), 0)
+            self.assertFalse(result['ready_for_equity_or_ev'])
+
+
 if __name__ == '__main__':
     unittest.main()
