@@ -18,9 +18,9 @@ def fixture():
     false = dict.fromkeys(('hand_boundaries_verified', 'cards_or_actions_verified',
                            'ready_for_equity_or_ev', 'automatic_clip_selection_authorized',
                            'strategic_error_established'), False)
-    packet = {'analysis_status': 'candidate_boundary_review_only',
+    packet = {'schema_version': 1, 'analysis_status': 'candidate_boundary_review_only',
               'recording_sha256': 'a'*64, 'tasks': tasks, **false}
-    labels = {'analysis_status': 'unverified_human_boundary_labels',
+    labels = {'schema_version': 1, 'analysis_status': 'unverified_human_boundary_labels',
               'packet_sha256': 'b'*64, 'annotations': rows, **false}
     return packet, labels
 
