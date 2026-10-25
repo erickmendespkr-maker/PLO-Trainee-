@@ -9,11 +9,36 @@ from unittest.mock import patch
 from offline_job_hand_history_draft import (build_drafts, digest, export_drafts,
                                             validate_checklist)
 
-FIXTURE = Path(__file__).parent / 'demo' / 'synthetic_reconstruction_checklist.json'
-
-
 def checklist():
-    return json.loads(FIXTURE.read_text(encoding='utf-8'))
+    """Minimal synthetic Cycle 106 checklist; no external test files needed."""
+    template_keys = ('variant', 'hero_cards', 'board_by_street',
+                     'pot_and_bet_sequence', 'effective_stacks',
+                     'actions_with_actors_and_streets', 'decision_point',
+                     'opponent_ranges_assumptions',
+                     'source_pts_verified_against_video',
+                     'independent_reviewer_attestation')
+    return {
+        'schema_version': 1,
+        'analysis_status': 'manual_reconstruction_checklist_no_math',
+        'job_id': 'a' * 32, 'source_sha256': '1' * 64,
+        'source_dossiers_sha256': '2' * 64,
+        'timestamp_semantics': 'nominal_sampling_grid_not_exact_source_pts',
+        'requires_source_video_reaudit': True,
+        'hand_start_or_end_pts_verified': False,
+        'hand_reconstruction_verified': False,
+        'ready_for_equity_or_ev': False,
+        'automatic_clip_selection_authorized': False,
+        'counts': {'hands_to_review': 1, 'math_ready': 0},
+        'tasks': [{
+            'table_id': 1, 'hand_label_human_assigned': 'H1',
+            'nominal_interval_seconds': [0.0, 10.0],
+            'source_image_sha256s': ['1' * 64],
+            'manual_reconstruction_template': {k: None for k in template_keys},
+            'hand_reconstruction_verified': False,
+            'ready_for_equity_or_ev': False,
+            'automatic_clip_selection_authorized': False,
+        }],
+    }
 
 
 def hand(variant='PLO5'):
