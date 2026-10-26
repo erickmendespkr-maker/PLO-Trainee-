@@ -216,6 +216,17 @@ class TriageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid source interval"):
             self.result()
 
+    def test_actual_cycle120_review_chain_compatibility(self):
+        # This is a synthetic *real builder* fixture, not a video-verified hand.
+        from offline_hand_reviewed_snapshot import build_snapshot
+        from test_offline_hand_reviewed_snapshot import case
+        draft, overlay, review = case()
+        snapshot = build_snapshot(draft, overlay, review)
+        result = audit_snapshot(snapshot)
+        self.assertEqual(result["counts"]["hands"], 1)
+        self.assertFalse(result["ready_for_equity_or_ev"])
+        self.assertFalse(result["betting_rules_verified"])
+
     def test_snapshot_not_modified(self):
         before = copy.deepcopy(self.snap)
         self.result()
