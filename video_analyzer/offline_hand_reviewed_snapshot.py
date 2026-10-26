@@ -78,12 +78,13 @@ def validate_candidate_entry(entry, table_id, label):
 
 
 def build_snapshot(draft, overlay, review):
-    """Reconstruct and authenticate the review chain, then derive a new view."""
+    """Revalidate the internally consistent review chain, then derive a new view."""
     lookup = validate_draft(draft)
     check(type(review) is dict and type(review.get("decisions")) is list,
           "Invalid independent review")
     # Re-run the same validations that created the review. The exact canonical
-    # comparison prevents altered counts, labels, gates or decision explanations.
+    # comparison rejects altered derived counts/gates; self-declared decisions
+    # are not authenticated without an independently trusted review digest.
     rebuilt = build_review(draft, overlay, {
         "schema_version": 1, "job_id": review.get("job_id"),
         "source_draft_sha256": review.get("source_draft_sha256"),
