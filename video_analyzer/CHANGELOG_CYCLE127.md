@@ -13,8 +13,9 @@ Scope: `docs/VIDEO_ANALYZER_SCOPE.md`; recorded PLO5/PLO6 sessions only. No live
 ## Synthetic verification
 
 - `python -m unittest -v test_offline_ffmpeg_frame_provenance` — **17/17 passed** locally with FFmpeg/FFprobe installed.
-- Selected regression suite including Cycle 126 evidence links, contribution ledger, pot-limit bounds, triage and manual-review components — **187/187 passed** locally. This is **not** the complete repository test suite.
+- Selected regression suite including Cycle 126 evidence links, contribution ledger, pot-limit bounds, triage and manual-review components, plus two VFR checks — **189/189 passed** locally. This is **not** the complete repository test suite.
 - CLI smoke test used a 2-second synthetic 320×240, 10-FPS MPEG-4 recording. Extracted two PNG crops at decoded PTS **0.1 s** and **0.2 s** and verified SHA-256 against source bytes. These are synthetic visual patterns, not poker gameplay.
+- Two extra tests passed with a synthetic variable-frame-rate video, including an end-of-file **frame extraction** (not MP4 clip-duration validation). The decoded PTS was checked against FFprobe frame timestamps.
 - Source/test file blob hashes were compared with GitHub branch after publishing; no remote CI result or Windows UI validation was claimed.
 
 ## CLI
