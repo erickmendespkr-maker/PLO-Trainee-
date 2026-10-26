@@ -16,6 +16,7 @@ import subprocess
 from offline_manual_clip_export import (digest_file, probe, read_selection,
                                         require, validate_selection)
 from offline_clip_frame_pts_audit import source_video_start_pts
+from offline_clip_decoded_pts_comparison import decoded_pts
 
 SAMPLES = 3
 PIXELS = 32 * 32
@@ -85,10 +86,18 @@ def build_report(source_path, clip_path, sidecar, *, source_sha, clip_sha):
         require((clip_meta['width'], clip_meta['height']) ==
                 (source_meta['width'], source_meta['height']), 'Clip geometry mismatch')
 
-    offsets = [min(duration - .05, max(.05, duration * fraction))
+    # VFR clips can have no frame at the nominal 90% time, even when the
+    # container reports a longer duration. Guide the three seeks using
+    # observed *clip* frame PTS instead of blindly seeking beyond the last
+    # decodable frame. The decoded pixels are still not PTS-identity verified.
+    observed_clip_pts = sorted(set(pts for pts in decoded_pts(
+        clip, 0, min(210.0, clip_meta['duration_seconds'] + .5))
+        if 0 <= pts < duration + .05))
+    require(len(observed_clip_pts) >= SAMPLES and duration > .2,
+            'Too few decoded clip PTS for visual spot-check')
+    offsets = [max(0.0, observed_clip_pts[round((len(observed_clip_pts)-1) * fraction)] - .001)
                for fraction in (.1, .5, .9)]
-    require(len(set(offsets)) == SAMPLES and duration > .2,
-            'Clip too short for visual spot-check')
+    require(len(set(offsets)) == SAMPLES, 'Insufficient distinct clip sample offsets')
     samples = []
     for offset in offsets:
         out_frame = _frame(clip, offset)
@@ -115,7 +124,8 @@ def build_report(source_path, clip_path, sidecar, *, source_sha, clip_sha):
         'samples': samples,
         'mean_best_normalized_gray_mae': round(sum(s['best_candidate']['normalized_gray_mae']
                                                      for s in samples) / len(samples), 6),
-        'sampling_method': 'three requested clip offsets; each compared to three nearby source seeks; 32x32 gray',
+        'sampling_method': 'three observed-clip-PTS-guided seeks; each compared to three nearby source seeks; 32x32 gray',
+        'clip_pts_guided_sampling': True,
         'actual_decoded_frame_pts_measured': False,
         'frame_exact_export_verified': False,
         'hand_start_or_end_pts_verified': False,
@@ -123,7 +133,8 @@ def build_report(source_path, clip_path, sidecar, *, source_sha, clip_sha):
         'strategic_error_established': False,
         'automatic_clip_selection_authorized': False,
         'limitations': [
-            'FFmpeg accurate seek selects nearby decoded frames; actual decoded PTS is not measured here.',
+            'Clip frame PTS guide seek positions, but the PTS of returned image pixels is not measured.',
+            'FFmpeg accurate seek selects nearby decoded frames; source frame identity is not proven.',
             'Only three spots and three bounded source seeks per spot are compared.',
             'Similar or static images can match despite incorrect temporal alignment.',
             'Re-encoding, overlays and VFR can alter sampled images or shift frame selection.',
