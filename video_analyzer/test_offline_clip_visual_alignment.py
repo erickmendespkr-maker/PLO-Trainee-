@@ -43,6 +43,7 @@ class VisualAlignmentTests(unittest.TestCase):
         self.assertLess(report['mean_best_normalized_gray_mae'], .15)
         self.assertFalse(report['frame_exact_export_verified'])
         self.assertFalse(report['actual_decoded_frame_pts_measured'])
+        self.assertTrue(report['clip_pts_guided_sampling'])
         self.assertFalse(report['hand_reconstruction_verified'])
         self.assertFalse(report['automatic_clip_selection_authorized'])
         self.assertEqual(report['table_id_human_selected'], 2)
@@ -126,6 +127,8 @@ class VisualAlignmentTests(unittest.TestCase):
         self.assertEqual(len(report['samples']), 3)
         self.assertFalse(report['frame_exact_export_verified'])
         self.assertIn('VFR', ' '.join(report['limitations']))
+        self.assertTrue(report['clip_pts_guided_sampling'])
+        self.assertGreater(report['samples'][-1]['requested_clip_second'], 1.2)
 
     def test_nonzero_pts_source_rejected(self):
         offset = self.base/'offset.mp4'
