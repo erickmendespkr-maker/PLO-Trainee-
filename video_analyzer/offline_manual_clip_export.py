@@ -139,6 +139,31 @@ def video_stream_timing(path):
     return {'start_seconds': start, 'duration_seconds': duration}
 
 
+
+def audio_stream_timing(path):
+    """Observe optional exported audio stream timing (not waveform synchronization)."""
+    raw = _run(['ffprobe', '-v', 'error', '-select_streams', 'a',
+                '-show_entries', 'stream=start_time,duration', '-of', 'json',
+                str(path)], timeout=20).stdout
+    require(0 < len(raw) < 8192, 'Invalid audio stream timing metadata')
+    try:
+        streams = json.loads(raw)['streams']
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError('Unknown audio stream timing') from exc
+    require(type(streams) is list and len(streams) <= 1,
+            'Ambiguous audio stream timing')
+    if not streams:
+        return None
+    try:
+        start = float(streams[0]['start_time'])
+        duration = float(streams[0]['duration'])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError('Unknown audio stream timing') from exc
+    require(math.isfinite(start) and math.isfinite(duration) and duration > 0,
+            'Invalid audio stream timing')
+    return {'start_seconds': start, 'duration_seconds': duration}
+
+
 def _srt_time(seconds):
     millis = round(seconds * 1000)
     h, millis = divmod(millis, 3_600_000)
@@ -173,9 +198,14 @@ def export_clip(source_path, selection_path, output_mp4):
         caption = 'Revisão humana (não verificada): ' + ' '.join(sel['explanation'].split())
         srt.write_text(f'1\n00:00:00,000 --> {_srt_time(length)}\n{caption}\n\n', encoding='utf-8')
         encoded = temp / 'clip.mp4'
+        # FFmpeg can mark the last encoded packet DISCARD when output -t
+        # equals the requested duration exactly (observed at 10 fps). A
+        # 1 ms muxer rounding guard recovers that *existing* boundary frame
+        # without padding or fabricating frames. It is not frame-exact proof.
+        trim_end_guard_seconds = 0.001
         cmd = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-n',
                '-ss', str(sel['start_seconds']), '-i', str(source), '-i', str(srt),
-               '-t', str(length), '-map', '0:v:0', '-map', '0:a:0?', '-map', '1:0',
+               '-t', str(length + trim_end_guard_seconds), '-map', '0:v:0', '-map', '0:a:0?', '-map', '1:0',
                '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24', '-pix_fmt', 'yuv420p',
                '-fps_mode:v', 'passthrough',
                '-c:a', 'aac', '-c:s', 'mov_text', '-metadata:s:s:0', 'language=por',
@@ -193,6 +223,7 @@ def export_clip(source_path, selection_path, output_mp4):
         require(encoded.is_file() and encoded.stat().st_size > 0, 'Empty MP4')
         clip_meta = probe(encoded)
         video_timing = video_stream_timing(encoded)
+        audio_timing = audio_stream_timing(encoded)
         require(abs(video_timing['start_seconds']) <= 0.025,
                 'Exported video stream has nonzero initial PTS')
         require(abs(video_timing['duration_seconds'] - length) <= 0.25,
@@ -205,6 +236,17 @@ def export_clip(source_path, selection_path, output_mp4):
                   'source_sha256': sel['recording_sha256'], 'selection': sel,
                   'output_sha256': digest_file(encoded), 'output_duration_seconds': clip_meta['duration_seconds'],
                   'subtitle_track': 'mov_text: human explanation',
+                  'output_audio_stream_timing': audio_timing,
+                  'output_audio_present': audio_timing is not None,
+                  'output_audio_minus_video_start_seconds': (
+                      round(audio_timing['start_seconds'] - video_timing['start_seconds'], 6)
+                      if audio_timing is not None else None),
+                  'output_audio_minus_video_end_seconds': (
+                      round(audio_timing['start_seconds'] + audio_timing['duration_seconds']
+                            - video_timing['start_seconds'] - video_timing['duration_seconds'], 6)
+                      if audio_timing is not None else None),
+                  'audio_video_content_sync_verified': False,
+                  'output_trim_end_guard_seconds': trim_end_guard_seconds,
                   'output_video_stream_start_pts_seconds': video_timing['start_seconds'],
                   'output_video_stream_duration_seconds': video_timing['duration_seconds'],
                   'output_video_duration_shortfall_seconds': round(max(0.0, length - video_timing['duration_seconds']), 6),
@@ -218,7 +260,10 @@ def export_clip(source_path, selection_path, output_mp4):
                   'warning': 'FFprobe checks container duration, not true hand boundaries. '
                              'Caption is a human statement, not a verified mathematical conclusion. '
                              'Video stream PTS is rebased, but a gap at the end can remain; '
-                             'stream timing is not proof of frame identity.'}
+                             'stream timing is not proof of frame identity. '
+                             'A 1 ms output trim guard may admit boundary-adjacent frames; '
+                             'source hand boundaries remain unverified. '
+                             'Audio/video stream timing alone does not establish content synchronization.'}
         payload = json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False).encode() + b'\n'
         # Hard-link creation fails if output exists; no overwrite of user files.
         os.link(encoded, output)
