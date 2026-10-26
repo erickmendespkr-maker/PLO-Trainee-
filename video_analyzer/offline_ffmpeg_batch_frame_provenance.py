@@ -72,8 +72,9 @@ def _crop_png(frame: Path, box: list[int], dest: Path):
     return hashlib.sha256(raw).hexdigest()
 
 
-def create(video_path, ledger_path, request_path, output_directory):
+def create(video_path, ledger_path, request_path, output_directory, *, strategy="full_decode"):
     """Create a new output folder; remove it on any extraction/validation error."""
+    require(strategy in ("full_decode", "indexed_seek"), "Unknown extraction strategy")
     video, ledger_file, out = map(Path, (video_path, ledger_path, output_directory))
     require(video.suffix.lower() in (".mp4", ".webm", ".mkv", ".mov"),
             "Unsupported recording extension")
@@ -103,7 +104,11 @@ def create(video_path, ledger_path, request_path, output_directory):
         work = out / "_temporary_full_frames"
         work.mkdir(mode=0o700)
         indices = sorted({item["frame_index"] for item in req["frames"]})
-        frames = _video_frames(video, indices, work, duration)
+        if strategy == "indexed_seek":
+            from offline_ffmpeg_seek_frame_provenance import seek_video_frames
+            frames = seek_video_frames(video, indices, work, duration)
+        else:
+            frames = _video_frames(video, indices, work, duration)
         observations = []
         for item in req["frames"]:
             idx = item["event_index"]
@@ -137,11 +142,15 @@ def create(video_path, ledger_path, request_path, output_directory):
             "crop_hashes_verified": True, "source_video_path": video.name,
             "frame_indices": [i["frame_index"] for i in req["frames"]],
             "distinct_frames_decoded": len(indices),
-            "video_decode_passes": 1,
+            "video_decode_passes": 1 if strategy == "full_decode" else len(indices),
+            "frame_index_probe_passes": 0 if strategy == "full_decode" else 1,
+            "extraction_strategy": strategy,
             "ocr_verified": False, "cards_actions_verified": False,
             "equity_ev_authorized": False,
             "limitations": [
-                "Full recording is still decoded once; seeking optimization is not implemented.",
+                ("Full recording decoded once; no seeking optimization."
+                 if strategy == "full_decode" else
+                 "FFprobe indexes every decoded frame once; seek extracts requested frames separately."),
                 "Frame PTS comes from FFmpeg decoding, not independent visual ground truth.",
                 "No OCR or hand reconstruction is performed.",
                 "Source path could be swapped concurrently despite double hashing.",
