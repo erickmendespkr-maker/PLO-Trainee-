@@ -23,12 +23,13 @@ Input must be a Cycle 120 reviewed snapshot JSON, with all evidence/math/selecti
 
 ## Evidence — 2026-10-26
 
-- 29 synthetic unit tests passed locally, including four-table isolation, same-table interval overlap, uncertain action sequence warnings, deterministic output, SHA-256 self-consistency, gate rejection, symlink/overwrite/duplicate-key/NaN rejection.
-- Synthetic demo report produced locally. No real PLO5/PLO6 recording or independent OCR/PTS ground truth was available.
-- No prior-suite or full-repository regression run, remote CI, real-video analysis, or Windows UI verification was performed in this cycle.
+- 30 synthetic unit tests passed locally, including four-table isolation, same-table interval overlap, uncertain action sequence warnings, deterministic output, SHA-256 self-consistency, gate rejection, symlink/overwrite/duplicate-key/NaN rejection.
+- The new suite includes one integration test using the actual Cycle 120 reviewed-snapshot builder and its synthetic review chain.\n- **110/110 selected tests passed locally** across the Cycle 118–121 review chain and Cycle 123 triage. A broader eight-suite run was interrupted by a 120-second timeout and must not be counted as passed.\n- Synthetic demo report produced locally. No real PLO5/PLO6 recording or independent OCR/PTS ground truth was available.
+- The complete repository suite, remote CI, real-video analysis and Windows UI verification were not performed in this cycle.
 
 ## Blockers and next cycle
 
 - An authorized annotated 3–5 minute PLO5/PLO6 sample remains missing; real OCR/hand segmentation accuracy and 40–60-minute throughput are not verified.
 - Extend action schema *as an explicitly optional reviewed annotation* with unambiguous contribution semantics, blind/ante, street opening commitments, player stacks and pot accounting. Then test a separate **conditional** pot-limit arithmetic validator on complete synthetic histories; do not mark partial traces illegal.
 - Independently revisit the clip EOF boundary duration discrepancy with synthetic FFmpeg cases, without inventing frames.
+
