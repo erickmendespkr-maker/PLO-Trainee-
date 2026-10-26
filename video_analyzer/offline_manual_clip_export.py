@@ -114,6 +114,31 @@ def probe(source):
             'height': stream['height']}
 
 
+def video_stream_timing(path):
+    """Read the exported video stream timeline, not container/subtitle duration.
+
+    This is stream metadata, not a decoded-frame or visual-identity check.
+    """
+    raw = _run(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                '-show_entries', 'stream=start_time,duration', '-of', 'json',
+                str(path)], timeout=20).stdout
+    require(0 < len(raw) < 8192, 'Invalid video stream timing metadata')
+    try:
+        streams = json.loads(raw)['streams']
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError('Unknown video stream timing') from exc
+    require(type(streams) is list and len(streams) == 1,
+            'Ambiguous video stream timing')
+    try:
+        start = float(streams[0]['start_time'])
+        duration = float(streams[0]['duration'])
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise ValueError('Unknown video stream timing') from exc
+    require(math.isfinite(start) and math.isfinite(duration) and duration > 0,
+            'Invalid video stream timing')
+    return {'start_seconds': start, 'duration_seconds': duration}
+
+
 def _srt_time(seconds):
     millis = round(seconds * 1000)
     h, millis = divmod(millis, 3_600_000)
@@ -152,14 +177,26 @@ def export_clip(source_path, selection_path, output_mp4):
                '-ss', str(sel['start_seconds']), '-i', str(source), '-i', str(srt),
                '-t', str(length), '-map', '0:v:0', '-map', '0:a:0?', '-map', '1:0',
                '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24', '-pix_fmt', 'yuv420p',
+               '-fps_mode:v', 'passthrough',
                '-c:a', 'aac', '-c:s', 'mov_text', '-metadata:s:s:0', 'language=por',
                '-movflags', '+faststart']
+        # Accurate seeking may leave a nonzero first video PTS when the
+        # selection starts between source frames. Rebase *observed* video PTS
+        # to zero without manufacturing frames. Preserve VFR frame spacing.
+        filters = []
         if crop is not None:
-            cmd += ['-vf', f"crop={crop['width']}:{crop['height']}:{crop['x']}:{crop['y']}"]
+            filters.append(f"crop={crop['width']}:{crop['height']}:{crop['x']}:{crop['y']}")
+        filters.append('setpts=PTS-STARTPTS')
+        cmd += ['-vf', ','.join(filters)]
         cmd.append(str(encoded))
         _run(cmd, timeout=180)
         require(encoded.is_file() and encoded.stat().st_size > 0, 'Empty MP4')
         clip_meta = probe(encoded)
+        video_timing = video_stream_timing(encoded)
+        require(abs(video_timing['start_seconds']) <= 0.025,
+                'Exported video stream has nonzero initial PTS')
+        require(abs(video_timing['duration_seconds'] - length) <= 0.25,
+                'Exported video stream duration deviates from selection')
         require(abs(clip_meta['duration_seconds'] - length) <= 0.35,
                 'Export duration deviates from requested interval')
         require(digest_file(source) == sel['recording_sha256'],
@@ -168,12 +205,20 @@ def export_clip(source_path, selection_path, output_mp4):
                   'source_sha256': sel['recording_sha256'], 'selection': sel,
                   'output_sha256': digest_file(encoded), 'output_duration_seconds': clip_meta['duration_seconds'],
                   'subtitle_track': 'mov_text: human explanation',
+                  'output_video_stream_start_pts_seconds': video_timing['start_seconds'],
+                  'output_video_stream_duration_seconds': video_timing['duration_seconds'],
+                  'output_video_duration_shortfall_seconds': round(max(0.0, length - video_timing['duration_seconds']), 6),
+                  'output_video_duration_overrun_seconds': round(max(0.0, video_timing['duration_seconds'] - length), 6),
+                  'output_video_zero_based_stream_pts_verified': True,
+                  'frame_exact_export_verified': False,
                   'source_pts_boundaries_verified': False,
                   'hand_reconstruction_verified': False, 'math_analysis_linked': False,
                   'strategic_error_established': False,
                   'automatic_clip_selection_authorized': False,
                   'warning': 'FFprobe checks container duration, not true hand boundaries. '
-                             'Caption is a human statement, not a verified mathematical conclusion.'}
+                             'Caption is a human statement, not a verified mathematical conclusion. '
+                             'Video stream PTS is rebased, but a gap at the end can remain; '
+                             'stream timing is not proof of frame identity.'}
         payload = json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False).encode() + b'\n'
         # Hard-link creation fails if output exists; no overwrite of user files.
         os.link(encoded, output)
