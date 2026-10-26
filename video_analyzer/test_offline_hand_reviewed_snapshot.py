@@ -209,6 +209,42 @@ class ReviewedSnapshotTests(unittest.TestCase):
                 path.write_text(json.dumps(data))
             with self.assertRaises(ValueError): export_snapshot(*files, files[0])
 
+    def test_plo6_six_visible_cards(self):
+        self.draft["hands"][0]["human_entry"]["variant"] = "PLO6"
+        sub = {"schema_version": 1, "job_id": self.draft["job_id"],
+               "source_draft_sha256": digest(self.draft), "reviewer_label": "analista",
+               "corrections": [{"table_id": 1, "hand_label_human_assigned": "h1",
+                                "field": "hero_cards", "expected_value_sha256": digest(None),
+                                "proposed_value": ["As", "Kh", "Qd", "Jc", "Tc", "9s"],
+                                "reason": "Manual", "confidence_subjective": .8}]}
+        self.overlay = build_overlay(self.draft, sub)
+        self.review = build_review(self.draft, self.overlay, {
+            "schema_version": 1, "job_id": self.draft["job_id"],
+            "source_draft_sha256": digest(self.draft), "overlay_sha256": digest(self.overlay),
+            "reviewer_label": "independent reviewer",
+            "decisions": [{"correction_sha256": digest(self.overlay["corrections"][0]),
+                           "decision": "accept", "reason": "Checked"}]})
+        snap = self.build()
+        self.assertEqual(len(snap["hands"][0]["human_entry_candidate"]["hero_cards"]), 6)
+        self.assertFalse(snap["ready_for_equity_or_ev"])
+
+    def test_four_table_snapshot_preserves_uncorrected_hands(self):
+        original = self.draft["hands"][0]
+        for table_id in (2, 3, 4):
+            row = copy.deepcopy(original)
+            row["table_id"] = table_id
+            row["human_entry"]["table_id"] = table_id
+            self.draft["hands"].append(row)
+        self._rebind()
+        snap = self.build()
+        self.assertEqual(snap["counts"]["hands"], 4)
+        self.assertEqual(snap["counts"]["accepted_applied"], 1)
+        self.assertTrue(all(row["human_entry_candidate"]["hero_cards"] is None
+                            for row in snap["hands"][1:]))
+
+    def test_snapshot_is_deterministic(self):
+        self.assertEqual(digest(self.build()), digest(self.build()))
+
     def _rebind(self):
         # Rebuild a valid review chain around the altered source draft, so the
         # test exercises candidate validation rather than stale-hash rejection.
