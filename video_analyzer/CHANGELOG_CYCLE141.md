@@ -13,7 +13,7 @@ python -m unittest -v test_offline_reviewed_pts_contact_sheet.py test_offline_re
 python offline_reviewed_pts_contact_sheet.py /path/source.mp4 /path/results/new_references /path/results/hand1 /path/results/hand2 --include-decisions
 ```
 
-- 68 selected tests passed locally, including 23 new tests (20 contact-sheet tests and 3 nearest-frame regression tests). Tests cover missing FFmpeg, tampered source/clips, symlinks, path traversal, collisions, HTML escaping, source mutation during extraction, duplicate frames, blocked hands, output limits and exact-frame extraction.
+- 75 selected tests passed locally (including 7 timeline-page regressions), including 23 new tests (20 contact-sheet tests and 3 nearest-frame regression tests). Tests cover missing FFmpeg, tampered source/clips, symlinks, path traversal, collisions, HTML escaping, source mutation during extraction, duplicate frames, blocked hands, output limits and exact-frame extraction.
 - An existing synthetic 5-second source and two PLO5/PLO6 pipeline result folders from the prior cycle yielded 2 decision review points and 3 unique JPEG frames, with zero timestamps outside the 0.15-second tolerance. This demonstrates the review export, **not** actual poker recognition.
 - Additional 60-second 640×360 synthetic four-quadrant recording at 10 FPS: 600 frames and 120 queried timestamps; local FFprobe PTS scan measured 0.428 seconds wall time. This is not a 40–60-minute four-table performance validation.
 
