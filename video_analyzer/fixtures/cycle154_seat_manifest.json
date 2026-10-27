@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "source_pot_audit_sha256": "eb1c12c6d80e8007425e48653a69a55496b1d54bb12e088763eda9a73e58387c",
+  "reviewer_confirmed_offline": true,
+  "hands": [
+    {
+      "hand_id": "hand1",
+      "table_id": 1,
+      "seat_count": 3,
+      "seats": [
+        {
+          "actor": "hero",
+          "starting_stack": "20",
+          "net_contribution": "20",
+          "stack_after_contribution": "0",
+          "state": "all_in",
+          "reviewer_note": "Synthetic all-in hypothesis"
+        },
+        {
+          "actor": "seat_1",
+          "starting_stack": "100",
+          "net_contribution": "20",
+          "stack_after_contribution": "80",
+          "state": "active",
+          "reviewer_note": "Synthetic seat hypothesis"
+        },
+        {
+          "actor": "seat_2",
+          "starting_stack": "100",
+          "net_contribution": "27.50",
+          "stack_after_contribution": "72.50",
+          "state": "active",
+          "reviewer_note": "Synthetic seat hypothesis"
+        }
+      ],
+      "reviewer_notes": "Synthetic demonstration only; no verified video or poker session"
+    },
+    {
+      "hand_id": "hand2",
+      "table_id": 2,
+      "seat_count": 2,
+      "seats": [
+        {
+          "actor": "hero",
+          "starting_stack": "100",
+          "net_contribution": "10",
+          "stack_after_contribution": "90",
+          "state": "active",
+          "reviewer_note": "Synthetic seat hypothesis"
+        },
+        {
+          "actor": "seat_1",
+          "starting_stack": "100",
+          "net_contribution": "10",
+          "stack_after_contribution": "90",
+          "state": "active",
+          "reviewer_note": "Synthetic seat hypothesis"
+        }
+      ],
+      "reviewer_notes": "Synthetic demonstration only; no verified video or poker session"
+    },
+    {
+      "hand_id": "hand3",
+      "table_id": 3,
+      "seat_count": 2,
+      "seats": [
+        {
+          "actor": "hero",
+          "starting_stack": "100",
+          "net_contribution": "10",
+          "stack_after_contribution": "90",
+          "state": "active",
+          "reviewer_note": "Synthetic seat hypothesis"
+        },
+        {
+          "actor": "seat_1",
+          "starting_stack": "100",
+          "net_contribution": "10",
+          "stack_after_contribution": "90",
+          "state": "active",
+          "reviewer_note": "Synthetic seat hypothesis"
+        }
+      ],
+      "reviewer_notes": "Synthetic demonstration only; no verified video or poker session"
+    },
+    {
+      "hand_id": "hand4",
+      "table_id": 4,
+      "seat_count": 2,
+      "seats": [
+        {
+          "actor": "hero",
+          "starting_stack": "100",
+          "net_contribution": "10",
+          "stack_after_contribution": "90",
+          "state": "active",
+          "reviewer_note": "Synthetic seat hypothesis"
+        },
+        {
+          "actor": "seat_1",
+          "starting_stack": "100",
+          "net_contribution": "10",
+          "stack_after_contribution": "90",
+          "state": "active",
+          "reviewer_note": "Synthetic seat hypothesis"
+        }
+      ],
+      "reviewer_notes": "Synthetic demonstration only; no verified video or poker session"
+    }
+  ]
+}
