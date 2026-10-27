@@ -158,6 +158,7 @@ def evaluate(data):
     }
     if not reasons:
         pool = pot + cost
+        # Requiring a positive pot and a positive call ensures the denominator exists.
         threshold = (cost + rake) / pool
         ev = lambda equity: round(equity * pool - cost - rake, 8)
         result.update({
