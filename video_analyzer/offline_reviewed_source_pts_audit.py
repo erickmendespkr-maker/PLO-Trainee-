@@ -89,7 +89,12 @@ def _scan_pts(recording, points, ffprobe, timeout_seconds, max_frames):
         require(proc.returncode == 0, "FFprobe frame scan failed")
         require(stream.tell() <= MAX_PTS_BYTES, "FFprobe PTS output exceeds limit")
         stream.seek(0)
+        # Two-pointer nearest-neighbour scan: O(frames + timestamps), rather
+        # than comparing every frame with every human-entered timestamp.
+        # On exact ties the earlier decoded frame wins, matching the original
+        # exhaustive scan's deterministic behaviour.
         ordered = sorted(points, key=lambda p: p["human_seconds"])
+        pending = 0
         frame_count = 0
         previous = None
         first = None
@@ -98,29 +103,41 @@ def _scan_pts(recording, points, ffprobe, timeout_seconds, max_frames):
             line = raw.decode("ascii", errors="strict").strip()
             if not line:
                 continue
-            # FFprobe may add a trailing comma for frame side data. Only the
-            # first CSV column is the requested timestamp; reject other text.
             token = line.split(",", 1)[0]
             require(PTS_PATTERN.fullmatch(token) is not None,
                     "FFprobe returned an invalid frame PTS")
             pts = float(token)
             require(math.isfinite(pts), "Nonfinite frame PTS")
-            require(previous is None or pts >= previous - 0.000001,
+            # A negative PTS step, however small, invalidates the two-pointer
+            # nearest-frame assumption. Reject rather than silently mis-map.
+            require(previous is None or pts >= previous,
                     "Decoded frame PTS are not monotonic")
             frame_count += 1
             require(frame_count <= max_frames, "Frame count exceeds configured limit")
-            previous = pts
             if first is None:
                 first = pts
             last = pts
-            for item in ordered:
-                distance = abs(pts - item["human_seconds"])
-                old = item["absolute_delta_seconds"]
-                if old is None or distance < old - 0.000000001:
-                    item["nearest_frame_index"] = frame_count - 1
-                    item["nearest_decoded_pts_seconds"] = pts
-                    item["absolute_delta_seconds"] = distance
+            while pending < len(ordered) and ordered[pending]["human_seconds"] <= pts:
+                item = ordered[pending]
+                target = item["human_seconds"]
+                # Choose the earlier frame on ties; epsilon only protects
+                # representation jitter and mirrors the previous 1e-9 rule.
+                if previous is not None and abs(previous - target) <= abs(pts - target) + 1e-9:
+                    nearest, index = previous, frame_count - 2
+                else:
+                    nearest, index = pts, frame_count - 1
+                item["nearest_frame_index"] = index
+                item["nearest_decoded_pts_seconds"] = nearest
+                item["absolute_delta_seconds"] = abs(nearest - target)
+                pending += 1
+            previous = pts
         require(frame_count > 0, "No decoded video frames")
+        # Human timestamps beyond the final decoded frame map to the last
+        # frame, so they remain review warnings instead of being dropped.
+        for item in ordered[pending:]:
+            item["nearest_frame_index"] = frame_count - 1
+            item["nearest_decoded_pts_seconds"] = previous
+            item["absolute_delta_seconds"] = abs(previous - item["human_seconds"])
         return {"decoded_frames_scanned": frame_count,
                 "first_decoded_pts_seconds": first,
                 "last_decoded_pts_seconds": last,
