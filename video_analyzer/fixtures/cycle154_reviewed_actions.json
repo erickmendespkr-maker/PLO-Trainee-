@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "analysis_status": "human_assigned_observed_actions_not_full_history",
+  "source_action_audit_sha256": "e6e7d889829e31cfbb7a1c234972a8e14d058b12fca4e47be7bea1580cab272d",
+  "source_human_review_sha256": "173a1689d602fab61d28f204eacd4d33d9454231c0309b15c7a5f4d162e1b1ee",
+  "recording_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "recording_hash_checked_in_this_run": false,
+  "hands": [
+    {
+      "hand_id": "hand1",
+      "table_id": 1,
+      "declared_game_type": "PLO5",
+      "actions": [
+        {
+          "source_observation_index": 1,
+          "pts_seconds": 2.0,
+          "action_label_as_observed": "call",
+          "actor_human_assigned": "hero",
+          "street_human_assigned": "preflop",
+          "amount_contributed_human_assigned": "20.00",
+          "reviewer_note": "Synthetic test assignment, not real video evidence",
+          "visually_supported_street_candidate": null,
+          "human_confirmed_in_manifest": true
+        },
+        {
+          "source_observation_index": 4,
+          "pts_seconds": 6.0,
+          "action_label_as_observed": "check",
+          "actor_human_assigned": "hero",
+          "street_human_assigned": "flop",
+          "amount_contributed_human_assigned": null,
+          "reviewer_note": "Synthetic test assignment, not real video evidence",
+          "visually_supported_street_candidate": "flop_candidate",
+          "human_confirmed_in_manifest": true
+        },
+        {
+          "source_observation_index": 6,
+          "pts_seconds": 9.0,
+          "action_label_as_observed": "bet",
+          "actor_human_assigned": "hero",
+          "street_human_assigned": "turn",
+          "amount_contributed_human_assigned": "45.50",
+          "reviewer_note": "Synthetic test assignment, not real video evidence",
+          "visually_supported_street_candidate": "turn_candidate",
+          "human_confirmed_in_manifest": true
+        },
+        {
+          "source_observation_index": 8,
+          "pts_seconds": 12.0,
+          "action_label_as_observed": "fold",
+          "actor_human_assigned": "hero",
+          "street_human_assigned": "river",
+          "amount_contributed_human_assigned": null,
+          "reviewer_note": "Synthetic test assignment, not real video evidence",
+          "visually_supported_street_candidate": "river_candidate",
+          "human_confirmed_in_manifest": true
+        }
+      ],
+      "observed_action_count": 4,
+      "human_assigned_contributions_by_street": {
+        "preflop": "20.00",
+        "flop": "0",
+        "turn": "45.50",
+        "river": "0"
+      },
+      "review_flags": [
+        {
+          "code": "street_supported_only_by_human_review",
+          "source_observation_index": 1
+        }
+      ],
+      "action_history_complete": false,
+      "pot_accounting_reconciled": false,
+      "opponent_ranges_known": false,
+      "ready_for_equity_or_ev": false
+    },
+    {
+      "hand_id": "hand2",
+      "table_id": 2,
+      "declared_game_type": "PLO6",
+      "actions": [
+        {
+          "source_observation_index": 10,
+          "pts_seconds": 1.0,
+          "action_label_as_observed": "call",
+          "actor_human_assigned": "hero",
+          "street_human_assigned": "preflop",
+          "amount_contributed_human_assigned": "20.00",
+          "reviewer_note": "Synthetic test assignment, not real video evidence",
+          "visually_supported_street_candidate": null,
+          "human_confirmed_in_manifest": true
+        }
+      ],
+      "observed_action_count": 1,
+      "human_assigned_contributions_by_street": {
+        "preflop": "20.00",
+        "flop": "0",
+        "turn": "0",
+        "river": "0"
+      },
+      "review_flags": [
+        {
+          "code": "street_supported_only_by_human_review",
+          "source_observation_index": 10
+        }
+      ],
+      "action_history_complete": false,
+      "pot_accounting_reconciled": false,
+      "opponent_ranges_known": false,
+      "ready_for_equity_or_ev": false
+    },
+    {
+      "hand_id": "hand3",
+      "table_id": 3,
+      "declared_game_type": "PLO5",
+      "actions": [
+        {
+          "source_observation_index": 12,
+          "pts_seconds": 1.0,
+          "action_label_as_observed": "call",
+          "actor_human_assigned": "hero",
+          "street_human_assigned": "preflop",
+          "amount_contributed_human_assigned": "20.00",
+          "reviewer_note": "Synthetic test assignment, not real video evidence",
+          "visually_supported_street_candidate": null,
+          "human_confirmed_in_manifest": true
+        }
+      ],
+      "observed_action_count": 1,
+      "human_assigned_contributions_by_street": {
+        "preflop": "20.00",
+        "flop": "0",
+        "turn": "0",
+        "river": "0"
+      },
+      "review_flags": [
+        {
+          "code": "street_supported_only_by_human_review",
+          "source_observation_index": 12
+        }
+      ],
+      "action_history_complete": false,
+      "pot_accounting_reconciled": false,
+      "opponent_ranges_known": false,
+      "ready_for_equity_or_ev": false
+    },
+    {
+      "hand_id": "hand4",
+      "table_id": 4,
+      "declared_game_type": "PLO5",
+      "actions": [
+        {
+          "source_observation_index": 14,
+          "pts_seconds": 1.0,
+          "action_label_as_observed": "call",
+          "actor_human_assigned": "hero",
+          "street_human_assigned": "preflop",
+          "amount_contributed_human_assigned": "20.00",
+          "reviewer_note": "Synthetic test assignment, not real video evidence",
+          "visually_supported_street_candidate": null,
+          "human_confirmed_in_manifest": true
+        }
+      ],
+      "observed_action_count": 1,
+      "human_assigned_contributions_by_street": {
+        "preflop": "20.00",
+        "flop": "0",
+        "turn": "0",
+        "river": "0"
+      },
+      "review_flags": [
+        {
+          "code": "street_supported_only_by_human_review",
+          "source_observation_index": 14
+        }
+      ],
+      "action_history_complete": false,
+      "pot_accounting_reconciled": false,
+      "opponent_ranges_known": false,
+      "ready_for_equity_or_ev": false
+    }
+  ],
+  "complete_hand_reconstructed": false,
+  "ready_for_equity_or_ev": false,
+  "automatic_clip_selection_authorized": false,
+  "warning": "Human assignment is not independent visual verification. Missing actions, blinds, side pots and ranges prevent pot reconciliation and EV."
+}
