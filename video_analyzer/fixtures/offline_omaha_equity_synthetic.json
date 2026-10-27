@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "game_type": "PLO5",
+  "hero_hole": ["As", "Ad", "Kh", "Qh", "Jc"],
+  "known_board": ["2c", "7d", "9s"],
+  "explicit_villain_hands": [
+    ["3c", "4d", "5h", "6s", "8c"],
+    ["2h", "3d", "4c", "5s", "6d"]
+  ],
+  "samples": 500,
+  "seed": 42,
+  "range_assumption": "Synthetic uniform range of two explicitly enumerated unblocked hands. Not an OCR observation."
+}
