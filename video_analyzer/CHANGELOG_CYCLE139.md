@@ -6,6 +6,9 @@ Adds `offline_reviewed_decision_timeline.py`, a **read-only, create-only** JSON
 index of 1–40 independently generated `offline_reviewed_pipeline.py` result
 folders. Only existing, human-approved, previously exported decisions receive
 clip timestamps; blocked hands remain in the index with null decision times.
+A second module, `offline_reviewed_decision_timeline_page.py`, re-audits
+the pipeline directories and renders a static local HTML page with existing
+MP4 links, no JavaScript and escaped untrusted labels.
 No automatic clip selection, gameplay, live assistance or platform integration.
 
 ## Provenance and checks
@@ -24,9 +27,9 @@ No automatic clip selection, gameplay, live assistance or platform integration.
 
 ## Local tests
 
-`python -m unittest -v test_offline_reviewed_decision_timeline.py`
+`python -m unittest -v test_offline_reviewed_decision_timeline.py test_offline_reviewed_decision_timeline_page.py`
 
-20 synthetic tests passed on 2026-10-27. The fixtures contain fake MP4 bytes
+27 synthetic tests passed on 2026-10-27. The fixtures contain fake MP4 bytes
 and deliberately **do not** validate FFmpeg decoding, actual poker OCR or
 end-to-end performance. Full repository suite and CI not executed.
 
