@@ -7,9 +7,12 @@ import unittest
 
 from offline_reviewed_pts_reexport import prepare, reexport, main
 
-FIXTURE = Path(__file__).resolve().parents[2] / "fixture"
+FIXTURE = Path(__file__).resolve().parents[2] / "demo" / "demo"
 
 
+@unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe") and
+                     (FIXTURE / "timestamp_plan.json").is_file(),
+                     "FFmpeg and external synthetic PTS review fixture required")
 class ReexportTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
