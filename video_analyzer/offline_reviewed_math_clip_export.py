@@ -138,6 +138,12 @@ def inspect(handoff, candidate, candidate_hash, math_report, annotation,
     require(all(type(x) is int and x >= 0 for x in (wins, ties, losses)) and
             wins + ties + losses == trials, "Invalid Monte Carlo outcome counts")
     eq = finite(math_report.get("equity"), "equity")
+    # Monte Carlo equity is determined by its integer outcomes, not by a
+    # separately editable decimal in the report. This is a consistency check,
+    # not an independent recomputation of the underlying poker simulation.
+    require(0 <= eq <= 1 and
+            abs(eq - (wins + 0.5 * ties) / trials) <= 1e-10,
+            "Equity inconsistent with Monte Carlo outcome counts")
     bounds = math_report.get("equity_ci95_hoeffding")
     require(type(bounds) is list and len(bounds) == 2, "Missing equity interval")
     lo, hi = [finite(x, "equity bound") for x in bounds]
