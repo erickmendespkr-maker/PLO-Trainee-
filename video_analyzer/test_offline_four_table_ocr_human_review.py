@@ -3,23 +3,62 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import unittest
 
+from offline_four_table_sample_review import build
+from offline_four_table_ocr_proposals import scan
+
 import offline_four_table_ocr_human_review as m
 
-ROOT = Path(__file__).resolve().parents[2]
-BENCH = ROOT / "benchmark"
-
-
 class OCRHumanReviewTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture = tempfile.TemporaryDirectory()
+        root = Path(cls.fixture.name)
+        cls.video = root / "synthetic.mp4"
+        font = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        if not Path(font).is_file():
+            raise RuntimeError("Test font unavailable")
+        labels = [("POT 120", 16, 32), ("STACK 80", 336, 32),
+                  ("CALL 20", 16, 220), ("As Kd Qh", 336, 220)]
+        filters = ",".join(f"drawtext=fontfile={font}:text='{label}':fontcolor=black:"
+                           f"fontsize=30:x={x}:y={y}" for label, x, y in labels)
+        subprocess.run(["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+                        "-f", "lavfi", "-i", "color=c=white:s=640x360:r=3:d=2",
+                        "-vf", filters, "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                        "-y", str(cls.video)], check=True, capture_output=True, timeout=30)
+        layout = root / "layout.json"
+        layout.write_text(json.dumps({"schema_version": 1, "layout": "grid",
+                                      "rows": 2, "columns": 2}))
+        cls.bundle = root / "bundle"
+        build(cls.video, layout, cls.bundle, [0.4])
+        source_sha = hashlib.sha256((cls.bundle / "region_samples.json").read_bytes()).hexdigest()
+        roi = root / "roi.json"
+        roi.write_text(json.dumps({"schema_version": 1,
+                                   "source_manifest_sha256": source_sha,
+                                   "tasks": [
+                                       {"table_id": i, "sample_index": 0,
+                                        "field": field,
+                                        "roi": {"x": 0, "y": 0, "width": 310,
+                                                "height": 160}}
+                                       for i, field in enumerate(
+                                           ("pot", "stack", "action", "board"), 1)]}))
+        cls.ocr = root / "ocr_proposals.json"
+        scan(cls.bundle, roi, cls.ocr, recording_path=cls.video)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fixture.cleanup()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.bundle = BENCH / "samples"
-        self.video = BENCH / "synthetic_60s.mp4"
-        self.ocr = BENCH / "ocr_proposals.json"
+        self.bundle = type(self).bundle
+        self.video = type(self).video
+        self.ocr = type(self).ocr
         self.out = self.root / "result.json"
         source = json.loads(self.ocr.read_text())
         self.decisions = []
@@ -50,7 +89,7 @@ class OCRHumanReviewTests(unittest.TestCase):
 
     def test_real_bundle_review_preserves_lineage_and_blocks_math(self):
         report = self.run_review()
-        self.assertEqual(len(report["reviewed_candidates"]), 16)
+        self.assertEqual(len(report["reviewed_candidates"]), 4)
         self.assertFalse(report["ready_for_equity_or_ev"])
         self.assertFalse(report["complete_hand_reconstructed"])
         self.assertFalse(report["reviewer_identity_authenticated"])
