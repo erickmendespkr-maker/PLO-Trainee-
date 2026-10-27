@@ -96,6 +96,24 @@ class EvidenceCoverageTests(unittest.TestCase):
     def test_recording_unchecked_without_file(self):
         self.assertFalse(self.run_audit()["recording_hash_checked_in_this_run"])
 
+    def test_synthetic_recording_hash_checked_when_supplied(self):
+        recording = self.root / "synthetic_recording.bin"
+        recording.write_bytes(b"synthetic offline recording bytes only")
+        digest = stackmod.sha256(recording)
+        self.review_data["recording_sha256"] = digest
+        self.review.write_text(json.dumps(self.review_data))
+        self.pot_data["source_betting_review_sha256"] = stackmod.sha256(self.review)
+        self.pot_data["recording_sha256"] = digest
+        self.save_pot()
+        self.seat_data["source_pot_audit_sha256"] = stackmod.sha256(self.pot)
+        self.save_seats()
+        self.stack.unlink()
+        stackmod.audit(self.pot, self.seats, self.stack, recording_path=recording)
+        result = self.run_audit(recording_path=recording)
+        self.assertTrue(result["recording_hash_checked_in_this_run"])
+        self.assertEqual(result["recording_sha256"], digest)
+        self.assertFalse(result["ready_for_equity_or_ev"])
+
     def test_recording_mismatch_rejected(self):
         rec = self.root / "video.mp4"
         rec.write_bytes(b"not the recorded video")
