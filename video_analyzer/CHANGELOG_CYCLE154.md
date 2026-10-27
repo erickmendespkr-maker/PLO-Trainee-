@@ -10,7 +10,7 @@ Scope: [VIDEO_ANALYZER_SCOPE.md](../docs/VIDEO_ANALYZER_SCOPE.md). Offline/async
 - Preserves reviewed action observation indices and PTS, actor/street assignments and their **human-assigned** contribution values. No hidden cards or inferred actions are generated.
 - Compares reviewed contributions by actor to the net seat ledger; reports signed unexplained differences, unobserved all-in labels, contradictory all-in states, manual adjustments without PTS anchors and optional long time gaps. A long gap is **not proof** that an action occurred.
 - All hands remain explicitly `complete_hand_reconstructed=false`, `action_history_complete=false`, `ready_for_equity_or_ev=false` and `automatic_clip_selection_authorized=false`, regardless of apparent accounting consistency.
-- 39 new synthetic tests and three source fixtures; 109 selected prior tests reused.
+- 40 new synthetic tests and three source fixtures; 109 selected prior tests reused.
 
 ## Reproduce locally
 
@@ -26,7 +26,7 @@ Inputs must originate from the **same** processing chain. To verify the original
 
 ## Verified in local synthetic tests
 
-- 39 new tests + 109 selected regressions = 148 passing tests before publication.
+- 40 new tests + 109 selected regressions = 149 passing tests before publication.
 - Four-table synthetic provenance chain and signed per-seat discrepancies, timestamps, unobserved all-in and manual pot adjustments.
 - The test fixture recording SHA-256 is synthetic; no actual poker video was used.
 
