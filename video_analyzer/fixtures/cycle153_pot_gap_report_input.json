@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "analysis_status": "conditional_pot_arithmetic_unverified",
+  "source_betting_review_sha256": "a1975486a1cdfb5dfcc40e0c1240db46679504afd88a7832b6cf886b004b6458",
+  "source_manual_manifest_sha256": "d81ee7b8b690161d42f26a472b48ad5e81d55c76bc651d9aa78aef3767d00f68",
+  "recording_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "recording_hash_checked_in_this_run": false,
+  "hands": [
+    {
+      "hand_id": "hand1",
+      "table_id": 1,
+      "declared_game_type": "PLO5",
+      "observed_action_count": 4,
+      "reviewed_action_contributions": "65.50",
+      "manual_forced_contributions": "2",
+      "manual_unobserved_contributions": "0",
+      "manual_returned_uncalled_bets": "0",
+      "conditional_pot_estimate": "67.50",
+      "human_supplied_final_pot": "120.00",
+      "conditional_difference": "-52.50",
+      "blockers": [
+        "action_coverage_incomplete",
+        "manual_entries_not_independently_verified",
+        "upstream_visual_flags_unresolved",
+        "conditional_pot_discrepancy"
+      ],
+      "action_history_complete": false,
+      "pot_accounting_reconciled": false,
+      "ready_for_equity_or_ev": false
+    },
+    {
+      "hand_id": "hand2",
+      "table_id": 2,
+      "declared_game_type": "PLO6",
+      "observed_action_count": 1,
+      "reviewed_action_contributions": "20.00",
+      "manual_forced_contributions": "0",
+      "manual_unobserved_contributions": "0",
+      "manual_returned_uncalled_bets": "0",
+      "conditional_pot_estimate": "20.00",
+      "human_supplied_final_pot": null,
+      "conditional_difference": null,
+      "blockers": [
+        "action_coverage_incomplete",
+        "manual_entries_not_independently_verified",
+        "final_pot_unknown"
+      ],
+      "action_history_complete": false,
+      "pot_accounting_reconciled": false,
+      "ready_for_equity_or_ev": false
+    },
+    {
+      "hand_id": "hand3",
+      "table_id": 3,
+      "declared_game_type": "PLO5",
+      "observed_action_count": 1,
+      "reviewed_action_contributions": "20.00",
+      "manual_forced_contributions": "0",
+      "manual_unobserved_contributions": "0",
+      "manual_returned_uncalled_bets": "0",
+      "conditional_pot_estimate": "20.00",
+      "human_supplied_final_pot": null,
+      "conditional_difference": null,
+      "blockers": [
+        "action_coverage_incomplete",
+        "manual_entries_not_independently_verified",
+        "final_pot_unknown"
+      ],
+      "action_history_complete": false,
+      "pot_accounting_reconciled": false,
+      "ready_for_equity_or_ev": false
+    },
+    {
+      "hand_id": "hand4",
+      "table_id": 4,
+      "declared_game_type": "PLO5",
+      "observed_action_count": 1,
+      "reviewed_action_contributions": "20.00",
+      "manual_forced_contributions": "0",
+      "manual_unobserved_contributions": "0",
+      "manual_returned_uncalled_bets": "0",
+      "conditional_pot_estimate": "20.00",
+      "human_supplied_final_pot": null,
+      "conditional_difference": null,
+      "blockers": [
+        "action_coverage_incomplete",
+        "manual_entries_not_independently_verified",
+        "final_pot_unknown"
+      ],
+      "action_history_complete": false,
+      "pot_accounting_reconciled": false,
+      "ready_for_equity_or_ev": false
+    }
+  ],
+  "complete_hand_reconstructed": false,
+  "ready_for_equity_or_ev": false,
+  "automatic_clip_selection_authorized": false,
+  "warning": "Synthetic fixture for cycle 153; no actual poker recording or verified action coverage."
+}
