@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "analysis_status": "reviewed_offline_decision_hypothetical_ev_link_only",
+  "source_hand_candidates_sha256": "9ce33d00176710ae8520ea5782a384745dc323787d30c238f6fe2040288db8b8",
+  "source_action_audit_sha256": "5227e1a18b88c50e397b27195ae0deca470cc4078791076ab2eba81f125a5ff0",
+  "source_ev_scenario_sha256": "f2386bdf3bebc3ea87b48c76c57306e08415770bb5f910937d26d58c844ebb6f",
+  "source_ev_report_sha256": "fc920a27e1622114209699a25c53d5061caa8d4b687d63408220a145bc8665ff",
+  "source_approval_sha256": "63f5874dad3ff9425a59b3cfe2d4971170b36a4ff61b76989b088cbc1a23ae77",
+  "recording_sha256": "35558ded996a95961d74fe9966eab52f1ea7ef08b10f67c2bd182bda9be18b35",
+  "recording_hash_checked_in_this_run": true,
+  "hand_id": "hand1",
+  "table_id": 1,
+  "game_type": "PLO5",
+  "decision_id": "synthetic-table-1-hand-1",
+  "observed_action_label": "call",
+  "action_pts_seconds": 6.0,
+  "street_candidate_not_confirmed": "flop_candidate",
+  "reviewed_observation_indices": {
+    "hero": 0,
+    "board": 2,
+    "pot": 3,
+    "action": 4
+  },
+  "source_crop_sha256": {
+    "hero": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "board": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "pot": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "action": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "pot_before_decision_as_reviewed": "120",
+  "conditional_ev_fold": "0.00",
+  "conditional_ev_call": "37.40",
+  "conditional_ev_raise": "62.55",
+  "conditional_ev_call_sampling_bounds": [
+    "18.39",
+    "56.41"
+  ],
+  "conditional_ev_raise_sampling_and_fold_assumption_bounds": [
+    "24.17",
+    "91.97"
+  ],
+  "call_range_assumption": "Synthetic exact opponent combination",
+  "raise_called_range_assumption": "Synthetic exact opponent combination",
+  "fold_probability_hypothesis": "0.25",
+  "reviewer_note": "Synthetic example; no authenticated video evidence",
+  "recomputed_ev_and_audit_from_supplied_inputs": true,
+  "video_evidence_independently_verified": false,
+  "action_history_complete": false,
+  "raise_legality_verified": false,
+  "decision_quality_verified": false,
+  "automatic_clip_selection_authorized": false,
+  "action_recommendation_authorized": false,
+  "warning": "Conditional heads-up terminal-showdown EV only; review and SHA consistency do not establish real-world action history, pot completeness, ranges, stack sufficiency, raise legality, future betting or decision quality."
+}
