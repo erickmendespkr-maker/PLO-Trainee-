@@ -28,7 +28,10 @@ def summarize(recording, clips, packet, annotations, reviewed, gate_path):
     require(len({str(p.resolve()) for p in paths}) == len(paths), 'Input paths must differ')
     expected, _, media = recompute_gate(recording, clips, packet, annotations, reviewed)
     gate = load(gate_path)
-    require(gate == expected, 'EV gate stale, altered or not bound to inputs')
+    canonical = lambda obj: json.dumps(obj, sort_keys=True, ensure_ascii=False,
+                                       allow_nan=False, separators=(',', ':'))
+    require(canonical(gate) == canonical(expected),
+            'EV gate stale, altered or not bound to inputs')
     source = load(packet)
     rows = source['decisions']
     require(len(rows) == len(gate['decisions']), 'Decision count mismatch')
