@@ -39,7 +39,7 @@ Formato `roi_tasks.json`:
 - Falta vídeo real autorizado e anotado de 3–5 minutos para medir precisão, calibrar OCR e identificar eventos reais de mãos.
 - Não testado no Windows nem em sessões reais de 40–60 minutos. A suíte completa do repositório não foi executada.
 - O texto do OCR não é validado como carta, valor ou ação; nenhuma inferência automática de limites de mão, equity ou EV neste módulo.
-- `docs/VIDEO_ANALYZER_SCOPE.md` contém observação antiga de que não existe ingestão verificada; as implementações sintéticas dos ciclos 168–172 não substituem validação real.
+- `docs/VIDEO_ANALYZER_SCOPE.md` foi atualizado nesta branch para diferenciar os testes sintéticos dos ciclos 168–172 da validação ainda pendente com vídeos reais.
 
 ## Próximo passo
 Adicionar uma fila de revisão de campos OCR vinculada a quadros e PTS, com correção humana e estados de confiança separados. Somente campos confirmados podem compor rascunhos de histórico de mão, e nenhuma ação deve ser tomada ao vivo.
