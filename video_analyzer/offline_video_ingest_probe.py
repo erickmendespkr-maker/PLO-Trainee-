@@ -7,6 +7,7 @@ No OCR, poker service, live capture, or decision advice. Inputs are never modifi
 from __future__ import annotations
 
 import argparse
+from fractions import Fraction
 import hashlib
 import json
 import math
@@ -103,13 +104,70 @@ def regions_from_json(path, width, height):
     return sorted(regions, key=lambda r: r['table_id'])
 
 
-def sample_times(duration):
+def nominal_fps(frame_rate):
+    """Nominal rate is only a scheduling hint; decoded PTS remains authoritative."""
+    try:
+        fps = float(Fraction(str(frame_rate)))
+    except (ValueError, ZeroDivisionError, OverflowError):
+        return None
+    return fps if math.isfinite(fps) and 0 < fps <= 240 else None
+
+
+def sample_times(duration, frame_rate=None, interval_seconds=30.0):
+    """Sparse periodic evidence plus anchors, aligned to nominal frame slots.
+
+    This is NOT hand-boundary detection. Alignment is only approximate for VFR.
+    """
+    require(type(interval_seconds) in (int, float) and
+            math.isfinite(interval_seconds) and 5 <= interval_seconds <= 120,
+            'Invalid sampling interval')
     if duration < 1.5:
-        return [round(duration / 2, 3)]
-    return [round(x, 3) for x in (0.25, duration / 2, duration - 0.25)]
+        requested = [duration / 2]
+    else:
+        requested = [0.25, duration / 2, duration - 0.25]
+    if duration >= 60:
+        requested.extend(i * interval_seconds for i in
+                         range(1, math.ceil(duration / interval_seconds))
+                         if i * interval_seconds < duration)
+    fps = nominal_fps(frame_rate)
+    if fps:
+        # Avoid seeking after the last nominal frame on 1 fps recordings.
+        last_nominal = max(0.0, math.floor((duration - 1e-6) * fps) / fps)
+        requested = [math.floor((min(t, last_nominal) + 1e-8) * fps) / fps
+                     for t in requested]
+    return sorted({round(max(0.0, min(t, duration - 1e-6)), 3)
+                   for t in requested})
 
 
-def build(recording, region_config, output_dir):
+def extract_sample_frame(recording, crop, timestamp, target, frame_rate):
+    """Decode one frame and record its actual PTS; retry earlier for sparse FPS."""
+    fps = nominal_fps(frame_rate)
+    backoff = max(0.5, 1.0 / fps) if fps else 2.0
+    seeks = list(dict.fromkeys([timestamp, max(0.0, timestamp - backoff), 0.0]))
+    for attempt, seek in enumerate(seeks, 1):
+        target.unlink(missing_ok=True)
+        try:
+            proc = subprocess.run(
+                ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'info',
+                 '-copyts', '-ss', str(round(seek, 6)), '-i', str(recording),
+                 '-map', '0:v:0', '-vf', crop + ',showinfo', '-frames:v', '1',
+                 '-q:v', '3', '-an', '-sn', '-dn', '-y', str(target)],
+                capture_output=True, text=True, check=False, timeout=90,
+                stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError('Media command failed or timed out') from exc
+        pts = re.findall(r'\bpts_time:([-+]?\d+(?:\.\d+)?)', proc.stderr)
+        if proc.returncode == 0 and target.is_file() and target.stat().st_size > 0 and pts:
+            actual = float(pts[0])
+            require(math.isfinite(actual), 'Nonfinite decoded timestamp')
+            return {'actual_frame_timestamp_seconds': actual,
+                    'seek_timestamp_seconds': round(seek, 6),
+                    'seek_attempts': attempt}
+    target.unlink(missing_ok=True)
+    raise ValueError('Could not decode sampled frame, including sparse-FPS fallback')
+
+
+def build(recording, region_config, output_dir, interval_seconds=30.0):
     recording, region_config, output_dir = map(Path, (recording, region_config, output_dir))
     require(recording.is_file() and not recording.is_symlink() and
             recording.suffix.lower() in SAFE_EXTENSIONS and
@@ -123,29 +181,30 @@ def build(recording, region_config, output_dir):
     media = probe(recording)
     regions = regions_from_json(region_config, media['width'], media['height'])
     recording_hash, regions_hash = sha256(recording), sha256(region_config)
-    times = sample_times(media['duration_seconds'])
+    times = sample_times(media['duration_seconds'], media['frame_rate_reported'],
+                         interval_seconds)
     with tempfile.TemporaryDirectory(prefix='.plo_ingest_', dir=output_dir.parent) as tmp:
         stage = Path(tmp)
         frames = []
         for r in regions:
             for idx, timestamp in enumerate(times):
-                name = f'table_{r["table_id"]:02d}_sample_{idx:02d}.jpg'
+                name = f'table_{r["table_id"]:02d}_sample_{idx:03d}.jpg'
                 target = stage / name
                 crop = f'crop={r["width"]}:{r["height"]}:{r["x"]}:{r["y"]}'
-                command(['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error',
-                         '-ss', str(timestamp), '-i', str(recording), '-map', '0:v:0',
-                         '-vf', crop, '-frames:v', '1', '-q:v', '3', '-an', '-sn',
-                         '-dn', '-y', str(target)], timeout=90)
-                require(target.is_file() and target.stat().st_size > 0,
-                        'Sample frame missing')
+                decoded = extract_sample_frame(recording, crop, timestamp, target,
+                                               media['frame_rate_reported'])
                 frames.append({'table_id': r['table_id'], 'timestamp_seconds': timestamp,
-                               'file': name, 'sha256': sha256(target)})
+                               **decoded, 'file': name, 'sha256': sha256(target)})
+
         manifest = {
             'schema_version': 1,
             'analysis_status': 'offline_sampled_video_preflight_no_ocr',
             'source_sha256': recording_hash, 'regions_config_sha256': regions_hash,
             'source_size_bytes': recording.stat().st_size,
             'media': media, 'regions': regions, 'samples': frames,
+            'sampling_interval_seconds': interval_seconds,
+            'sampling_method': 'periodic_and_anchors_nominal_fps_aligned',
+            'timestamps_note': 'timestamp_seconds is requested; actual_frame_timestamp_seconds is decoded PTS; VFR may differ',
             'video_evidence_interpreted': False, 'hands_reconstructed': False,
             'equity_ev_computed': False, 'live_poker_integration': False,
             'warning': 'Quadros de amostra nao validam cartas, maos, acoes ou EV.'
@@ -165,8 +224,10 @@ def main(argv=None):
     parser.add_argument('recording')
     parser.add_argument('regions_json')
     parser.add_argument('new_output_dir')
+    parser.add_argument('--interval-seconds', type=float, default=30.0)
     args = parser.parse_args(argv)
-    manifest = build(args.recording, args.regions_json, args.new_output_dir)
+    manifest = build(args.recording, args.regions_json, args.new_output_dir,
+                     interval_seconds=args.interval_seconds)
     print(json.dumps({'tables': len(manifest['regions']),
                       'samples': len(manifest['samples']),
                       'duration_seconds': manifest['media']['duration_seconds']}))
