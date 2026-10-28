@@ -109,7 +109,10 @@ class ConsolidatedTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.run_summary()
 
     def test_reject_duplicate_json_key(self):
-        with self.output.open('a',encoding='utf-8') as f: f.write('"a":1')
+        original = self.output.read_text(encoding='utf-8')
+        self.output.write_text(original.replace('"schema_version": 1,',
+                           '"schema_version": 1, "schema_version": 1,', 1),
+                           encoding='utf-8')
         with self.assertRaises(ValueError): self.run_summary()
 
     def test_reject_changed_clip(self):
