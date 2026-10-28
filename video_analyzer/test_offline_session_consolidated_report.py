@@ -75,6 +75,10 @@ class ConsolidatedTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.run_summary()
         self.assertFalse(self.summary.exists())
 
+    def test_reject_gate_numeric_type_change(self):
+        self.edit(self.output,lambda d:d.update(decision_count=4.0))
+        with self.assertRaises(ValueError): self.run_summary()
+
     def test_reject_stale_gate(self):
         self.edit(self.output,lambda d:d.update(warning='stale'))
         with self.assertRaises(ValueError): self.run_summary()
