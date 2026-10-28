@@ -85,6 +85,31 @@ class ViewerTests(unittest.TestCase):
             self.run_build()
         self.assertFalse(self.output.exists())
 
+    def test_browser_renders_events(self):
+        try:
+            import shutil
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest('playwright unavailable')
+        if not shutil.which('chromium'):
+            self.skipTest('chromium unavailable')
+        self.run_build()
+        markup = (self.output / 'index.html').read_text('utf-8')
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True,
+                executable_path=shutil.which('chromium'), args=['--no-sandbox'])
+            try:
+                page = browser.new_page()
+                errors = []
+                page.on('pageerror', lambda error: errors.append(str(error)))
+                page.set_content(markup)
+                self.assertEqual(page.locator('section').count(), 1)
+                self.assertEqual(page.locator('article').count(), 1)
+                self.assertEqual(page.locator('article strong').inner_text(), 'action · call')
+                self.assertFalse(errors)
+            finally:
+                browser.close()
+
     def test_valid_evidence_and_html(self):
         result = self.run_build()
         self.assertEqual(result['hands'][0]['events'][0]['roi_png'], 'assets/roi_000.png')
