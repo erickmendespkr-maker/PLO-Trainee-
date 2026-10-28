@@ -34,5 +34,5 @@ O Poker Kernel permanece como biblioteca de regras, não como interface do produ
 ## Não incluído
 Mesas jogáveis, adversários de IA para jogar, integração com plataformas de pôquer, decisões ao vivo, execução de apostas.
 
-## Bloqueios
-Falta vídeo de exemplo para calibrar reconhecimento visual. Não existe ainda implementação verificada de ingestão ou análise de vídeo neste repositório.
+## Bloqueios e estado de validação
+Falta vídeo real autorizado e anotado de 3–5 minutos para calibrar reconhecimento visual e medir a precisão de detecção de mãos, cartas, ações e OCR. A prova de conceito offline de ingestão, amostragem, mudança visual, refinamento temporal e OCR de ROIs possui testes **sintéticos** (ciclos 168–172), mas ainda não foi validada com sessões reais de 40–60 minutos. O texto OCR é apenas proposta sujeita à revisão humana; não é entrada automática de equity/EV. Testes completos no Windows e validação de ponta a ponta permanecem pendentes.
