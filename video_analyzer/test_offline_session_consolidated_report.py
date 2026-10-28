@@ -10,6 +10,7 @@ from unittest.mock import patch
 import test_offline_review_ev_gate as gate_fixtures
 from offline_session_consolidated_report import build, summarize, render_html
 from offline_review_ev_gate import build as build_gate
+from offline_human_observation_review import build as build_review
 
 
 class ConsolidatedTests(unittest.TestCase):
@@ -47,6 +48,30 @@ class ConsolidatedTests(unittest.TestCase):
         self.assertEqual(sum(result['ev_status_counts'].values()),4)
         self.assertEqual([h['game_type'] for h in result['hands']],
                          ['PLO5','PLO6','PLO5','PLO6'])
+
+    def test_two_decisions_share_one_hand_and_clip(self):
+        def add_second(d):
+            row = dict(d['decisions'][0])
+            row['decision_id'] = 'd1_second'
+            row['action_pts_seconds'] = 1.25
+            d['decisions'].insert(1, row)
+            d['decision_count'] += 1
+        self.edit(self.source, add_second)
+        self.edit(self.manual, lambda d: d.update(
+            source_session_review_sha256=gate_fixtures.digest(self.source)))
+        self.reviewed.unlink()
+        (self.root/'reviewed.html').unlink()
+        self.output.unlink()
+        self.html.unlink()
+        build_review(self.video,self.clips,self.source,self.manual,
+                     self.reviewed,self.root/'reviewed.html')
+        build_gate(self.video,self.clips,self.source,self.manual,
+                   self.reviewed,self.output,self.html)
+        result=self.run_summary()
+        self.assertEqual((result['hand_count'],result['decision_count'],result['clip_count']),
+                         (4,5,4))
+        self.assertEqual(len(result['hands'][0]['decisions']),2)
+        self.assertEqual(result['hands'][0]['decisions'][1]['review_outcome'],'pending')
 
     def test_blocked_ev_not_exposed(self):
         result = self.run_summary()
