@@ -27,3 +27,7 @@ python video_analyzer/offline_session_consolidated_report.py \
 ## Bloqueios
 
 Falta gravação real autorizada e anotada de 3–5 minutos para calibrar OCR e reconstrução; não há validação de sessões reais de 40–60 minutos ou de quatro mesas reais. Sem gastos, credenciais, produção, integração com pôquer real ou alterações em `main`.
+
+## Smoke test adicional de duração (fora da suíte de 33 testes)
+
+FFmpeg gerou um vídeo sintético de **2.400 segundos (40 minutos)** em 320×180, 1 fps, 2.955.402 bytes. FFprobe confirmou duração. Quatro regiões 160×90 foram extraídas em 1.200s, cada uma com 2 segundos verificados por FFprobe. **Isso testa somente busca temporal e recorte de vídeo artificial de baixa taxa de quadros; não valida OCR, detecção de mãos, desempenho em gravação real nem processamento integral do pipeline.**
