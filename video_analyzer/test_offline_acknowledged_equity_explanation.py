@@ -1,7 +1,6 @@
 """Synthetic integration of the acknowledged report with the offline HTML renderer."""
 from __future__ import annotations
 
-import copy
 import json
 from pathlib import Path
 import tempfile
@@ -11,8 +10,6 @@ import offline_equity_clip_explanation as renderer
 from offline_reviewed_equity_clip_report import digest
 
 
-DEMO = Path(__file__).resolve().parent.parent / 'demo'
-
 
 class AcknowledgedHtmlTests(unittest.TestCase):
     def setUp(self):
@@ -20,9 +17,42 @@ class AcknowledgedHtmlTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.clip = self.root / 'clip.mp4'
-        self.clip.write_bytes((DEMO / 'clip.mp4').read_bytes())
-        self.report = json.loads((DEMO / 'acknowledged_equity.json').read_text())
-        self.assertEqual(digest(self.clip), self.report['source_clip_sha256'])
+        self.clip.write_bytes(b'synthetic MP4 placeholder for HTML-only test')
+        self.report = {
+            'schema_version': 1,
+            'analysis_status': 'offline_conditional_equity_after_human_frame_acknowledgement',
+            'source_clip_sha256': digest(self.clip),
+            'binding_replay_audit_rerun': False,
+            'manual_cards_claimed_reviewed_not_independently_verified': True,
+            'hero_actor_at_selected_action_verified': False,
+            'selected_action_strategic_correctness_verified': False,
+            'ocr_semantics_verified': False,
+            'opponent_range_is_assumption': True,
+            'variant': 'PLO6', 'hand_id': 'SYNTHETIC_H1',
+            'selected_action_ocr_text_not_graded': 'raise (unverified)',
+            'card_frame_evidence_count': 11,
+            'card_frame_evidence_claimed_not_independently_verified': True,
+            'source_snapshot_manifest_sha256': 'a' * 64,
+            'source_gallery_confirmation_sha256': 'b' * 64,
+            'human_snapshot_acknowledgement_validated': True,
+            'human_acknowledged_cards': 11,
+            'card_visibility_machine_verified': False,
+            'decoded_frame_pts_verified': False,
+            'reviewed_cards_are_human_assertions': True,
+            'source_video_replay_audit_rerun': False,
+            'equity_result': {
+                'analysis_status': 'offline_manual_assumptions_monte_carlo_only',
+                'strategic_correctness_verified': False,
+                'ocr_semantics_verified': False,
+                'player_identity_verified': False,
+                'variant': 'PLO6',
+                'hero_cards': ['As', 'Ks', '2c', '3d', '4c', '5d'],
+                'board_cards': ['Qs', 'Js', 'Ts', '8d', '7c'],
+                'equity': 1.0, 'equity_ci95_sampling_only': [1.0, 1.0],
+                'iterations': 20, 'seed': 42,
+                'opponent_model_kind': 'uniform',
+            },
+        }
         self.report_path = self.root / 'acknowledged.json'
         self.out = self.root / 'explanation.html'
 
