@@ -8,7 +8,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 from offline_action_review_triage import build, run
 
-FIXTURE = Path(__file__).parents[1] / 'demo' / 'synthetic_four_tables_timeline.json'
+FIXTURE = Path(__file__).parent / 'synthetic_four_tables_review_fixture.json'
 
 @pytest.fixture
 def data():
