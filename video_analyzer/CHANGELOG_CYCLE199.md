@@ -39,7 +39,7 @@ Formato de `ASSUMPTIONS.json`:
 - Não usa serviços externos, dados de poker ao vivo, automação de apostas ou interface de jogo.
 
 ## Verificação local em 29/10/2026
-- 13 testes novos do bundle aprovados; 76 testes selecionados aprovados (incluindo regressões de equity/EV/HTML).
+- 13 testes novos do bundle aprovados; 245 testes dos 12 módulos locais do pacote aprovados, repetidos após extração independente do ZIP (incluindo regressões de equity/EV/HTML e auditoria visual sintética).
 - Demonstração sintética com MP4 de 2,0 segundos (FFprobe) e CLI completa: JSON, HTML, gráfico e hashes gerados. O vídeo não mostra cartas correspondentes à anotação artificial.
 - Sem teste da suíte integral do repositório, Windows, navegador gráfico ou gravações reais de 40–60 minutos.
 
