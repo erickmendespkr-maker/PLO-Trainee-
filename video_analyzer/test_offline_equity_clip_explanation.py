@@ -67,6 +67,21 @@ class OfflineExplanationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             h.main([str(self.path),str(self.clip),str(self.html)])
 
+    def test_manual_frame_evidence_displayed_as_claim(self):
+        self.report['card_frame_evidence_count'] = 11
+        self.report['card_frame_evidence_claimed_not_independently_verified'] = True
+        html = h.render(self.report, m.digest(self.clip))
+        self.assertIn('11 cartas', html)
+        self.assertIn('declarações humanas', html)
+
+    def test_reject_inconsistent_frame_evidence_metadata(self):
+        self.report['card_frame_evidence_count'] = 11
+        self.report['card_frame_evidence_claimed_not_independently_verified'] = False
+        with self.assertRaises(ValueError): h.render(self.report, m.digest(self.clip))
+
+    def test_legacy_no_frame_evidence(self):
+        self.assertIn('não informados', h.render(self.report, m.digest(self.clip)))
+
     def test_reject_bad_clip_hash(self):
         with self.assertRaises(ValueError): h.render(self.report,'0'*64)
 
