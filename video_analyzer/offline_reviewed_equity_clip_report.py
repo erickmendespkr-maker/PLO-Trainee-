@@ -27,7 +27,7 @@ REVIEW_FIELDS = {
     'hand_id', 'table_id', 'proposal_index', 'variant',
     'manual_cards_confirmed', 'review_method', 'review_notes',
     'hero_cards', 'board_cards', 'opponent_model', 'iterations', 'seed',
-    'pot_now', 'call_cost',
+    'pot_now', 'call_cost', 'card_frame_evidence',
 }
 REQUIRED = {
     'schema_version', 'source_binding_sha256', 'source_clip_sha256',
@@ -121,6 +121,23 @@ def build(binding_path, clip_path, manual_path):
             'manual review notes must describe card evidence/uncertainty')
     require(('pot_now' in review) == ('call_cost' in review),
             'terminal EV requires both pot_now and call_cost')
+    evidence = review.get('card_frame_evidence')
+    if evidence is not None:
+        require(type(evidence) is list and
+                len(evidence) == len(review['hero_cards']) + len(review['board_cards']),
+                'card/frame evidence must cover every reviewed card')
+        seen_cards = set()
+        for entry in evidence:
+            require(type(entry) is dict and set(entry) == {'card', 'clip_timestamp_seconds'},
+                    'invalid card/frame evidence record')
+            card, stamp = entry['card'], entry['clip_timestamp_seconds']
+            require(type(card) is str and card not in seen_cards,
+                    'duplicate card/frame evidence')
+            seen_cards.add(card)
+            require(type(stamp) in (int, float) and math.isfinite(stamp) and
+                    0 <= stamp <= 4*3600, 'invalid card/frame timestamp')
+        require(seen_cards == set(review['hero_cards'] + review['board_cards']),
+                'card/frame evidence does not match reviewed cards')
     payload = {key: review[key] for key in
                ('variant', 'hero_cards', 'board_cards', 'opponent_model',
                 'iterations', 'seed')}
@@ -144,6 +161,8 @@ def build(binding_path, clip_path, manual_path):
         'source_video_sha256_claim_from_binding': binding['source_video_sha256'],
         'binding_replay_audit_rerun': False,
         'manual_cards_claimed_reviewed_not_independently_verified': True,
+        'card_frame_evidence_claimed_not_independently_verified': evidence is not None,
+        'card_frame_evidence_count': len(evidence) if evidence is not None else 0,
         'hero_actor_at_selected_action_verified': False,
         'selected_action_strategic_correctness_verified': False,
         'ocr_semantics_verified': False,
@@ -152,6 +171,7 @@ def build(binding_path, clip_path, manual_path):
         'warning': ('Conditional equity for manually entered cards and assumed range only. '
                     'No inference that selected OCR action belongs to hero, no action grade. '
                     'Binding replay was NOT rerun; hashes link to prior evidence. '
+                    'Card/frame timestamps are human claims, not verified visual recognition. '
                     'Sampling CI excludes card/range/model uncertainty.'),
     }
 
