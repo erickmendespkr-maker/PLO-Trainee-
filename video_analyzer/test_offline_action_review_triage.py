@@ -64,3 +64,19 @@ def test_symlink_source_rejected(tmp_path):
 def test_duplicate_json_key_rejected(tmp_path):
     src=tmp_path/'bad.json';src.write_text('{"a":1,"a":2}')
     with pytest.raises(ValueError): run(src,tmp_path/'out.json')
+
+def test_forged_bet_proximity(data):
+    next(e for e in data['hands'][0]['events'] if e['field']=='action')['nearby_bet_proposal_indices']=[]
+    with pytest.raises(ValueError, match='forged'): build(data)
+
+def test_overlapping_hands_same_table(data):
+    extra=copy.deepcopy(data['hands'][0]);extra['hand_id']='EXTRA';extra['events']=[]
+    data['hands'].append(extra)
+    with pytest.raises(ValueError, match='overlapping'): build(data)
+
+def test_invalid_unresolved_index(data):
+    data['hands'][0]['unresolved_indices']=['invalid']
+    with pytest.raises(ValueError, match='unresolved'): build(data)
+
+def test_different_tables_can_overlap(data):
+    assert build(data)['total_candidates']==8
