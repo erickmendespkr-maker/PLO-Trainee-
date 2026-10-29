@@ -93,6 +93,28 @@ class BundleTests(unittest.TestCase):
         self.assertNotIn('https://', html)
         self.assertNotIn('<script', html)
 
+    def test_weighted_blocker_audit_in_bundle_and_html(self):
+        legal = ['7c', '8d', '9h', 'Td', 'Jc']
+        blocked = ['As', '8d', '9h', 'Td', 'Jc']
+        self.config['hypotheses'][0]['call_model'] = {
+            'kind': 'weighted_combos', 'combos': [
+                {'cards': legal, 'weight': 1},
+                {'cards': blocked, 'weight': 3}]}
+        result, html = self.build()
+        info = result['range_blocker_audit']['rows'][0]['call']
+        self.assertEqual(info['blocked_combos'], 1)
+        self.assertAlmostEqual(info['blocked_weight_fraction'], .75)
+        self.assertIn('75.0% do peso removido', html)
+        self.assertFalse(result['range_blocker_audit']['range_accuracy_verified'])
+        self.assertNotIn('As,8d,9h,Td,Jc', html)
+
+    def test_all_blocked_range_prevents_outputs(self):
+        self.config['hypotheses'][0]['call_model'] = {
+            'kind': 'weighted_combos', 'combos': [
+                {'cards': ['As', '8d', '9h', 'Td', 'Jc'], 'weight': 1}]}
+        with self.assertRaisesRegex(ValueError, 'no legal combos'):
+            self.build()
+
     def test_determinism(self):
         self.assertEqual(self.build(), self.build())
 
