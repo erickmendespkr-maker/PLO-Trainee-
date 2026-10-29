@@ -1,0 +1,11 @@
+{
+  "variant": "PLO6",
+  "hero_cards": ["As", "Ks", "Qs", "Js", "Ts", "9s"],
+  "board_cards": ["2s", "3s", "4s"],
+  "opponent_model": {"kind": "uniform"},
+  "iterations": 2000,
+  "seed": 42,
+  "manual_review_confirmed": true,
+  "pot_now": 100,
+  "call_cost": 25
+}
