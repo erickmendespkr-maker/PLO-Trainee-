@@ -1,5 +1,7 @@
 """Synthetic tests for local frame gallery and human acknowledgement validation."""
 import copy
+import hashlib
+import subprocess
 import json
 from pathlib import Path
 import shutil
@@ -7,19 +9,46 @@ import tempfile
 import unittest
 
 import offline_audited_card_gallery as g
+import offline_manual_frame_snapshot_audit as audit
 
-DEMO = Path(__file__).resolve().parents[1] / 'demo'
 
-
+@unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
 class GalleryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.snap = self.root / 'frames'
-        shutil.copytree(DEMO / 'frame_audit', self.snap)
+        clip = self.root / 'clip.mp4'
+        subprocess.run(['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error',
+                        '-f', 'lavfi', '-i', 'color=c=blue:s=160x90:r=2:d=2',
+                        '-c:v', 'mpeg4', '-y', str(clip)], check=True, timeout=15)
+        def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+        binding = self.root / 'binding.json'
+        b = dict(schema_version=1,
+            analysis_status='offline_selected_action_roi_clip_identity_only',
+            hand_id='H4', table_id=4, variant='PLO5', proposal_index=2,
+            timestamp_seconds=0.5, reviewed_action_text='raise',
+            roi_png_sha256='a'*64, source_video_sha256='b'*64,
+            source_roi_ocr_report_sha256='c'*64, source_timeline_sha256='d'*64,
+            source_triage_sha256='e'*64, source_clip_attestation_sha256='f'*64,
+            clip_sha256=sha(clip), selected_action_to_replayed_roi_verified=True,
+            selected_action_to_source_video_and_clip_verified=True,
+            ocr_semantics_verified=False, actor_identified=False,
+            hands_reconstructed=False, ready_for_equity_or_ev=False)
+        binding.write_text(json.dumps(b))
         self.review = self.root / 'review.json'
-        shutil.copyfile(DEMO / 'browser_review.json', self.review)
+        cards = ['As', 'Ks', '2c', '3d', '4c', 'Qs', 'Js', 'Ts', '8d', '7c']
+        r = dict(schema_version=1, source_binding_sha256=sha(binding),
+            source_clip_sha256=sha(clip), hand_id='H4', table_id=4,
+            variant='PLO5', proposal_index=2, manual_cards_confirmed=True,
+            review_method='manual_video_frame_review',
+            review_notes='Synthetic review only, not verified cards.',
+            opponent_model={'kind':'uniform'}, iterations=2, seed=42,
+            hero_cards=cards[:5], board_cards=cards[5:],
+            card_frame_evidence=[{'card': c, 'clip_timestamp_seconds': 0.5} for c in cards])
+        self.review.write_text(json.dumps(r))
+        self.snap = self.root / 'frames'
+        audit.build(binding, clip, self.review, self.snap)
         self.manifest = self.snap / 'manifest.json'
         self.gallery = self.snap / 'gallery.html'
         self.confirmation = self.root / 'confirm.json'
@@ -47,7 +76,7 @@ class GalleryTests(unittest.TestCase):
     def test_verify_human_confirmation(self):
         self.write(self.payload())
         r = g.verify(self.snap, self.review, self.confirmation)
-        self.assertEqual(r['acknowledged_cards'], 11)
+        self.assertEqual(r['acknowledged_cards'], 10)
         self.assertFalse(r['card_visibility_machine_verified'])
         self.assertFalse(r['ocr_semantics_verified'])
 
