@@ -43,7 +43,7 @@ def build(doc):
           'untrusted timeline')
     for name in ('source_reviewed_report_sha256', 'source_boundaries_sha256'):
         check(type(doc.get(name)) is str and SHA.fullmatch(doc[name]), 'invalid source hash')
-    candidates, seen, count = [], set(), 0
+    candidates, seen, count, intervals = [], set(), 0, {i: [] for i in range(1, 5)}
     for hand in doc['hands']:
         check(type(hand) is dict and type(hand.get('hand_id')) is str
               and re.fullmatch(r'[A-Za-z0-9_-]{1,64}', hand['hand_id'])
@@ -61,6 +61,9 @@ def build(doc):
               and type(hand.get('unresolved_indices')) is list,
               'untrusted hand')
         seen.add(hand['hand_id'])
+        intervals[hand['table_id']].append((hand['start_seconds'], hand['end_seconds']))
+        check(all(type(i) is int and i >= 0 for i in hand['unresolved_indices']),
+              'invalid unresolved index')
         count += len(hand['events'])
         check(count <= 4000, 'too many events')
         used, last = set(), (-1, -1)
@@ -102,6 +105,17 @@ def build(doc):
                 'preview_end_seconds': min(t + 3, hand['end_seconds']),
                 'actor_identified': False, 'ready_for_equity_or_ev': False,
                 'clip_export_authorized': False})
+        for event in hand['events']:
+            if event['field'] == 'action':
+                expected = sorted((e for e in hand['events'] if e['field'] == 'bet'
+                                   and abs(e['timestamp_seconds'] - event['timestamp_seconds']) <= 2),
+                                  key=lambda e: (abs(e['timestamp_seconds'] - event['timestamp_seconds']),
+                                                 e['proposal_index']))
+                check(event['nearby_bet_proposal_indices'] ==
+                      [e['proposal_index'] for e in expected], 'forged bet proximity')
+    for spans in intervals.values():
+        spans.sort()
+        check(all(a[1] <= b[0] for a, b in zip(spans, spans[1:])), 'overlapping hands')
     candidates.sort(key=lambda c: (-c['review_priority_points'], c['table_id'],
                                    c['timestamp_seconds'], c['hand_id'], c['proposal_index']))
     return {'schema_version': 1, 'analysis_status': 'offline_human_review_triage_only',
