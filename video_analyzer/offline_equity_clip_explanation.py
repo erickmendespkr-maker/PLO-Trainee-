@@ -65,6 +65,15 @@ def render(report, clip_sha):
                    f'{ev["call_ev_incremental"]:+.3f} fichas. '
                    'Modelo terminal heads-up, sem rake ou apostas futuras; '
                    'não avalia a ação observada.</p>')
+    frame_count = report.get('card_frame_evidence_count', 0)
+    frame_claimed = report.get('card_frame_evidence_claimed_not_independently_verified', False)
+    require(type(frame_count) is int and 0 <= frame_count <= 11 and
+            type(frame_claimed) is bool and (frame_count > 0) == frame_claimed,
+            'invalid manual frame evidence metadata')
+    frame_html = (f'<p><strong>Quadros anotados pelo revisor:</strong> {frame_count} cartas. '
+                  'Os timestamps são declarações humanas, não verificação automática de cartas.</p>'
+                  if frame_claimed else
+                  '<p><strong>Quadros por carta:</strong> não informados nesta revisão.</p>')
     pct = lambda x: f'{100*x:.2f}%'
     # Static media basename: no user-controlled URL or JavaScript.
     return f'''<!doctype html>
@@ -86,6 +95,7 @@ small{{color:#4c5b69}}h1{{font-size:1.6rem}}h2{{font-size:1.2rem}}</style></head
 <p>Variante: {escape(str(result['variant']))}. Range adversário: {escape(model)}.
  Simulações: {iterations:,}. Semente: {seed}.</p>
 {ev_html}
+{frame_html}
 <p><strong>Limitações:</strong> sem confirmação independente de OCR, identidade do jogador,
  cartas digitadas, precisão do range ou qualidade estratégica da decisão.
  Não considera múltiplos adversários nem estratégia de apostas futuras.</p>
