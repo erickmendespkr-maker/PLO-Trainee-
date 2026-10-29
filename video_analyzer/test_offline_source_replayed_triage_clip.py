@@ -76,7 +76,7 @@ class SourceReplayedClipTests(unittest.TestCase):
         return link
 
     def invoke(self, output=None):
-        with mock.patch.object(mod, 'replay_audit', side_effect=self.audit), \\
+        with mock.patch.object(mod, 'replay_audit', side_effect=self.audit), \
              mock.patch.object(mod, 'export_triage_clip', side_effect=self.export):
             return mod.run(*self.inputs, 'H4', 42, output or self.out)
 
