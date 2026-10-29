@@ -20,3 +20,10 @@ Falta vídeo autorizado e anotado de 3–5 minutos para avaliar precisão de OCR
 
 ## Próximo ciclo
 Criar um conjunto sintético *consistente* em que a mesma proposta OCR, revisão, timeline, triagem, ROI reproduzida e clipe MP4 pertençam à mesma mão; executar teste de integração real e teste negativo de adulteração. Depois avançar no Monte Carlo Omaha PLO5/PLO6 com parâmetros e incerteza explícitos.
+
+## Verificação sintética adicional
+- Executei a auditoria FFmpeg real sobre a gravação sintética de oito segundos: três frames e três ROIs reproduzidos exatamente.
+- Construí uma revisão sintética coerente para a proposta 2 (ação revisada `raise`, mesa 4, timestamp 5 s), gerei um clipe MP4 local de quatro segundos com FFmpeg e executei o novo vínculo junto ao visualizador real. O JSON de vínculo foi criado com sucesso.
+- O manifesto e o atestado desse clipe foram **construídos manualmente para o ensaio**, e não pelo exportador completo. Portanto este resultado não é uma validação ponta a ponta do pipeline publicado.
+- Rejeições verificadas com FFmpeg real: índice 42 não presente na lista OCR e imagem ROI adulterada. Nenhum JSON de vínculo foi publicado nesses casos.
+- Os 80 testes selecionados passaram novamente após extração independente do ZIP contendo os arquivos de demonstração.
