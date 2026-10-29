@@ -14,7 +14,7 @@ python video_analyzer/offline_action_review_triage.py NEW_TIMELINE_JSON NEW_QUEU
 python -m pytest -q video_analyzer/test_offline_action_review_triage.py video_analyzer/test_offline_action_bet_timeline.py
 ```
 
-A fixture `synthetic_four_tables_review_fixture.json` está no repositório, com quatro mesas artificiais, duas PLO5 e duas PLO6. Os testes locais dos dois módulos totalizaram **46 aprovados** (16 novos e 30 regressões). Uma integração adicional com a saída sintética do módulo anterior gerou oito candidatos. Nenhum teste usa sessão real.
+A fixture `synthetic_four_tables_review_fixture.json` está no repositório, com quatro mesas artificiais, duas PLO5 e duas PLO6. Os testes locais dos dois módulos totalizaram **50 aprovados** (20 novos e 30 regressões). Uma integração adicional com a saída sintética do módulo anterior gerou oito candidatos. Nenhum teste usa sessão real.
 
 ## Limitações
 
