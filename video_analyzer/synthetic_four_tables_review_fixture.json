@@ -1,0 +1,268 @@
+{
+  "schema_version": 1,
+  "analysis_status": "offline_action_bet_evidence_only",
+  "hands_reconstructed": false,
+  "ready_for_equity_or_ev": false,
+  "confidence": "uncalibrated_ocr_review_not_probability",
+  "source_reviewed_report_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_boundaries_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "hands": [
+    {
+      "hand_id": "H1",
+      "table_id": 1,
+      "variant": "PLO5",
+      "start_seconds": 0,
+      "end_seconds": 20,
+      "events": [
+        {
+          "timestamp_seconds": 1,
+          "proposal_index": 10,
+          "field": "pot",
+          "value": "50.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 2,
+          "proposal_index": 11,
+          "field": "bet",
+          "value": "20.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 2.5,
+          "proposal_index": 12,
+          "field": "action",
+          "value": "raise",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown",
+          "nearby_bet_proposal_indices": [
+            11
+          ],
+          "actor_identified": false,
+          "action_legality_verified": false
+        },
+        {
+          "timestamp_seconds": 6,
+          "proposal_index": 13,
+          "field": "pot",
+          "value": "80.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 7,
+          "proposal_index": 14,
+          "field": "action",
+          "value": "call",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown",
+          "nearby_bet_proposal_indices": [],
+          "actor_identified": false,
+          "action_legality_verified": false
+        }
+      ],
+      "unresolved_indices": [],
+      "warnings": [
+        "no_visible_board"
+      ],
+      "actor_and_betting_sequence_verified": false,
+      "ready_for_equity_or_ev": false,
+      "status": "requires_manual_action_and_bet_reconstruction"
+    },
+    {
+      "hand_id": "H2",
+      "table_id": 2,
+      "variant": "PLO6",
+      "start_seconds": 0,
+      "end_seconds": 20,
+      "events": [
+        {
+          "timestamp_seconds": 1,
+          "proposal_index": 20,
+          "field": "pot",
+          "value": "50.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 2,
+          "proposal_index": 21,
+          "field": "bet",
+          "value": "20.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 2.5,
+          "proposal_index": 22,
+          "field": "action",
+          "value": "raise",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown",
+          "nearby_bet_proposal_indices": [
+            21
+          ],
+          "actor_identified": false,
+          "action_legality_verified": false
+        },
+        {
+          "timestamp_seconds": 6,
+          "proposal_index": 23,
+          "field": "pot",
+          "value": "80.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 7,
+          "proposal_index": 24,
+          "field": "action",
+          "value": "call",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown",
+          "nearby_bet_proposal_indices": [],
+          "actor_identified": false,
+          "action_legality_verified": false
+        }
+      ],
+      "unresolved_indices": [],
+      "warnings": [
+        "no_visible_board"
+      ],
+      "actor_and_betting_sequence_verified": false,
+      "ready_for_equity_or_ev": false,
+      "status": "requires_manual_action_and_bet_reconstruction"
+    },
+    {
+      "hand_id": "H3",
+      "table_id": 3,
+      "variant": "PLO5",
+      "start_seconds": 0,
+      "end_seconds": 20,
+      "events": [
+        {
+          "timestamp_seconds": 1,
+          "proposal_index": 30,
+          "field": "pot",
+          "value": "50.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 2,
+          "proposal_index": 31,
+          "field": "bet",
+          "value": "20.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 2.5,
+          "proposal_index": 32,
+          "field": "action",
+          "value": "raise",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown",
+          "nearby_bet_proposal_indices": [
+            31
+          ],
+          "actor_identified": false,
+          "action_legality_verified": false
+        },
+        {
+          "timestamp_seconds": 6,
+          "proposal_index": 33,
+          "field": "pot",
+          "value": "80.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 7,
+          "proposal_index": 34,
+          "field": "action",
+          "value": "call",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown",
+          "nearby_bet_proposal_indices": [],
+          "actor_identified": false,
+          "action_legality_verified": false
+        }
+      ],
+      "unresolved_indices": [],
+      "warnings": [
+        "no_visible_board"
+      ],
+      "actor_and_betting_sequence_verified": false,
+      "ready_for_equity_or_ev": false,
+      "status": "requires_manual_action_and_bet_reconstruction"
+    },
+    {
+      "hand_id": "H4",
+      "table_id": 4,
+      "variant": "PLO6",
+      "start_seconds": 0,
+      "end_seconds": 20,
+      "events": [
+        {
+          "timestamp_seconds": 1,
+          "proposal_index": 40,
+          "field": "pot",
+          "value": "50.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 2,
+          "proposal_index": 41,
+          "field": "bet",
+          "value": "20.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 2.5,
+          "proposal_index": 42,
+          "field": "action",
+          "value": "raise",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown",
+          "nearby_bet_proposal_indices": [
+            41
+          ],
+          "actor_identified": false,
+          "action_legality_verified": false
+        },
+        {
+          "timestamp_seconds": 6,
+          "proposal_index": 43,
+          "field": "pot",
+          "value": "80.00",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown"
+        },
+        {
+          "timestamp_seconds": 7,
+          "proposal_index": 44,
+          "field": "action",
+          "value": "call",
+          "review": "confirmed",
+          "board_phase_evidence": "street_unknown",
+          "nearby_bet_proposal_indices": [],
+          "actor_identified": false,
+          "action_legality_verified": false
+        }
+      ],
+      "unresolved_indices": [],
+      "warnings": [
+        "no_visible_board"
+      ],
+      "actor_and_betting_sequence_verified": false,
+      "ready_for_equity_or_ev": false,
+      "status": "requires_manual_action_and_bet_reconstruction"
+    }
+  ],
+  "warning": "Synthetic evidence-only data; not a real poker session."
+}
