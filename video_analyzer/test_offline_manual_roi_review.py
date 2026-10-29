@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,10 +10,27 @@ import offline_manual_roi_review as m
 import offline_four_table_visual_timeline as core
 
 
+@unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
 class TestROIReview(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture_dir = tempfile.TemporaryDirectory()
+        cls.fixture = Path(cls.fixture_dir.name) / 'synthetic_four_tables.mp4'
+        filters = ','.join(
+            f"drawbox=x={x}:y={y}:w=160:h=96:color=white:t=fill:enable='gte(t,{time})'"
+            for x, y, time in [(0, 0, 2), (160, 0, 4), (0, 96, 6), (160, 96, 8)])
+        subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y',
+                        '-f', 'lavfi', '-i', 'color=c=black:s=320x192:r=5:d=12',
+                        '-vf', filters, '-c:v', 'mpeg4', '-q:v', '2', '-an', str(cls.fixture)],
+                       check=True, capture_output=True, timeout=25)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fixture_dir.cleanup()
+
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
-        self.video = Path(__file__).with_name('synthetic_four_tables.mp4')
+        self.video = self.fixture
         self.config = {'schema_version': 1, 'tables': [
             {'table_id': f'table_{i+1}', 'normalized_rect': rect}
             for i, rect in enumerate(([0, 0, .5, .5], [.5, 0, .5, .5],
