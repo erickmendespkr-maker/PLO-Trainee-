@@ -19,6 +19,7 @@ from offline_conditional_ev_sensitivity import build as build_sensitivity
 from offline_equity_clip_explanation import render as render_equity
 from offline_plo_equity_monte_carlo import read_json, require
 from offline_reviewed_equity_clip_report import digest, safe_file
+from offline_range_blocker_audit import audit as audit_ranges
 
 
 CONFIG_FIELDS = {'schema_version', 'pot_now', 'call_cost', 'raise_extra',
@@ -43,6 +44,8 @@ def build(report, config, clip_sha, report_sha, assumptions_sha):
               'hero_cards': equity['hero_cards'].copy(),
               'board_cards': equity['board_cards'].copy(),
               'manual_review_confirmed': True}
+    range_audit = audit_ranges(equity['variant'], common['hero_cards'],
+                               common['board_cards'], hypotheses)
     scenarios = []
     for h in hypotheses:
         require(type(h) is dict and set(h) == HYPOTHESIS_FIELDS,
@@ -68,11 +71,33 @@ def build(report, config, clip_sha, report_sha, assumptions_sha):
         'source_assumptions_sha256': assumptions_sha,
         'source_clip_sha256': clip_sha,
         'source_hand_id': report['hand_id'],
+        'range_blocker_audit': range_audit,
         'cards_copied_from_human_acknowledged_report': True,
         'source_frame_audit_rerun': False,
         'assumptions_and_ranges_not_observed': True,
     })
     html = render_html(report, result, clip_sha)
+    # Only numeric counts and fixed digests are inserted, never raw combo text.
+    audit_lines = ['<section aria-label="Auditoria dos ranges">',
+                   '<h2>Bloqueadores de cartas nos ranges hipotéticos</h2>',
+                   '<p>Combinações incompatíveis com cartas declaradas são removidas '
+                   'e os pesos restantes renormalizados. Isto não valida os ranges.</p>']
+    for i, row in enumerate(range_audit['rows'], 1):
+        for role in ('call', 'raise_called'):
+            info = row[role]
+            if info['kind'] == 'uniform':
+                detail = 'uniforme; cartas visíveis excluídas'
+            else:
+                detail = (f"{info['eligible_combos']} elegíveis de {info['supplied_combos']}; "
+                          f"{info['blocked_combos']} bloqueadas; "
+                          f"{info['blocked_weight_fraction']:.1%} do peso removido")
+            audit_lines.append(f'<p>Hipótese {i}, {role}: {detail}; '
+                               f"SHA-256 do modelo: {info['model_sha256']}.</p>")
+        if row['warning']:
+            audit_lines.append('<p>Ranges condicionais sem combinações legais em comum; '
+                               'isto não comprova comportamento adversário.</p>')
+    audit_lines.append('</section>')
+    html = html.replace('</main>', ''.join(audit_lines) + '</main>')
     # Only fixed SHA-256 digests and the already validated hand ID enter this
     # section; the full user-provided assumptions never enter raw HTML.
     provenance = ('<section aria-label="Proveniência das hipóteses">'
