@@ -10,6 +10,7 @@ import argparse
 from html import escape
 import json
 import math
+import re
 from pathlib import Path
 
 from offline_plo_equity_monte_carlo import read_json, require
@@ -17,8 +18,11 @@ from offline_reviewed_equity_clip_report import digest, safe_file
 
 
 def render(report, clip_sha):
-    require(type(report) is dict and report.get('schema_version') == 1 and
-            report.get('analysis_status') == 'offline_conditional_manual_cards_equity_not_action_grade',
+    require(type(report) is dict and report.get('schema_version') == 1,
+            'invalid conditional equity report')
+    status = report.get('analysis_status')
+    acknowledged = status == 'offline_conditional_equity_after_human_frame_acknowledgement'
+    require(acknowledged or status == 'offline_conditional_manual_cards_equity_not_action_grade',
             'invalid conditional equity report')
     require(report.get('source_clip_sha256') == clip_sha,
             'report does not match clip')
@@ -70,10 +74,40 @@ def render(report, clip_sha):
     require(type(frame_count) is int and 0 <= frame_count <= 11 and
             type(frame_claimed) is bool and (frame_count > 0) == frame_claimed,
             'invalid manual frame evidence metadata')
-    frame_html = (f'<p><strong>Quadros anotados pelo revisor:</strong> {frame_count} cartas. '
-                  'Os timestamps são declarações humanas, não verificação automática de cartas.</p>'
-                  if frame_claimed else
-                  '<p><strong>Quadros por carta:</strong> não informados nesta revisão.</p>')
+    if acknowledged:
+        hashes = ('source_snapshot_manifest_sha256', 'source_gallery_confirmation_sha256')
+        require(all(type(report.get(k)) is str and
+                    re.fullmatch(r'[0-9a-f]{64}', report[k]) for k in hashes),
+                'missing or invalid gallery provenance hashes')
+        expected_count = len(result.get('hero_cards', [])) + len(result.get('board_cards', []))
+        require(type(result.get('hero_cards')) is list and
+                len(result['hero_cards']) == (5 if result['variant'] == 'PLO5' else 6) and
+                type(result.get('board_cards')) is list and
+                3 <= len(result['board_cards']) <= 5 and
+                report.get('human_snapshot_acknowledgement_validated') is True and
+                type(report.get('human_acknowledged_cards')) is int and
+                report['human_acknowledged_cards'] == expected_count == frame_count and
+                frame_claimed is True and
+                report.get('card_visibility_machine_verified') is False and
+                report.get('decoded_frame_pts_verified') is False and
+                report.get('reviewed_cards_are_human_assertions') is True and
+                report.get('source_video_replay_audit_rerun') is False,
+                'invalid or overstated human frame acknowledgement')
+        frame_html = (f'<p><strong>Confirmação humana registrada:</strong> {frame_count} cartas '
+                      'associadas a quadros extraídos, com hashes SHA-256 no relatório. '
+                      'A página não reexecuta a auditoria dos PNGs ou do registro de confirmação. '
+                      'Não há prova automática de visibilidade das cartas nem validação do PTS exato.</p>')
+    else:
+        # Legacy reports must not silently assert a completed gallery review.
+        require(not any(k in report for k in (
+            'human_snapshot_acknowledgement_validated',
+            'source_gallery_confirmation_sha256',
+            'source_snapshot_manifest_sha256')),
+            'legacy report cannot claim gallery acknowledgement')
+        frame_html = (f'<p><strong>Quadros anotados pelo revisor:</strong> {frame_count} cartas. '
+                      'Os timestamps são declarações humanas, não verificação automática de cartas.</p>'
+                      if frame_claimed else
+                      '<p><strong>Quadros por carta:</strong> não informados nesta revisão.</p>')
     pct = lambda x: f'{100*x:.2f}%'
     # Static media basename: no user-controlled URL or JavaScript.
     return f'''<!doctype html>
@@ -88,7 +122,7 @@ small{{color:#4c5b69}}h1{{font-size:1.6rem}}h2{{font-size:1.2rem}}</style></head
 <body><main><h1>Revisão offline — {escape(str(report['variant']))} / mão {escape(hand)}</h1>
 <p class="warning"><strong>Não é avaliação da jogada.</strong> A ação OCR “{escape(action)}”
  não foi atribuída com segurança ao jogador. Cartas foram declaradas em revisão manual,
- sem verificação independente. Ranges são hipóteses; o IC cobre somente a amostragem.</p>
+ sem verificação automática da visibilidade. Ranges são hipóteses; o IC cobre somente a amostragem.</p>
 <video controls preload="metadata" src="clip.mp4" aria-label="Corte MP4 revisado"></video>
 <h2>Equity condicional: {pct(equity)}</h2>
 <p>Intervalo aproximado de 95% (somente Monte Carlo): {pct(ci[0])}–{pct(ci[1])}.</p>
