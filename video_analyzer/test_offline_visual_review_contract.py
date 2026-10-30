@@ -1,14 +1,15 @@
 """Synthetic file-identity and ROI-contract tests (no poker inference)."""
 import copy
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE / 'baseline'))
-sys.path.insert(0, str(HERE))
+if (HERE / "baseline").is_dir():
+    sys.path.insert(0, str(HERE / "baseline"))
 import offline_visual_review_contract as contract
 import offline_four_table_visual_timeline as core
 
@@ -18,11 +19,20 @@ class ContractTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
-        self.video = HERE / 'baseline' / 'synthetic_four_tables.mp4'
-        self.timeline = json.loads((HERE / 'baseline' / 'demo_timeline.json').read_text())
+        self.video = self.base / 'synthetic.mp4'
+        subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y',
+            '-f', 'lavfi', '-i', 'color=c=black:s=320x192:r=1:d=2',
+            '-f', 'lavfi', '-i', 'color=c=white:s=320x192:r=1:d=4',
+            '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0',
+            '-c:v', 'mpeg4', '-q:v', '3', str(self.video)],
+            check=True, timeout=30)
         self.rois = {'schema_version': 1, 'tables': [
-            {'table_id': t['table_id'], 'normalized_rect': t['normalized_rect']}
-            for t in self.timeline['tables']]}
+            {'table_id': f'table_{i+1}', 'normalized_rect': r}
+            for i, r in enumerate(([0,0,.5,.5],[.5,0,.5,.5],
+                                    [0,.5,.5,.5],[.5,.5,.5,.5]))]}
+        import offline_manual_roi_review as review
+        self.timeline = review.custom_timeline(self.video, self.rois)
+        self.assertTrue(self.timeline['tables'][0]['candidate_windows'])
         self.decisions = {'schema_version': 1, 'video_sha256': self.timeline['video_sha256'],
                           'reviews': [{'table_id': 'table_1', 'candidate_index': 0,
                                        'decision': 'confirmed_hand', 'hand_id': 'H001',
