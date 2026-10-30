@@ -153,7 +153,7 @@ class GalleryTests(unittest.TestCase):
 
     def test_wrong_video_hash_rejected(self):
         self.attachments()
-        self.change(self.root/'H001.ack.json', lambda d: d.update({'source_video_sha256_claim_from_binding': 'a'*64}))
+        self.change(self.root/'H001.ack.json', lambda d: d.update({'source_video_sha256_claim_from_binding': 'b'*64}))
         with self.assertRaisesRegex(ValueError, 'unbound'):
             gallery.build(self.root, 'attachments.json')
 
