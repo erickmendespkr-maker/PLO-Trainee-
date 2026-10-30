@@ -52,7 +52,7 @@ class TimelineTests(unittest.TestCase):
         clip = folder/(hand+'.mp4')
         # Actual FFmpeg video; no claims of visual poker recognition.
         subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i',
-                        'color=c=blue:s=64x64:d=1','-c:v','mpeg4','-y',str(clip)],
+                        'color=c=blue:s=64x64:d=4','-c:v','mpeg4','-y',str(clip)],
                        check=True, capture_output=True)
         digest = timeline.gallery.sha(clip)
         side = {'schema_version':1, 'analysis_status':'manually_selected_offline_clip',
