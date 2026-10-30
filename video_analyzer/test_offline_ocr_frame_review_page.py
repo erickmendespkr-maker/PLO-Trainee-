@@ -105,6 +105,12 @@ class OfflineReviewPageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unbound frame'):
             review.build(self.folder, self.worksheet_path)
 
+    def test_frame_timestamp_outside_hand_rejected(self):
+        self.manifest['frames'][0]['pts_seconds'] = 8
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'outside reviewed hand'):
+            review.build(self.folder, self.worksheet_path)
+
     def test_tampered_png_rejected(self):
         (self.folder/'frame_001.png').write_bytes(b'not png')
         with self.assertRaisesRegex(ValueError, 'altered frame'):
