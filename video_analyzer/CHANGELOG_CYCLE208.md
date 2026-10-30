@@ -3,20 +3,20 @@
 Escopo: gravações PLO5/PLO6 e revisão assíncrona, sem integração com poker real, adversários de IA, jogo ao vivo ou apostas.
 
 ## Entregue
-- \`offline_session_bundle.py\`: exporta um ZIP novo e portátil contendo somente MP4 de cortes revisados, sidecars, manifesto de cortes, relatórios condicionais anexados (quando fornecidos), \`index.html\` regenerado e inventário SHA-256/tamanho de cada arquivo.
+- `offline_session_bundle.py`: exporta um ZIP novo e portátil contendo somente MP4 de cortes revisados, sidecars, manifesto de cortes, relatórios condicionais anexados (quando fornecidos), `index.html` regenerado e inventário SHA-256/tamanho de cada arquivo.
 - O vídeo original **não é incluído**. O SHA-256 de origem é uma *declaração vinculada* à revisão, não prova da identidade de uma sessão real.
-- O comando \`verify\` confere os membros do ZIP, rejeita duplicações, caminhos perigosos, arquivos inesperados, inconsistências de hashes e de metadados. Reexecuta a validação semântica da galeria e compara o HTML com a renderização dos dados validados.
+- O comando `verify` confere os membros do ZIP, rejeita duplicações, caminhos perigosos, arquivos inesperados, inconsistências de hashes e de metadados. Reexecuta a validação semântica da galeria e compara o HTML com a renderização dos dados validados.
 - Sem sobrescrita; arquivos simbólicos são rejeitados; exportação interrompida elimina ZIP parcial; limites de 1 GiB por arquivo, 4 GiB descompactados e 406 arquivos.
 - A verificação comprova **consistência interna**, não autenticidade externa, qualidade do OCR, identidade de jogador ou acerto estratégico.
 
 ## Comandos
 
-\`\`\`bash
+```bash
 python video_analyzer/offline_session_bundle.py export clips session.zip auto_attachments.json
 python video_analyzer/offline_session_bundle.py verify session.zip
-\`\`\`
+```
 
-\`auto_attachments.json\` é opcional. Sem ele, o ZIP declara explicitamente que não há análises matemáticas anexadas.
+`auto_attachments.json` é opcional. Sem ele, o ZIP declara explicitamente que não há análises matemáticas anexadas.
 
 ## Testes locais
 - 14 testes novos e 27 regressões dos módulos de galeria/associação: **41/41 aprovados** (unittest), com dados sintéticos.
