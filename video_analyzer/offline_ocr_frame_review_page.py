@@ -151,9 +151,12 @@ def build(directory, worksheet_path):
                                  'can_accept_after_human_review': exact})
         hands.append({'hand_id': hand['hand_id'], 'table_id': hand['table_id'],
                       'observations': observations})
-    require(all(frame['hand_id'] in seen_hands and any(
-            hand['hand_id'] == frame['hand_id'] and hand['table_id'] == frame['table_id']
-            for hand in hands) for frame in frames), 'unbound frame hand/table')
+    hand_index = {(h['hand_id'], h['table_id']): h for h in worksheet['hands']}
+    for frame in frames:
+        source = hand_index.get((frame['hand_id'], frame['table_id']))
+        require(source is not None, 'unbound frame hand/table')
+        require(source['start_seconds'] <= frame['pts_seconds'] < source['end_seconds'],
+                'frame timestamp outside reviewed hand')
     return {'schema_version': 1, 'status': 'offline_ocr_human_review_ui_unconfirmed',
             'source_video_sha256': manifest['source_video_sha256'],
             'source_plan_sha256': manifest['source_plan_sha256'],
