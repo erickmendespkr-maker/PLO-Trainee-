@@ -23,7 +23,7 @@ Local command: python -m unittest discover -p 'test_offline_*.py'
 
 Result: 179 tests passed, including 20 new tests, using the source/test snapshot from Cycle 218 and the two new files. Git hashes of prior queue and portable bundle matched their GitHub branch blobs before testing.
 
-Tests are synthetic. No OCR engine was invoked, no actual cards or actions were recognized from video, and no Windows or 40–60 minute real-session test was performed.
+Tests are synthetic. A separate FFmpeg + Tesseract smoke test extracted four artificial card labels (As, Kd, Qh, Jc) from a generated 3-second, four-quadrant MP4 and read 4/4 correctly. Raw Tesseract confidences were retained as uncalibrated proposals; zero hands were made eligible for equity. No real poker video, Windows, or 40–60 minute session was tested.
 
 ## Blockers and limitations
 
