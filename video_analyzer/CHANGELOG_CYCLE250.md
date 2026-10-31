@@ -21,8 +21,8 @@ python video_analyzer/offline_street_human_review.py VIDEO.mp4 OBSERVATIONS.json
 ## Testes locais do ciclo
 
 - 1 teste sintético novo para o draft, incluindo FFmpeg, SHA-256, rejeição de `pending`, confirmação explícita e recusa de colisão.
-- 12 testes novos de protótipo de formulário HTML offline (ainda **não publicado no repositório**): validação, CSP, escape de dados, colisões, adulteração, sintaxe Node, fluxos Chromium/Playwright e validação do JSON exportado pelo backend.
-- 89 testes selecionados passaram após extração independente: 13 novos (12 de formulário e 1 de draft) e 76 execuções de regressão. Não equivalem à suíte integral.
+- 14 testes novos de protótipo de formulário HTML offline (ainda **não publicado no repositório**): validação, CSP, escape de dados, colisões, adulteração, sintaxe Node, fluxos Chromium/Playwright e validação do JSON exportado pelo backend.
+- 91 testes selecionados passaram após extração independente: 15 novos (14 de formulário e 1 de draft) e 76 execuções de regressão. Não equivalem à suíte integral.
 - O Chromium validou o formulário via `page.set_content`; abertura direta `file://` não foi testável neste ambiente por bloqueio administrativo.
 - Testes com gravações reais e duração de 40–60 minutos continuam pendentes.
 
