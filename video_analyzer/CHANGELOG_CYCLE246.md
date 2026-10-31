@@ -10,20 +10,22 @@ Somente gravações PLO5/PLO6 offline, até quatro mesas. Não há assistência 
 - Reaproveita a validação estrita do lote anterior: SHA-256 de vídeo, revisão, lote, clipes e relatórios; verificação de timestamps, geometrias, identidade declarada e autorização humana **declarada**.
 - MP4 individuais com overlay explícito de incerteza, metadados por trecho, hash e rollback de arquivos criados em caso de falha.
 - `test_offline_temporal_split_clips.py`: 12 testes novos, com geração real FFmpeg e verificação FFprobe; executados junto a 19 testes herdados da classe de regressão.
+- `offline_temporal_split_overview.py`: gera índice HTML offline com quatro MP4, tempos omitidos, bloqueios e links para metadados, validando novamente entradas, hashes, plano e proveniência antes de publicar.
+- `test_offline_temporal_split_overview.py`: 7 testes novos de índice HTML, integridade e adulteração.
 
 ## Como executar
 ```bash
 python video_analyzer/offline_temporal_split_clips.py VIDEO.mp4 BATCH_DIR TEMPORAL_REVIEW.json EMPTY_OUTPUT_DIR
 cd video_analyzer
-python -m unittest -v test_offline_temporal_split_clips.TemporalSplitTests
+python -m unittest -v test_offline_temporal_split_clips.TemporalSplitTests test_offline_temporal_split_overview.SplitOverviewTests
 ```
 
 ## Evidência sintética local
-- 31 testes selecionados aprovados (12 novos + 19 herdados).
+- 57 testes selecionados aprovados (12 novos de cortes + 7 novos de HTML + 38 execuções herdadas de regressão).
 - Vídeo sintético de 6 s com quatro quadrantes e duas geometrias temporais.
 - Quatro MP4 exportados (duas decisões inteiramente seguras e uma decisão atravessando transição dividida em dois trechos); uma decisão próxima da transição bloqueada.
 - Transição em 3,0 s: o intervalo 2,75–3,25 s é **omitido e declarado**, não analisado.
-- SHA-256 e dimensões dos quatro MP4 conferidos; resultados **não** são avaliações de mãos reais.
+- SHA-256 e dimensões dos quatro MP4 conferidos; relatório HTML offline gerado e testado contra alterações indevidas; resultados **não** são avaliações de mãos reais.
 
 ## Limitações
 - Geometria, identidade das mesas, cartas, ações, ranges e EV não foram validados com gravações reais. Revisão humana é representada por declaração no JSON sintético.
