@@ -14,7 +14,7 @@ python video_analyzer/offline_reviewed_clip_manifest.py \
 Execute primeiro os validadores originais de evidências, revisão humana, índice e exportação de MP4. O novo módulo confere os vínculos entre os dois relatórios, SHA-256 de cada MP4, nomes de arquivos, identidade de mesa/mão, timestamps e integridade básica do JSON. O HTML usa caminhos relativos ao diretório dos clipes. Arquivos originais não são modificados; publicação dos dois arquivos é revertida se falhar.
 
 ## Testes executados no ambiente local (31/10/2026)
-`python -m unittest -v test_offline_reviewed_clip_manifest.py`: **21 testes aprovados** em 2,398 s. Testes sintéticos abrangem quatro mesas, correção/rejeição, navegação HTML, integridade SHA-256, conflitos de proveniência, arquivos adulterados, traversal, symlinks, chaves JSON duplicadas, colisões e rollback. Demonstração independente gerou quatro MP4 sintéticos com FFmpeg e confirmou duração de 1,000 s por arquivo com FFprobe.
+`python -m unittest -v test_offline_reviewed_clip_manifest.py`: **26 testes aprovados** em 3,509 s. Testes sintéticos abrangem PLO5/PLO6, quatro mesas, correção/rejeição, navegação HTML, integridade SHA-256, conflitos de proveniência, arquivos adulterados, traversal, symlinks, chaves JSON duplicadas, colisões e rollback. Demonstração independente gerou quatro MP4 sintéticos com FFmpeg e confirmou duração de 1,000 s por arquivo com FFprobe.
 
 ## Limitações e bloqueios
 - A união de relatórios é **apenas navegação**. Não reexecuta integralmente os validadores de origem; execute-os antes de confiar na proveniência. O manifesto não prova que a mão/mesa foi identificada corretamente.
