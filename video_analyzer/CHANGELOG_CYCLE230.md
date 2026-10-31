@@ -9,12 +9,12 @@ Escopo: `docs/VIDEO_ANALYZER_SCOPE.md`. Somente vídeos gravados; nenhuma mesa j
 - Revisão por mão, mesa, campo e posição; cada imagem mostra timestamp e SHA-256.
 - Três avaliações: incerto, não visível, ou visível segundo o revisor. A terceira só aparece quando existe quadro vinculado.
 - Exporta JSON de rascunho com hashes de proveniência, observações e comentários. O rascunho é **não autenticado** e mantém `math_ready=false`, `eligible_for_equity=0`, `equity_or_ev_calculated=false`.
-- Escape de dados JSON contra quebra de `<script>`; política CSP sem conexões externas; não sobrescreve arquivo de saída.
+- Escape de dados JSON contra quebra de `<script>`; política CSP sem conexões externas; não sobrescreve arquivo de saída; revalida o hash do PNG antes de incorporá-lo.
 
 ## Testes locais (sem GitHub Actions)
 
-- 6 testes novos para o módulo publicado e 164 testes anteriores selecionados: **170/170** para esse conjunto.
-- Foi testado adicionalmente um protótipo mais estrito, não publicado no GitHub neste ciclo, com 20 testes, totalizando **190/190** testes locais do diretório de trabalho.
+- 7 testes novos para o módulo publicado e 164 testes anteriores selecionados: **171/171** para esse conjunto.
+- Foi testado adicionalmente um protótipo mais estrito, não publicado no GitHub neste ciclo, com 20 testes, totalizando **191/191** testes locais do diretório de trabalho.
 - Chromium em memória: página renderizada, imagem carregada, opção selecionada, JSON baixado e validado; zero erros JavaScript.
 - `file://` foi bloqueado pela política do Chromium no ambiente de testes. Isso não prova funcionamento direto no Windows.
 
