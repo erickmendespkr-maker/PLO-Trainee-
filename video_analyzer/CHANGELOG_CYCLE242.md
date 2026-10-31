@@ -6,6 +6,7 @@ Scope: `docs/VIDEO_ANALYZER_SCOPE.md`; recorded PLO5/PLO6 only. No live poker ac
 - `offline_table_region_corrections.py`: create a draft JSON from an unverified FFmpeg proposal; after explicit human review, accept corrected coordinates and a written reason. The proposal is revalidated by recomputing its sampled evidence against the exact video, preview and proposal hashes.
 - Apply checks stable table IDs/order, 1–4 regions, even dimensions, in-frame bounds, no overlap, a meaningful change, a reviewer note, and an explicit `--confirm-reviewed` gate.
 - Produce a crop-exporter-compatible `manual_layout.json`, `correction_audit.json` with before/after coordinates and SHA-256 links, and `corrected_preview.png`. Reject output collisions and symlinks; clean up partially published files on failure.
+- `test_offline_table_correction_crop_integration.py`: 1 synthetic end-to-end test for corrected layout -> four MP4 -> HTML.
 - `test_offline_table_region_corrections.py`: 15 synthetic tests for accepted correction, provenance, invalid geometry, forged JSON, output protection and confirmation.
 
 ## Usage
@@ -20,7 +21,7 @@ python video_analyzer/offline_table_region_corrections.py apply recording.mp4 re
 
 ## Local verification
 - 15/15 new synthetic tests passed with FFmpeg/FFprobe on Linux.
-- 35/35 selected tests passed (15 new, 19 prior proposal tests, 1 prior proposal-to-crop integration test).
+- 35/35 selected tests passed (15 new correction tests, 19 prior proposal tests, 1 prior proposal-to-crop integration test). The additional new corrected-layout integration test passed separately (1/1). A subsequent combined 36-test run timed out before completion and is not counted as passed.
 - Additional synthetic integration exercised corrected layout -> four cropped MP4 -> combined HTML with eight video elements; one correction recorded. Confirmation was **simulated in tests**, not performed by a person.
 - GitHub-published Python source and tests matched the local tested Git blob hashes.
 
