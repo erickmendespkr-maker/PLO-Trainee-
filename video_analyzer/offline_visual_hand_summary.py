@@ -103,7 +103,7 @@ def build(reviewed, visual, reviewed_sha, visual_sha):
                 hand.get('math_ready') is False and hand.get('eligible_for_equity') is False,
                 'invalid reviewed hand')
         identity = (hand['hand_id'], hand['table_id'])
-        require(identity not in {(h['hand_id'], h['table_id']) for h in hands}, 'duplicate reviewed hand')
+        require(hand['hand_id'] not in {h['hand_id'] for h in hands}, 'duplicate reviewed hand')
         tables.add(hand['table_id'])
         streets = {s: {'fields': 0, 'declared': 0, 'seen_unverified': 0, 'uncertain': 0, 'not_visible': 0} for s in STREETS}
         fields = []
@@ -144,6 +144,16 @@ def build(reviewed, visual, reviewed_sha, visual_sha):
         blockers = ['video_content_not_independently_verified', 'opponent_ranges_not_supplied']
         if variant not in ('PLO5', 'PLO6'):
             blockers.append('variant_not_confirmed')
+        hero_slots = {x['slot'] for x in fields if x['field'] == 'hero_card'}
+        board_slots = {x['slot'] for x in fields if x['field'] == 'board_card'}
+        needed = 5 if variant == 'PLO5' else 6 if variant == 'PLO6' else None
+        if needed is not None and hero_slots != set(range(needed)):
+            blockers.append('hero_cards_incomplete')
+        if not {0, 1, 2}.issubset(board_slots):
+            blockers.append('flop_cards_incomplete')
+        for name in ('action', 'pot', 'stack'):
+            if not any(x['field'] == name for x in fields):
+                blockers.append(name + '_not_confirmed')
         if len(declared_cards) != len(set(declared_cards)):
             blockers.append('duplicate_declared_card')
         if any(x['visual_status_unverified'] != 'seen_by_reviewer' for x in fields):
