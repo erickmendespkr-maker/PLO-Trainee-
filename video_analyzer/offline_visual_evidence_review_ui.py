@@ -50,7 +50,7 @@ def render(packet):
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'">
 <title>PLO Trainee - Revisão visual</title>
 <style>body{font:16px system-ui;background:#101827;color:#e9eef8;max-width:1000px;margin:auto;padding:24px}
-article{border:1px solid #40546b;border-radius:12px;padding:16px 0}img{max-width:100%;border-radius:6px}
+article{border:1px solid #40546b;border-radius:12px;padding:16px;margin:16px 0}img{max-width:100%;border-radius:6px}
 figure{margin:8px 0}figcaption{font-size:12px;overflow-wrap:anywhere}select,button,textarea{padding:9px;font:inherit}
 textarea{display:block;width:95%;height:48px;margin:10px 0}button{cursor:pointer}</style>
 <h1>Revisão visual de evidências — PLO5/PLO6</h1>
