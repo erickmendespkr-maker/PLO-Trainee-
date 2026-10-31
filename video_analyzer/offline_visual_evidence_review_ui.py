@@ -19,7 +19,9 @@ def build(ocr_path, reconstruction_path, reviewed_path, frames_dir):
     frames = {}
     for row in manifest['frames']:
         file = Path(frames_dir) / row['frame']
-        # audit.build already checked file bytes, PNG format, SHA and symlink safety.
+        # Recheck immediately before embedding: inputs may change after the audit.
+        audit.require(file.is_file() and not file.is_symlink() and
+                      review.digest(file) == row['frame_sha256'], 'frame changed after audit')
         frames[(row['hand_id'], row['table_id'], row['frame_sha256'])] = (
             'data:image/png;base64,' + base64.b64encode(file.read_bytes()).decode('ascii'))
     require = audit.require
