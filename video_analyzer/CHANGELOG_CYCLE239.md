@@ -49,3 +49,10 @@ Local selected tests: **17/17 passed** on Linux with installed FFmpeg/FFprobe, i
 - Crop output has its own ledger; it is not yet linked into the existing `session_overview.html`.
 - Video authenticity, OCR accuracy, Windows compatibility, 40–60 minute throughput and end-to-end session reconstruction are unverified.
 - Next: add read-only offline crop overview, then table region tracking and calibration against an authorized annotated recording.
+
+
+## Additional integration — read-only crop overview
+- `offline_ev_table_crop_overview.py` validates the crop batch ledger, each MP4 digest, per-clip metadata, source-video/layout provenance and the no-automatic-OCR flag before writing `crop_overview.html` with local MP4 playback links.
+- `test_offline_ev_table_crop_overview.py` adds five synthetic tests for four video links, output collisions, tampered clips/metadata and OCR authorization tampering.
+- Run: `python video_analyzer/offline_ev_table_crop_overview.py cropped` after the crop exporter.
+- Updated local verification: **22/22 selected tests passed** (17 crop/pixel tests + 5 HTML tests); not the full repository suite.
