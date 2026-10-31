@@ -35,6 +35,17 @@ class VisualReviewUiTests(unittest.TestCase):
         self.fx.frame_file.write_bytes(b'altered')
         with self.assertRaises(ValueError): self.packet()
 
+    def test_frame_changed_after_audit_rejected(self):
+        from unittest.mock import patch
+        original = ui.audit.build
+        def tamper(*args):
+            result = original(*args)
+            self.fx.frame_file.write_bytes(b'changed after audit')
+            return result
+        with patch.object(ui.audit, 'build', side_effect=tamper):
+            with self.assertRaisesRegex(ValueError, 'frame changed after audit'):
+                self.packet()
+
     def test_bad_review_ledger_rejected(self):
         self.fx.review_file.write_text('{}')
         with self.assertRaises(ValueError): self.packet()
