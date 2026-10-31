@@ -1,6 +1,8 @@
 """Synthetic regression tests for the offline full-frame/crop cross-index."""
 from __future__ import annotations
 import json
+from html.parser import HTMLParser
+from urllib.parse import unquote
 from pathlib import Path
 import shutil
 import subprocess
@@ -93,6 +95,18 @@ class CombinedIndexTests(unittest.TestCase):
             self.assertIn(f'Mão H{i}', html)
         self.assertIn('não é veredito', html)
         self.assertIn('Sem autorização OCR', html)
+        class Videos(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.sources = []
+            def handle_starttag(self, tag, attrs):
+                if tag == 'video':
+                    self.sources.append(dict(attrs).get('src'))
+        parsed = Videos()
+        parsed.feed(html)
+        self.assertEqual(len(parsed.sources), 8)
+        for src in parsed.sources:
+            self.assertTrue((result.parent / unquote(src)).resolve().is_file(), src)
 
     def test_originals_unchanged(self):
         before = {p.relative_to(self.root): mod.checked_sha(p)
