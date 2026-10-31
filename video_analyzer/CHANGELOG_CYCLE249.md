@@ -41,7 +41,8 @@ A lista `decisions` precisa conter **exatamente um item para cada evento da mão
 ## Testes executados
 
 - 18 testes novos com vídeo FFmpeg sintético de quatro segundos, correção, rejeição, validação de cartas, proveniência, hashes, HTML escapado, symlinks, colisões e rollback.
-- 75 testes selecionados passaram (incluindo regressão por street e índice de cortes) no ambiente local de desenvolvimento. Não equivalem à suíte integral.
+- 1 teste adicional PLO6 com quatro mesas sintéticas passou.
+- 76 testes selecionados passaram (incluindo regressão por street e índice de cortes) em diretório independente. Não equivalem à suíte integral.
 - Os blobs Git do módulo e dos testes publicados coincidem com as versões locais executadas.
 
 ## Pendências e limites
