@@ -35,6 +35,7 @@ class VisualSummaryTests(unittest.TestCase):
         out = self.build()
         self.assertEqual(out['hand_count'], 1)
         self.assertEqual(out['declared_field_count'], 1)
+        self.assertIn('flop_cards_incomplete', out['hands'][0]['blockers'])
         self.assertEqual(out['visual_status_counts']['uncertain'], 1)
         self.assertEqual(out['eligible_for_equity'], 0)
         self.assertFalse(out['equity_or_ev_calculated'])
@@ -132,6 +133,54 @@ class VisualSummaryTests(unittest.TestCase):
     def test_unconfirmed_value_forgery(self):
         self.reviewed['hands'][0]['fields'][1]['reviewer_value_unverified'] = 'Kd'
         with self.assertRaisesRegex(ValueError, 'unconfirmed field'): self.build()
+
+    def test_four_table_grouping(self):
+        base_hand = self.reviewed['hands'][0]
+        base_claim = self.visual['claims'][0]
+        self.reviewed['hands'] = []
+        self.visual['claims'] = []
+        for i in range(1, 5):
+            h = copy.deepcopy(base_hand)
+            h['hand_id'], h['table_id'] = f'H{i}', f'T{i}'
+            self.reviewed['hands'].append(h)
+            c = copy.deepcopy(base_claim)
+            c['hand_id'], c['table_id'] = f'H{i}', f'T{i}'
+            self.visual['claims'].append(c)
+        self.reviewed['hand_count'] = 4
+        self.reviewed['field_count'] *= 4
+        self.reviewed['reviewer_declarations_unverified'] = 4
+        self.reviewed_path.write_text(json.dumps(self.reviewed))
+        self.visual['source_review_sha256'] = review.digest(self.reviewed_path)
+        self.visual['claim_count'] = 4
+        self.visual['uncertain'] = 4
+        out = self.build()
+        self.assertEqual(out['hand_count'], 4)
+        self.assertEqual({h['table_id'] for h in out['hands']}, {'T1', 'T2', 'T3', 'T4'})
+        self.assertEqual(out['eligible_for_equity'], 0)
+
+    def test_fifth_table_rejected(self):
+        self.test_four_table_grouping()
+        h = copy.deepcopy(self.reviewed['hands'][0])
+        h['hand_id'], h['table_id'] = 'H5', 'T5'
+        self.reviewed['hands'].append(h)
+        c = copy.deepcopy(self.visual['claims'][0])
+        c['hand_id'], c['table_id'] = 'H5', 'T5'
+        self.visual['claims'].append(c)
+        self.reviewed['hand_count'] = 5
+        self.reviewed['field_count'] += len(h['fields'])
+        self.reviewed['reviewer_declarations_unverified'] = 5
+        self.reviewed_path.write_text(json.dumps(self.reviewed))
+        self.visual['source_review_sha256'] = review.digest(self.reviewed_path)
+        self.visual['claim_count'] = 5
+        self.visual['uncertain'] = 5
+        with self.assertRaisesRegex(ValueError, 'coverage mismatch'): self.build()
+
+    def test_duplicate_hand_id_rejected(self):
+        self.test_four_table_grouping()
+        self.reviewed['hands'][1]['hand_id'] = 'H1'
+        self.reviewed_path.write_text(json.dumps(self.reviewed))
+        self.visual['source_review_sha256'] = review.digest(self.reviewed_path)
+        with self.assertRaisesRegex(ValueError, 'duplicate reviewed hand'): self.build()
 
     def test_cli_no_overwrite(self):
         args = [str(self.reviewed_path), str(self.visual_path), str(self.output)]
