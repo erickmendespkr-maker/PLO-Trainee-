@@ -4,7 +4,7 @@
 
 ## Added
 - `offline_table_temporal_review.py`: creates an unapproved editable draft from temporal FFmpeg evidence; human-supplied segment boundaries, stable table-ID claims and crop geometry; explicit confirmation flag; re-evaluates sampled frames before publishing; records SHA-256 provenance and note; rejects noncontiguous segments, overlaps, unsafe files and collisions.
-- `Bounded visual FFmpeg previews`: maximum 12 segments, 4 regions and 48 short MP4 previews; HTML index and SHA-256 ledger; no full-session export or strategy verdict.
+- Bounded visual FFmpeg previews: maximum 12 segments, 4 regions and 48 short MP4 previews; HTML index and SHA-256 ledger; no full-session export or strategy verdict.
 - `offline_temporal_decision_locator.py`: resolves a decision timestamp to a human-claimed table region, but blocks within a configurable 0.25-second guard of segment boundaries. Does not authorize OCR, equity or EV.
 - 22 synthetic tests for temporal review and 19 pure synthetic tests for the locator.
 
