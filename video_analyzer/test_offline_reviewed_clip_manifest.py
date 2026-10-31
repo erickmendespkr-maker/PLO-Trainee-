@@ -183,6 +183,35 @@ class ReviewedClipManifestTests(unittest.TestCase):
         self.review['hands'][0]['events'][0].update(decision='reject', reviewed_value=None, reason='')
         with self.assertRaises(ValueError): self.run_export()
 
+    def test_plo6_variant_navigation(self):
+        self.review['variant'] = 'PLO6'
+        self.index['variant'] = 'PLO6'
+        result = self.run_export()
+        self.assertEqual(result['variant'], 'PLO6')
+        self.assertFalse(result['automatic_math_authorization'])
+
+    def test_blocked_and_unlinked_counts_preserved(self):
+        self.index['blocked_clips'] = [{'clip_id': 'blocked_1', 'reason': 'transition'}]
+        self.index['unlinked_clips'] = [{'clip_id': 'unlinked_1', 'reason': 'unknown_hand'}]
+        result = self.run_export()
+        self.assertEqual((result['blocked_clip_count'], result['unlinked_clip_count']), (1, 1))
+
+    def test_reject_clip_wrong_table(self):
+        self.index['hands'][0]['clips'][0]['table_id'] = 'T2'
+        with self.assertRaises(ValueError): self.run_export()
+
+    def test_reject_output_symlink(self):
+        link = self.root / 'output_link'
+        link.symlink_to(self.out, target_is_directory=True)
+        self.save()
+        with self.assertRaises(ValueError):
+            mod.export(self.review_path, self.index_path, self.split, link)
+
+    def test_reject_invalid_variant(self):
+        self.review['variant'] = 'PLO4'
+        self.index['variant'] = 'PLO4'
+        with self.assertRaises(ValueError): self.run_export()
+
     def test_atomic_rollback(self):
         real = mod.os.link
         count = [0]
@@ -198,3 +227,4 @@ class ReviewedClipManifestTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
