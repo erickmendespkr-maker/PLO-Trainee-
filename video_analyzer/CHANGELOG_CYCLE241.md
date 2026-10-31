@@ -8,6 +8,7 @@ Scope: `docs/VIDEO_ANALYZER_SCOPE.md`. Recorded PLO5/PLO6 video only; no playabl
 - Writes `preview.png` showing the candidate rectangles; original video is not changed. The preview and proposal are hash-linked.
 - Explicit human-reviewed confirmation command converts to the existing `manual_offline_table_regions_unverified` schema accepted by the crop exporter. The command rejects altered source video, preview, sampled evidence, geometry, output collisions and symlinks. It is never invoked automatically.
 - `test_offline_table_region_proposals.py`: 19 synthetic FFmpeg regression tests for four/two/one-region cases, deterministic results, output protection, confirmation gate and tampering.
+- `test_offline_table_proposal_crop_integration.py`: 1 synthetic integration test using the prior four-table fixture to verify proposal -> simulated review -> crop exporter -> combined HTML index.
 
 ## Usage
 ```bash
@@ -21,7 +22,8 @@ python video_analyzer/offline_table_region_proposals.py confirm session.mp4 revi
 ## Verified locally
 - 19/19 new synthetic tests passed on Linux with FFmpeg/FFprobe. No real poker video was used.
 - Four-color-quadrant synthetic example yielded four rectangles; vertical/horizontal split examples yielded two; uniform video yielded one.
-- Confirmed layout matches the pre-existing crop export schema (shape only; no end-to-end crop in this cycle).
+- The integration test passed: four proposed regions -> simulated human confirmation -> four cropped MP4 -> HTML with eight video players. This does **not** represent a real human approval or a real poker session.
+- 46 selected tests passed in an independent extracted directory (19 new unit + 1 integration + 26 prior cross-index tests).
 
 ## Limitations
 - A contrast seam can be a HUD, text, window border or another object. Table detection accuracy, multi-table tracking, OCR, Windows execution and 40–60 minute performance are unverified.
