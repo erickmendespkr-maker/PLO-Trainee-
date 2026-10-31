@@ -178,7 +178,7 @@ def build(batch_dir, crops_dir):
                      escape(relative_href(crops_dir, full_json), quote=True),
                      '">Hipóteses / JSON original</a></p></div>',
                      '<div><h3>Recorte manual da mesa</h3><video controls preload="none" src="',
-                     escape(relative_href(crops_dir, mp4), quote=True), '</video><p><a href="',
+                     escape(relative_href(crops_dir, mp4), quote=True), '"></video><p><a href="',
                      escape(relative_href(crops_dir, meta_path), quote=True),
                      '">Região e proveniência / JSON</a></p></div></div></section>'])
     html.append('<p>Índice estático, offline, gerado após verificação SHA-256. Não altera MP4.</p></html>')
