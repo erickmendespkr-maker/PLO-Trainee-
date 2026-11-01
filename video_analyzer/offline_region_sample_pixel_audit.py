@@ -90,7 +90,7 @@ def run(video_path, bundle_path, output_path, *, ffprobe='ffprobe', ffmpeg='ffmp
     indices = [frame_index(pts, s['decoded_source_pts_seconds'])
                for s in source['samples']]
     require(len(set(indices)) == len(indices), 'duplicate decoded source frame')
-    expression = '+'.join(f'eq(n\,{i})' for i in sorted(indices))
+    expression = '+'.join(f'eq(n\\,{i})' for i in sorted(indices))
     with tempfile.TemporaryDirectory(prefix='.plo_region_pixels_', dir=output.parent) as tmp:
         stage = Path(tmp)
         pattern = str(stage / 'decoded_%02d.png')
