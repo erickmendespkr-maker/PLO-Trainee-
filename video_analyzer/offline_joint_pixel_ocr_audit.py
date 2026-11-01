@@ -120,7 +120,6 @@ def run(video_path, bundle_path, ocr_path, gold_path, output_path, *,
     return report
 
 
-
 def run_original_chain(video_path, layout_path, tasks_path, labels_path,
                        output_path, sample_times, *, builder=None,
                        scanner=None, auditor=None):
