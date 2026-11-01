@@ -68,6 +68,26 @@ def measure_origin(video):
             'origin_disagreement_tolerance_seconds': .5}
 
 
+def replay_sample_pts(video, requested_seconds):
+    """Independently replay an original sampler seek using source PTS."""
+    queue.check(queue.number(requested_seconds) and
+                0 <= requested_seconds < 3600, 'invalid requested sample seek')
+    proc = _run(['ffmpeg', '-hide_banner', '-nostdin', '-noautorotate',
+                 '-ss', str(requested_seconds), '-copyts', '-i', str(video),
+                 '-map', '0:v:0', '-an', '-sn', '-dn', '-vf', 'showinfo',
+                 '-frames:v', '1', '-f', 'null', '-'], 60)
+    queue.check(len(proc.stderr) <= MAX_STDERR, 'oversized sample replay output')
+    found = []
+    for line in proc.stderr.decode('utf-8', 'replace').splitlines():
+        if 'Parsed_showinfo' in line and 'pts_time:' in line:
+            match = PTS_RE.search(line)
+            if match:
+                found.append(float(match.group(1)))
+    queue.check(len(found) == 1 and math.isfinite(found[0]),
+                'cannot replay source sample PTS')
+    return found[0]
+
+
 def build(video, bundle, proposals, boundaries):
     video = Path(video)
     before = queue.digest(video)
@@ -75,7 +95,9 @@ def build(video, bundle, proposals, boundaries):
     origin = evidence['first_decoded_video_frame_pts_seconds']
     result = queue.build(video, bundle, proposals, boundaries,
                          source_pts_origin=origin)
-    source = queue.load(Path(bundle) / 'region_samples.json')
+    source_path = Path(bundle) / 'region_samples.json'
+    source_sha = queue.digest(source_path)
+    source = queue.load(source_path)
     duration = evidence['ffprobe_recording_duration_seconds']
     queue.check(all(origin - .001 <= s['decoded_source_pts_seconds'] <
                     origin + duration + .5 for s in source['samples']),
@@ -84,7 +106,16 @@ def build(video, bundle, proposals, boundaries):
         reported = source['recording_duration_seconds']
         queue.check(queue.number(reported) and abs(reported - duration) <= .5,
                     'source manifest duration disagrees with FFprobe')
-    queue.check(queue.digest(video) == before, 'video changed during PTS verification')
+    replayed = 0
+    for sample in source['samples']:
+        if 'requested_seek_seconds' in sample:
+            actual = replay_sample_pts(video, sample['requested_seek_seconds'])
+            queue.check(abs(actual - sample['decoded_source_pts_seconds']) <= .002,
+                        'sample PTS disagrees with independent FFmpeg replay')
+            replayed += 1
+    queue.check(queue.digest(video) == before and queue.digest(source_path) == source_sha,
+                'video or source manifest changed during PTS verification')
+    result['source_sample_pts_replayed_with_ffmpeg'] = replayed
     result['source_pts_origin_seconds_verified_from_decoded_video'] = origin
     result['pts_origin_evidence'] = evidence
     result['source_pts_origin_seconds_supplied_unverified'] = None
