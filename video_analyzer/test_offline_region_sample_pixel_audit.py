@@ -179,6 +179,41 @@ class RegionPixelTests(unittest.TestCase):
         self.assertEqual(frame_index([1.0, 1.5, 2.0], 1.500001), 1)
         with self.assertRaises(ValueError): frame_index([1.0, 1.5], 1.25)
 
+    def test_two_distinct_decoded_frames_and_eight_crops(self):
+        extra = self.bundle / 'frames/frame_01.png'
+        manifest_path = self.bundle / 'region_samples.json'
+        original_manifest = manifest_path.read_bytes()
+        try:
+            media('ffmpeg', '-v', 'error', '-nostdin', '-i', str(self.video),
+                  '-vf', 'select=eq(n\\,2)', '-frames:v', '1',
+                  '-update', '1', str(extra))
+            changed = copy.deepcopy(self.manifest)
+            crops = []
+            for table in range(1, 5):
+                x, y = (table-1) % 2 * 320, (table-1) // 2 * 180
+                crop = self.bundle / f'tables/table_{table:02d}_sample_01.png'
+                media('ffmpeg', '-v', 'error', '-nostdin', '-i', str(extra),
+                      '-vf', f'crop=320:180:{x}:{y}', '-frames:v', '1',
+                      '-update', '1', str(crop))
+                crops.append({'table_id': table,
+                              'path': crop.relative_to(self.bundle).as_posix(),
+                              'sha256': sha(crop), 'width': 320, 'height': 180})
+            changed['samples'].append({'requested_seek_seconds': 1.0,
+                                       'decoded_source_pts_seconds': 1.0,
+                                       'frame_path': 'frames/frame_01.png',
+                                       'frame_sha256': sha(extra),
+                                       'table_crops': crops})
+            write(manifest_path, changed)
+            result = self.execute()
+            self.assertEqual(result['samples_verified'], 2)
+            self.assertEqual(result['table_crops_verified'], 8)
+            self.assertEqual(result['source_frames_independently_decoded'], 2)
+        finally:
+            manifest_path.write_bytes(original_manifest)
+            extra.unlink(missing_ok=True)
+            for table in range(1, 5):
+                (self.bundle / f'tables/table_{table:02d}_sample_01.png').unlink(missing_ok=True)
+
     def test_real_ffprobe_timeline(self):
         pts = frame_pts(self.video)
         self.assertEqual(len(pts), 4)
