@@ -12,7 +12,7 @@ Scope: asynchronous evaluation of recorded PLO5/PLO6 OCR proposals against manua
 
 ## Verified locally
 
-- 23/23 new tests passed under Python 3.13.5, including one-to-one temporal matching, multiple tables/fields, abstention, wrong labels, false positives, duplicate labels/JSON keys, invalid booleans, NaN, symlink rejection, no-overwrite publication, and 4,000 synthetic observations.
+- 24/24 new tests passed under Python 3.13.5, including one-to-one temporal matching, multiple tables/fields, abstention, wrong labels, false positives, duplicate labels/JSON keys, invalid booleans, NaN, symlink rejection, no-overwrite publication, and 4,000 synthetic observations. The extra property test checks 1,000 deterministic randomized temporal-matching cases against an exhaustive optimal oracle.
 - Synthetic four-table demonstration JSON produced and checked; **not a measure of real OCR performance**.
 
 ## Not verified / blocked
