@@ -116,6 +116,9 @@ def run(recording, hands_json, selections_json, new_output_dir,
     require(all(p.is_file() and not p.is_symlink() and p.stat().st_size > 0
                 for p in inputs) and len({str(p.resolve()) for p in inputs}) == 3,
             'unsafe or overlapping inputs')
+    # The downstream exporter changes cwd for subtitle filters: use absolute video.
+    video = video.resolve()
+    inputs = (video, hands_path, picks_path)
     require(output.parent.is_dir() and not output.parent.is_symlink() and
             not output.exists() and not output.is_symlink() and
             all(not p.resolve().is_relative_to(output.resolve()) for p in inputs),
