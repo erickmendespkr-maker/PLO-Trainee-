@@ -1,5 +1,4 @@
 """Synthetic integration/regression tests for the joint FFmpeg pixel/OCR audit."""
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -8,6 +7,8 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+
+from PIL import Image, ImageDraw, ImageFont
 
 from offline_joint_pixel_ocr_audit import run
 
@@ -23,20 +24,92 @@ def save(path, data):
 
 
 class JointAuditTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture_temp = tempfile.TemporaryDirectory()
+        root = Path(cls.fixture_temp.name)
+        cls.fixture = root
+        bundle = root / 'bundle'
+        (bundle/'frames').mkdir(parents=True)
+        (bundle/'tables').mkdir()
+        image = Image.new('RGB', (640, 360), 'white')
+        draw = ImageDraw.Draw(image)
+        font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 64)
+        for table, number in enumerate(('12', '23', '34', '45'), 1):
+            x, y = ((table-1)%2)*320, ((table-1)//2)*180
+            draw.text((x+50, y+40), number, font=font, fill='black')
+        still = root/'still.png'
+        image.save(still)
+        video = root/'video.mp4'
+        subprocess.run(['ffmpeg','-v','error','-nostdin','-loop','1','-i',str(still),
+                        '-t','2','-r','2','-c:v','libx264','-pix_fmt','yuv420p',
+                        str(video)], check=True, capture_output=True, timeout=40)
+        frame = bundle/'frames/frame_00.png'
+        subprocess.run(['ffmpeg','-v','error','-nostdin','-i',str(video),
+                        '-frames:v','1','-update','1',str(frame)],
+                       check=True, capture_output=True, timeout=40)
+        regions, crops, candidates, gold = [], [], [], []
+        for table, number in enumerate((12, 23, 34, 45), 1):
+            x, y = ((table-1)%2)*320, ((table-1)//2)*180
+            crop = bundle/f'tables/table_{table:02d}_sample_00.png'
+            subprocess.run(['ffmpeg','-v','error','-nostdin','-i',str(frame),
+                            '-vf',f'crop=320:180:{x}:{y}',
+                            '-frames:v','1','-update','1',str(crop)],
+                           check=True, capture_output=True, timeout=40)
+            rel = crop.relative_to(bundle).as_posix()
+            regions.append({'table_id':table,'x':x,'y':y,'width':320,'height':180})
+            crops.append({'table_id':table,'path':rel,'sha256':sha(crop),
+                          'width':320,'height':180})
+            candidates.append({'table_id':table,'sample_index':0,'field':'pot',
+                               'decoded_source_pts_seconds':0.0,
+                               'status':'needs_manual_review','parsed_candidate':None,
+                               'source_crop_sha256':sha(crop),'source_crop_path':rel,
+                               'raw_ocr_text':str(number),
+                               'roi':{'x':25,'y':20,'width':220,'height':110}})
+            gold.append({'table_id':table,'field':'pot','timestamp':0.0,
+                         'expected':float(number)})
+        source = {'schema_version':1,
+                  'analysis_status':'unverified_four_table_region_samples_for_manual_review_only',
+                  'recording_sha256':sha(video),'layout_sha256':'a'*64,
+                  'recording_duration_seconds':2.0,'frame_width':640,'frame_height':360,
+                  'regions':regions,
+                  'samples':[{'requested_seek_seconds':0.0,
+                              'decoded_source_pts_seconds':0.0,'seek_delta_seconds':0.0,
+                              'frame_path':'frames/frame_00.png',
+                              'frame_sha256':sha(frame),'table_crops':crops}],
+                  'timestamp_semantics':'decoded_source_pts_seconds_from_ffmpeg_showinfo',
+                  'regions_human_confirmed':False,'cards_actions_verified':False,
+                  'hand_boundaries_verified':False,'ready_for_equity_or_ev':False,
+                  'automatic_clip_selection_authorized':False}
+        save(bundle/'region_samples.json', source)
+        proposal = {'schema_version':1,
+                    'analysis_status':'unverified_four_table_ocr_proposals_only',
+                    'ready_for_equity_or_ev':False,'requires_manual_review':True,
+                    'automatic_hand_or_action_inference':False,
+                    'engine_confidence_is_calibrated_probability':False,
+                    'recording_sha256':sha(video),
+                    'source_region_samples_sha256':sha(bundle/'region_samples.json'),
+                    'candidates':candidates}
+        save(root/'ocr.json', proposal)
+        save(root/'labels.json', gold)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fixture_temp.cleanup()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        fixture = HERE / 'demo'
         self.video = self.root / 'video.mp4'
         self.bundle = self.root / 'bundle'
         self.proposals = self.root / 'ocr.json'
         self.labels = self.root / 'labels.json'
         self.output = self.root / 'joint'
-        shutil.copyfile(fixture / 'synthetic_4tables.mp4', self.video)
-        shutil.copytree(fixture / 'bundle', self.bundle)
-        shutil.copyfile(fixture / 'synthetic_original_ocr_report.json', self.proposals)
-        shutil.copyfile(fixture / 'synthetic_human_labels.json', self.labels)
+        shutil.copyfile(self.fixture/'video.mp4', self.video)
+        shutil.copytree(self.fixture/'bundle', self.bundle)
+        shutil.copyfile(self.fixture/'ocr.json', self.proposals)
+        shutil.copyfile(self.fixture/'labels.json', self.labels)
 
     def execute(self, **kwargs):
         return run(self.video, self.bundle, self.proposals, self.labels, self.output, **kwargs)
