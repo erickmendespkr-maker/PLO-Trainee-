@@ -45,7 +45,8 @@ class ReviewedClipExportTests(unittest.TestCase):
     def clip(**overrides):
         result = {'review_id': 'r1', 'table_id': 1, 'start_seconds': 0.4,
                   'end_seconds': 1.4, 'explanation': 'Decisao revisada: conferir pote',
-                  'human_reviewed': True}
+                  'human_reviewed': True,
+                  'crop': {'x': 0, 'y': 0, 'width': 320, 'height': 180}}
         result.update(overrides)
         return result
 
@@ -64,7 +65,9 @@ class ReviewedClipExportTests(unittest.TestCase):
 
     def test_four_table_clips(self):
         self.data['clips'] = [self.clip(review_id=f'r{i}', table_id=i,
-                                        start_seconds=0.2, end_seconds=0.9)
+                                        start_seconds=0.2, end_seconds=0.9,
+                                        crop={'x': ((i-1)%2)*320, 'y': ((i-1)//2)*180,
+                                              'width': 320, 'height': 180})
                               for i in range(1, 5)]
         self.write()
         report = export(self.video, self.manifest, self.output)
@@ -75,6 +78,12 @@ class ReviewedClipExportTests(unittest.TestCase):
         self.data['time_basis'] = 'source_pts_seconds'
         self.write()
         with self.assertRaisesRegex(ValueError, 'manifest/source'):
+            export(self.video, self.manifest, self.output)
+
+    def test_crop_outside_video_rejected(self):
+        self.data['clips'][0]['crop']['x'] = 500
+        self.write()
+        with self.assertRaisesRegex(ValueError, 'crop outside'):
             export(self.video, self.manifest, self.output)
 
     def test_duplicate_id_rejected(self):
