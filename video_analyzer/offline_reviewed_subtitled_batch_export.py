@@ -141,6 +141,8 @@ def export(recording_path, review_path, output_dir, *, ffmpeg='ffmpeg', ffprobe=
             not output.exists() and not output.is_symlink() and
             all(not p.resolve().is_relative_to(output.resolve()) for p in (video, review)),
             'output must be a new, disjoint directory')
+    # FFmpeg runs with cwd=stage to resolve subtitles; keep source path absolute.
+    video = video.resolve()
     original_hash, review_hash = sha256(video), sha256(review)
     source_duration = duration_seconds(video, ffprobe)
     clips = validate_manifest(load_manifest(review), original_hash, source_duration,
