@@ -21,7 +21,8 @@ import tempfile
 from offline_video_ingest_probe import (build, nominal_fps, probe, regions_from_json,
                                         sample_times, sha256, require)
 from offline_ingest_pts_audit import audit, MAX_SAMPLES
-from offline_ingest_roi_pixel_audit import verify, MAX_CHECKS
+from offline_ingest_roi_batch_pixel_audit import verify
+from offline_ingest_roi_pixel_audit import MAX_CHECKS
 
 
 def choose_spotcheck(samples, tables, budget):
@@ -35,10 +36,24 @@ def choose_spotcheck(samples, tables, budget):
         grouped[s['table_id']].append(s)
     require(all(grouped.values()), 'missing samples for a table')
     selected = []
-    base, extra = divmod(min(budget, len(samples)), len(tables))
-    for i, table in enumerate(sorted(tables)):
+    ordered_tables = sorted(tables)
+    target = min(budget, len(samples))
+    base, extra = divmod(target, len(tables))
+    quotas = {table: min(len(grouped[table]), base + (i < extra))
+              for i, table in enumerate(ordered_tables)}
+    # Redistribute unused checks when one table has fewer samples than others.
+    while sum(quotas.values()) < target:
+        advanced = False
+        for table in ordered_tables:
+            if quotas[table] < len(grouped[table]):
+                quotas[table] += 1
+                advanced = True
+                if sum(quotas.values()) == target:
+                    break
+        require(advanced, 'cannot allocate pixel checks')
+    for table in ordered_tables:
         entries = grouped[table]
-        quota = min(len(entries), base + (i < extra))
+        quota = quotas[table]
         if quota == 1:
             indices = [len(entries) // 2]
         else:
@@ -107,6 +122,8 @@ def run(video, regions_json, new_output_dir, interval_seconds=30.0, pixel_checks
             'crops_pixel_checked': pixels['samples_checked'],
             'pixel_coverage_fraction': round(pixels['samples_checked'] / full_pts['sample_count'], 6),
             'pixel_check_selection': 'deterministic_stratified_by_table_and_time',
+            'pixel_decoder_strategy': pixels['decoder_strategy'],
+            'pixel_ffmpeg_decode_passes': pixels['ffmpeg_decode_passes'],
             'pixel_checked_files': [s['file'] for s in selected],
             'vfr_observed': full_pts['variable_frame_intervals_observed'],
             'manifest_sha256': sha256(ingest / 'manifest.json'),
