@@ -9,9 +9,9 @@ import unittest
 
 from offline_verified_pts_review_queue import build, measure_origin, run
 from offline_hand_ocr_review_queue import digest
+from test_offline_hand_ocr_review_queue import make_fixture
 
 HERE = Path(__file__).resolve().parent
-FIXTURE = HERE / 'fixture/package/demo'
 
 
 def write(path, value):
@@ -19,18 +19,30 @@ def write(path, value):
 
 
 class VerifiedPTSReviewQueueTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture_temp = tempfile.TemporaryDirectory()
+        cls.fixture = make_fixture(cls.fixture_temp.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fixture_temp.cleanup()
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.video = self.root / 'video.mp4'
-        shutil.copyfile(FIXTURE / 'synthetic_4tables.mp4', self.video)
+        shutil.copyfile(self.fixture / 'synthetic_4tables.mp4', self.video)
         self.bundle = self.root / 'bundle'
-        shutil.copytree(FIXTURE / 'bundle', self.bundle)
+        shutil.copytree(self.fixture / 'bundle', self.bundle)
         self.ocr = self.root / 'ocr.json'
-        shutil.copyfile(FIXTURE / 'synthetic_original_ocr_report.json', self.ocr)
+        shutil.copyfile(self.fixture / 'synthetic_original_ocr_report.json', self.ocr)
         self.hands = self.root / 'hands.json'
-        shutil.copyfile(HERE / 'synthetic_hands.json', self.hands)
+        write(self.hands, {'schema_version': 1, 'status': 'human_annotated_hand_boundaries',
+                           'recording_sha256': digest(self.video),
+                           'hands': [{'table_id': i, 'start_seconds': 0, 'end_seconds': 1}
+                                     for i in range(1, 5)]})
         self.output = self.root / 'queue.json'
 
     def execute(self):
