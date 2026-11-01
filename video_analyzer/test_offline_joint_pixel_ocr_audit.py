@@ -243,6 +243,84 @@ class JointAuditTests(unittest.TestCase):
         self.assertFalse(json.loads(proc.stdout)['ready_for_equity_or_ev'])
         self.assertTrue((self.output/'joint_report.json').is_file())
 
+    def _chain_inputs(self):
+        from offline_joint_pixel_ocr_audit import digest
+        layout = self.root / 'layout.json'
+        layout.write_text(json.dumps({'schema_version': 1, 'layout': 'grid',
+                                      'rows': 2, 'columns': 2}))
+        tasks = self.root / 'tasks.json'
+        tasks.write_text(json.dumps({'schema_version': 1, 'tasks': [
+            {'table_id': i, 'sample_index': 0, 'field': 'pot',
+             'roi': {'x': 25, 'y': 20, 'width': 220, 'height': 110}}
+            for i in range(1, 5)]}))
+        def builder(video, layout_path, output, times):
+            shutil.copytree(self.bundle, output)
+            return json.loads((output / 'region_samples.json').read_text())
+        def scanner(bundle, roi, output, *, recording_path):
+            bound = json.loads(roi.read_text())
+            assert bound['source_manifest_sha256'] == digest(bundle / 'region_samples.json')
+            shutil.copyfile(self.proposals, output)
+            return json.loads(output.read_text())
+        return layout, tasks, builder, scanner
+
+    def test_original_chain_wrapper_real_joint_four_tables(self):
+        from offline_joint_pixel_ocr_audit import run_original_chain, digest
+        layout, tasks, builder, scanner = self._chain_inputs()
+        out = self.root / 'chain'
+        report = run_original_chain(self.video, layout, tasks, self.labels,
+                                    out, [0.0], builder=builder, scanner=scanner)
+        self.assertEqual((report['tables'], report['samples'], report['ocr_candidates']),
+                         (4, 1, 4))
+        self.assertFalse(report['ready_for_equity_or_ev'])
+        self.assertEqual(report['joint_report_sha256'],
+                         digest(out / 'joint_audit/joint_report.json'))
+
+    def test_original_chain_wrapper_scanner_failure_no_publish(self):
+        from offline_joint_pixel_ocr_audit import run_original_chain
+        layout, tasks, builder, _ = self._chain_inputs()
+        def fail(*args, **kwargs): raise ValueError('scanner unavailable')
+        out = self.root / 'chain'
+        with self.assertRaisesRegex(ValueError, 'scanner unavailable'):
+            run_original_chain(self.video, layout, tasks, self.labels,
+                               out, [0.0], builder=builder, scanner=fail)
+        self.assertFalse(out.exists())
+
+    def test_original_chain_wrapper_rejects_duplicate_tasks(self):
+        from offline_joint_pixel_ocr_audit import run_original_chain
+        layout, tasks, builder, scanner = self._chain_inputs()
+        data = json.loads(tasks.read_text())
+        data['tasks'].append(data['tasks'][0])
+        tasks.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, 'duplicate ROI task'):
+            run_original_chain(self.video, layout, tasks, self.labels,
+                               self.root / 'chain', [0.0],
+                               builder=builder, scanner=scanner)
+
+    def test_original_chain_wrapper_rejects_unsafe_ocr_promotion(self):
+        from offline_joint_pixel_ocr_audit import run_original_chain
+        layout, tasks, builder, scanner = self._chain_inputs()
+        def unsafe(*args, **kwargs):
+            result = scanner(*args, **kwargs)
+            result['ready_for_equity_or_ev'] = True
+            return result
+        out = self.root / 'chain'
+        with self.assertRaisesRegex(ValueError, 'unsafe'):
+            run_original_chain(self.video, layout, tasks, self.labels,
+                               out, [0.0], builder=builder, scanner=unsafe)
+        self.assertFalse(out.exists())
+
+    def test_original_chain_wrapper_create_only(self):
+        from offline_joint_pixel_ocr_audit import run_original_chain, digest
+        layout, tasks, builder, scanner = self._chain_inputs()
+        out = self.root / 'chain'
+        run_original_chain(self.video, layout, tasks, self.labels,
+                           out, [0.0], builder=builder, scanner=scanner)
+        before = digest(out / 'pipeline_report.json')
+        with self.assertRaises(ValueError):
+            run_original_chain(self.video, layout, tasks, self.labels,
+                               out, [0.0], builder=builder, scanner=scanner)
+        self.assertEqual(digest(out / 'pipeline_report.json'), before)
+
 
 if __name__ == '__main__':
     unittest.main()
