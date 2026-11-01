@@ -6,7 +6,7 @@ Somente a branch `feature/plo5-plo6-training`, conforme `docs/VIDEO_ANALYZER_SCO
 ## Implementação
 - `offline_verified_pts_review_queue.py`: usa FFprobe para obter início do stream de vídeo e duração; usa **FFmpeg com `-copyts`** e `showinfo` para medir o PTS do primeiro quadro decodificado. Sem `-copyts`, FFmpeg pode rebater um PTS de 5 segundos para zero, provocando uma associação incorreta entre OCR e mãos.
 - Chama o módulo existente `offline_hand_ocr_review_queue.build`, sem alterar seus bloqueios de OCR, equity/EV ou clipes automáticos.
-- Verifica o hash SHA-256 da gravação, a duração quando informada no manifesto, os PTS das amostras dentro da linha temporal medida e a coerência do primeiro PTS com o início informado pelo FFprobe (tolerância de 0,5 s).
+- Verifica o hash SHA-256 da gravação, a duração quando informada no manifesto, os PTS das amostras dentro da linha temporal medida, o replay independente dos seeks FFmpeg quando o manifesto informa `requested_seek_seconds` e a coerência do primeiro PTS com o início informado pelo FFprobe (tolerância de 0,5 s).
 - Publica JSON novo exclusivamente após validação. Não sobrescreve resultados anteriores.
 
 ## Testes locais verificáveis
@@ -16,7 +16,7 @@ cd video_analyzer
 python -m unittest -v test_offline_hand_ocr_review_queue test_offline_verified_pts_review_queue
 ```
 
-31 testes locais passaram: 19 existentes + 12 novos. FFmpeg 7.1.5 e FFprobe reais foram executados. Teste sintético de quatro regiões com PTS zero e teste com PTS inicial de 5 segundos gerado com `setpts=PTS+5/TB` passaram. Os testes não substituíram FFmpeg/FFprobe por mocks. O Tesseract não foi executado nesta suíte; as propostas OCR do fixture são sintéticas.
+34 testes locais passaram: 19 existentes + 15 novos. FFmpeg 7.1.5 e FFprobe reais foram executados. Teste sintético de quatro regiões com PTS zero e teste com PTS inicial de 5 segundos gerado com `setpts=PTS+5/TB` passaram. Os testes não substituíram FFmpeg/FFprobe por mocks. O replay detectou um PTS artificialmente adulterado em 0,25 segundo e validou um seek com origem de 5 segundos. O Tesseract não foi executado nesta suíte; as propostas OCR do fixture são sintéticas.
 
 ## Uso
 
