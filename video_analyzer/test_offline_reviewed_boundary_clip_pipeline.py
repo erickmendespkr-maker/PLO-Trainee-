@@ -218,6 +218,16 @@ class Integration(unittest.TestCase):
             bridge.run(VIDEO, link, self.picks_path, self.out)
         self.assertFalse(self.out.exists())
 
+    def test_cli_relative_recording(self):
+        obj = json.loads(self.picks_path.read_text())
+        obj['selections'] = obj['selections'][:1]
+        self.picks_path.write_text(json.dumps(obj))
+        result = subprocess.run([sys.executable, str(Path(bridge.__file__)), VIDEO.name,
+                                 str(self.hands_path), str(self.picks_path), str(self.out)],
+                                cwd=VIDEO.parent, capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout)['clips'], 1)
+        self.assertEqual(len(list((self.out / 'clips').glob('*.mp4'))), 1)
+
     def test_cli_one_clip(self):
         obj = json.loads(self.picks_path.read_text())
         obj['selections'] = obj['selections'][:1]
