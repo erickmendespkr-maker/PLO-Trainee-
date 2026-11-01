@@ -1,5 +1,6 @@
 """Synthetic offline clip export tests (real FFmpeg/FFprobe, no poker accuracy claim)."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -62,6 +63,17 @@ class ReviewedClipExportTests(unittest.TestCase):
         self.assertAlmostEqual(clip['output_duration_seconds'], 1, delta=0.6)
         self.assertFalse(result['review_authenticity_verified'])
         self.assertFalse(result['equity_or_ev_verified'])
+
+    def test_relative_recording_path_with_subtitles(self):
+        previous = Path.cwd()
+        try:
+            os.chdir(self.root)
+            relative_video = Path(os.path.relpath(self.video, self.root))
+            result = export(relative_video, Path('review.json'), Path('relative_output'))
+            self.assertEqual(len(result['clips']), 1)
+            self.assertTrue(Path('relative_output', result['clips'][0]['mp4']).is_file())
+        finally:
+            os.chdir(previous)
 
     def test_four_table_clips(self):
         self.data['clips'] = [self.clip(review_id=f'r{i}', table_id=i,
