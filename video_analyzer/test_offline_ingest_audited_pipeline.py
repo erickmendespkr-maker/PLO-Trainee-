@@ -37,6 +37,16 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(len(chosen), 4)
         self.assertEqual(len({x['file'] for x in chosen}), 4)
 
+    def test_unequal_table_counts_redistribute_full_budget(self):
+        samples = (self.samples[:2] + self.samples[120:220] +
+                   self.samples[240:340] + self.samples[360:460])
+        chosen = choose_spotcheck(samples, [1, 2, 3, 4], 20)
+        self.assertEqual(len(chosen), 20)
+        self.assertEqual(len({s['file'] for s in chosen}), 20)
+        self.assertEqual({t: sum(s['table_id'] == t for s in chosen)
+                          for t in range(1, 5)},
+                         {1: 2, 2: 6, 3: 6, 4: 6})
+
     def test_reject_bad_budget_and_table(self):
         for budget in (0, 3, 65, True, 1.5):
             with self.subTest(budget=budget), self.assertRaises(ValueError):
