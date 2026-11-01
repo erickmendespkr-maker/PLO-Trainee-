@@ -4,7 +4,7 @@
 
 - Fixed the original `offline_reviewed_subtitled_batch_export.py` to resolve a relative recording path before FFmpeg changes its subprocess working directory for the subtitles filter. This fixes the original standalone exporter, not just the boundary-to-clips wrapper.
 - Added a regression test that runs the standalone exporter from a different current directory using a relative video path.
-- **30/30 local selected tests passed** (14 exporter tests, including the new relative-path case, and 16 offline review-queue prototype tests). The published exporter and test file Git blob SHAs matched the locally tested files.
+- **61/61 local selected tests passed** (31 existing reviewed-boundary pipeline tests, 14 exporter tests including the new relative-path case, and 16 offline review-queue prototype tests). The published exporter and test file Git blob SHAs matched the locally tested files. The expanded run used Python 3.13, FFmpeg and FFprobe; see the downloadable `regression_61.log`.
 - Tests used a short artificial video and the existing four-region synthetic fixture; no GitHub Actions, production, live poker integration, paid services, or secrets.
 
 ## Separate local prototype (not yet committed)
