@@ -71,7 +71,17 @@ def duration_seconds(video, ffprobe='ffprobe'):
     return duration
 
 
-def validate_manifest(data, video_hash, duration):
+def video_dimensions(video, ffprobe='ffprobe'):
+    data = json.loads(run_command([ffprobe, '-v', 'error', '-select_streams', 'v:0',
+        '-show_entries', 'stream=width,height', '-of', 'json', str(video)], timeout=30).stdout)
+    stream = data['streams'][0]
+    width, height = stream['width'], stream['height']
+    require(type(width) is int and type(height) is int and
+            2 <= width <= 8192 and 2 <= height <= 8192, 'invalid source dimensions')
+    return width, height
+
+
+def validate_manifest(data, video_hash, duration, dimensions):
     require(type(data) is dict and set(data) ==
             {'schema_version', 'recording_sha256', 'time_basis', 'clips'} and
             type(data['schema_version']) is int and data['schema_version'] == 1 and
@@ -86,7 +96,7 @@ def validate_manifest(data, video_hash, duration):
     for item in clips:
         require(type(item) is dict and set(item) ==
                 {'review_id', 'table_id', 'start_seconds', 'end_seconds',
-                 'explanation', 'human_reviewed'}, 'invalid clip fields')
+                 'explanation', 'human_reviewed', 'crop'}, 'invalid clip fields')
         review_id, table, start, end, explanation = (
             item[k] for k in ('review_id', 'table_id', 'start_seconds',
                               'end_seconds', 'explanation'))
@@ -98,6 +108,14 @@ def validate_manifest(data, video_hash, duration):
                 math.isfinite(start) and math.isfinite(end) and
                 0 <= start < end <= duration + 0.001 and
                 end - start <= MAX_CLIP_SECONDS, 'invalid clip interval')
+        crop = item['crop']
+        require(type(crop) is dict and set(crop) == {'x', 'y', 'width', 'height'} and
+                all(type(v) is int and v >= 0 for v in crop.values()),
+                'invalid table crop')
+        x, y, w, h = (crop[k] for k in ('x', 'y', 'width', 'height'))
+        require(w >= 2 and h >= 2 and all(v % 2 == 0 for v in (x, y, w, h)) and
+                x + w <= dimensions[0] and y + h <= dimensions[1],
+                'table crop outside video')
         require(item['human_reviewed'] is True, 'human review required')
         require(type(explanation) is str and 1 <= len(explanation.strip()) <= 200 and
                 '\n' not in explanation and '\r' not in explanation and
@@ -125,7 +143,8 @@ def export(recording_path, review_path, output_dir, *, ffmpeg='ffmpeg', ffprobe=
             'output must be a new, disjoint directory')
     original_hash, review_hash = sha256(video), sha256(review)
     source_duration = duration_seconds(video, ffprobe)
-    clips = validate_manifest(load_manifest(review), original_hash, source_duration)
+    clips = validate_manifest(load_manifest(review), original_hash, source_duration,
+                              video_dimensions(video, ffprobe))
     with tempfile.TemporaryDirectory(prefix='.plo_reviewed_clips_', dir=output.parent) as temp:
         stage = Path(temp) / 'published'
         stage.mkdir()
@@ -141,10 +160,12 @@ def export(recording_path, review_path, output_dir, *, ffmpeg='ffmpeg', ffprobe=
                            srt_time(requested) + '\n' + item['explanation'].strip() +
                            '\n', encoding='utf-8')
             # Relative subtitle path avoids injecting user text or paths into filters.
+            crop = item['crop']
+            crop_filter = 'crop={width}:{height}:{x}:{y}'.format(**crop)
             run_command([ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin',
                 '-ss', str(item['start_seconds']), '-i', str(video),
                 '-t', str(requested), '-map', '0:v:0', '-map', '0:a:0?',
-                '-vf', f'subtitles={srt.name}', '-c:v', 'libx264',
+                '-vf', f'{crop_filter},subtitles={srt.name}', '-c:v', 'libx264',
                 '-preset', 'veryfast', '-crf', '23', '-c:a', 'aac',
                 '-movflags', '+faststart', str(mp4)], cwd=stage, timeout=180)
             actual = duration_seconds(mp4, ffprobe)
@@ -153,7 +174,7 @@ def export(recording_path, review_path, output_dir, *, ffmpeg='ffmpeg', ffprobe=
                     'exported clip duration mismatch')
             records.append({'review_id': item['review_id'], 'table_id': item['table_id'],
                 'start_seconds': item['start_seconds'], 'end_seconds': item['end_seconds'],
-                'explanation': item['explanation'].strip(), 'mp4': mp4.name,
+                'explanation': item['explanation'].strip(), 'crop': crop, 'mp4': mp4.name,
                 'mp4_sha256': sha256(mp4), 'srt': srt.name,
                 'srt_sha256': sha256(srt), 'output_duration_seconds': actual})
         report = {'schema_version': 1, 'status': 'offline_human_reviewed_clips_exported',
