@@ -162,6 +162,45 @@ class VerifiedPTSReviewQueueTests(unittest.TestCase):
             self.execute()
         self.assertFalse(self.output.exists())
 
+    def test_replay_original_sampler_seek_with_real_ffmpeg(self):
+        source_path = self.bundle / 'region_samples.json'
+        source = json.loads(source_path.read_text())
+        source['samples'][0]['requested_seek_seconds'] = 0
+        write(source_path, source)
+        ocr = json.loads(self.ocr.read_text())
+        ocr['source_region_samples_sha256'] = digest(source_path)
+        write(self.ocr, ocr)
+        result = self.execute()
+        self.assertEqual(result['source_sample_pts_replayed_with_ffmpeg'], 1)
+
+    def test_replay_rejects_forged_sample_pts_with_consistent_ocr(self):
+        source_path = self.bundle / 'region_samples.json'
+        source = json.loads(source_path.read_text())
+        source['samples'][0]['requested_seek_seconds'] = 0
+        source['samples'][0]['decoded_source_pts_seconds'] = .25
+        write(source_path, source)
+        ocr = json.loads(self.ocr.read_text())
+        ocr['source_region_samples_sha256'] = digest(source_path)
+        for candidate in ocr['candidates']:
+            candidate['decoded_source_pts_seconds'] = .25
+        write(self.ocr, ocr)
+        with self.assertRaisesRegex(ValueError, 'independent FFmpeg replay'):
+            self.execute()
+        self.assertFalse(self.output.exists())
+
+    def test_nonzero_pts_sample_replay(self):
+        self.replace_video_with_offset(5)
+        source_path = self.bundle / 'region_samples.json'
+        source = json.loads(source_path.read_text())
+        source['samples'][0]['requested_seek_seconds'] = 0
+        write(source_path, source)
+        ocr = json.loads(self.ocr.read_text())
+        ocr['source_region_samples_sha256'] = digest(source_path)
+        write(self.ocr, ocr)
+        result = self.execute()
+        self.assertEqual(result['source_sample_pts_replayed_with_ffmpeg'], 1)
+        self.assertEqual(result['source_pts_origin_seconds_verified_from_decoded_video'], 5)
+
     def test_cli_real_ffmpeg(self):
         proc = subprocess.run(['python', str(HERE / 'offline_verified_pts_review_queue.py'),
                                str(self.video), str(self.bundle), str(self.ocr),
