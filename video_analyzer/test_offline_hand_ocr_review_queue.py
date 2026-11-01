@@ -12,7 +12,55 @@ import unittest
 from offline_hand_ocr_review_queue import run
 
 HERE = Path(__file__).resolve().parent
-FIXTURE = HERE / 'fixture/package/demo'
+
+
+def make_fixture(folder):
+    folder = Path(folder)
+    video = folder / 'synthetic_4tables.mp4'
+    subprocess.run(['ffmpeg', '-hide_banner', '-nostdin', '-loglevel', 'error',
+                    '-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=2:duration=2',
+                    '-c:v', 'mpeg4', '-q:v', '3', '-y', str(video)],
+                   check=True, capture_output=True, timeout=30)
+    bundle = folder / 'bundle'
+    (bundle / 'frames').mkdir(parents=True)
+    (bundle / 'tables').mkdir()
+    frame = bundle / 'frames/frame_00.png'
+    subprocess.run(['ffmpeg', '-hide_banner', '-nostdin', '-loglevel', 'error',
+                    '-i', str(video), '-frames:v', '1', '-update', '1', str(frame)],
+                   check=True, capture_output=True, timeout=30)
+    crops = []
+    for table in range(1, 5):
+        x = 320 * ((table-1) % 2)
+        y = 180 * ((table-1) // 2)
+        path = bundle / f'tables/table_{table:02d}_sample_00.png'
+        subprocess.run(['ffmpeg', '-hide_banner', '-nostdin', '-loglevel', 'error',
+                        '-i', str(frame), '-vf', f'crop=320:180:{x}:{y}',
+                        '-frames:v', '1', '-update', '1', str(path)],
+                       check=True, capture_output=True, timeout=30)
+        crops.append({'table_id':table,'path':f'tables/table_{table:02d}_sample_00.png',
+                      'sha256':sha(path),'width':320,'height':180})
+    source = {'schema_version':1,
+              'analysis_status':'unverified_four_table_region_samples_for_manual_review_only',
+              'recording_sha256':sha(video),'ready_for_equity_or_ev':False,
+              'automatic_clip_selection_authorized':False,
+              'regions':[{'table_id':i} for i in range(1,5)],
+              'samples':[{'decoded_source_pts_seconds':0.0,
+                          'frame_path':'frames/frame_00.png','frame_sha256':sha(frame),
+                          'table_crops':crops}]}
+    save(bundle/'region_samples.json',source)
+    candidates=[]
+    for c in crops:
+        candidates.append({'table_id':c['table_id'],'sample_index':0,'field':'pot',
+                           'decoded_source_pts_seconds':0.0,'status':'needs_manual_review',
+                           'parsed_candidate':None,'source_crop_path':c['path'],
+                           'source_crop_sha256':c['sha256'],'raw_ocr_text':'synthetic',
+                           'roi':{'x':25,'y':20,'width':220,'height':110}})
+    save(folder/'synthetic_original_ocr_report.json',{
+        'schema_version':1,'analysis_status':'unverified_four_table_ocr_proposals_only',
+        'recording_sha256':sha(video),'source_region_samples_sha256':sha(bundle/'region_samples.json'),
+        'requires_manual_review':True,'ready_for_equity_or_ev':False,
+        'automatic_hand_or_action_inference':False,'candidates':candidates})
+    return folder
 
 
 def sha(p):
@@ -24,16 +72,25 @@ def save(path, value):
 
 
 class ReviewQueueTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture_temp = tempfile.TemporaryDirectory()
+        cls.fixture = make_fixture(cls.fixture_temp.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fixture_temp.cleanup()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.video = self.root/'video.mp4'
-        shutil.copyfile(FIXTURE/'synthetic_4tables.mp4', self.video)
+        shutil.copyfile(self.fixture/'synthetic_4tables.mp4', self.video)
         self.bundle = self.root/'bundle'
-        shutil.copytree(FIXTURE/'bundle', self.bundle)
+        shutil.copytree(self.fixture/'bundle', self.bundle)
         self.ocr = self.root/'ocr.json'
-        shutil.copyfile(FIXTURE/'synthetic_original_ocr_report.json', self.ocr)
+        shutil.copyfile(self.fixture/'synthetic_original_ocr_report.json', self.ocr)
         self.hands = self.root/'hands.json'
         self.out = self.root/'queue.json'
         self.hand_rows = [{'table_id':i, 'start_seconds':0.0, 'end_seconds':1.0}
