@@ -52,8 +52,15 @@ class TestRealProbe(unittest.TestCase):
   output=self.root/'results.json';r=app.analyze(video,self.path,output,[.5,1.5])
   self.assertEqual([sum(t['proposal']=='likely_visible' for t in s['table_proposals']) for s in r['samples']],[3,3])
   self.assertFalse(r['hands_reconstructed']);self.assertFalse(r['equity_ev_authorized'])
+  self.assertEqual(r['source_video_sha256'],app.sha256(video))
+  self.assertEqual(r['source_layout_sha256'],app.sha256(self.path))
   with self.assertRaises(ValueError):app.analyze(video,self.path,output,[.5])
  def test_out_of_order_times_rejected(self):
-  with self.assertRaises(ValueError):app.analyze('missing.mp4',self.path,self.root/'out.json',[10,3])
+  video=self.root/'fake.mp4';video.write_bytes(b'fixture')
+  result={'streams':[{'width':1280,'height':480,'start_time':'0','avg_frame_rate':'20/1'}],
+          'format':{'duration':'10'}}
+  with patch.object(app,'cmd',return_value=type('P',(),{'stdout':json.dumps(result).encode()})()):
+   with self.assertRaisesRegex(ValueError,'invalid sample times'):
+    app.analyze(video,self.path,self.root/'out.json',[9,3])
 
 if __name__=='__main__':unittest.main()
