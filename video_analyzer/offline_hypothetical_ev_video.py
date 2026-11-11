@@ -5,6 +5,7 @@ Usage: python offline_hypothetical_ev_video.py RESULT.json NEW_REPORT.mp4
 """
 from __future__ import annotations
 import argparse
+import io
 import hashlib
 import json
 import math
@@ -12,6 +13,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from PIL import Image
 
 
 def need(ok, message):
@@ -132,7 +134,7 @@ def render(source, output):
         card.write_text('\n'.join(text_lines(data,rows))+'\n','utf-8')
         video=tmp/'card.mp4'
         # The textfile path is generated internally, never from untrusted JSON.
-        vf=f"drawtext=textfile='{card}':fontcolor=white:fontsize=22:line_spacing=9:x=32:y=28"
+        vf=f"drawtext=textfile='{card}':expansion=none:fontcolor=white:fontsize=22:line_spacing=9:x=32:y=28"
         cmd=['ffmpeg','-nostdin','-hide_banner','-loglevel','error','-y',
              '-f','lavfi','-i','color=c=0x142437:s=1280x720:r=15:d=7',
              '-vf',vf,'-an','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p',
@@ -151,11 +153,27 @@ def render(source, output):
              any(s.get('codec_type')=='video' and s.get('width')==1280 and
                  s.get('height')==720 for s in details.get('streams',[])),
              'unexpected video output')
+        # FFmpeg can finish successfully while drawtext silently draws nothing
+        # (for example, when '%' in equity values is expanded as a directive).
+        frame = subprocess.run(['ffmpeg','-nostdin','-hide_banner','-loglevel','error',
+                                '-ss','1','-i',str(video),'-frames:v','1',
+                                '-f','image2pipe','-vcodec','png','-'],
+                               capture_output=True,timeout=20,check=True)
+        with Image.open(io.BytesIO(frame.stdout)) as image:
+            pixels = image.convert('RGB')
+            # White lettering must occupy a visible area; the card background
+            # itself has no bright pixels. This is a visibility check, not OCR.
+            pixel_data = (pixels.get_flattened_data() if hasattr(pixels, 'get_flattened_data')
+                          else pixels.getdata())
+            bright = sum(max(rgb)>180 for rgb in pixel_data)
+        need(bright >= 100, 'explanatory card text is not visible in decoded frame')
         need(sha(src)==source_sha,'input changed during export')
         meta={'schema_version':1,'analysis_status':'synthetic_hypothetical_ev_video_only',
               'source_report_sha256':source_sha,'mp4_sha256':sha(video),
               'scenario_id':data['scenario_id'],'range_count':len(rows),
               'range_sensitive':data['range_sensitive'],
+              'rendered_text_bright_pixels':bright,
+              'visual_text_verified_from_decoded_frame':True,
               'source_hand_reconstruction_verified':False,
               'strategic_error_established':False,
               'real_video_clip':False,'audio_included':False,
