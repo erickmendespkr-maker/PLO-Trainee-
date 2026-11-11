@@ -26,6 +26,8 @@ class HypotheticalCardTests(unittest.TestCase):
         self.assertTrue((self.root/'card.mp4').stat().st_size>0)
         self.assertEqual(result['mp4_sha256'],app.sha(self.root/'card.mp4'))
         self.assertFalse(result['real_video_clip'])
+        self.assertTrue(result['visual_text_verified_from_decoded_frame'])
+        self.assertGreaterEqual(result['rendered_text_bright_pixels'],100)
         self.assertEqual(json.loads((self.root/'card.mp4.json').read_text())['source_report_sha256'],app.sha(self.source))
     def test_no_overwrite(self):
         dst=self.root/'card.mp4';app.render(self.source,dst)
