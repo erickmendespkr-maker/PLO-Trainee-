@@ -6,6 +6,7 @@ It never verifies cards, hands, actions, equity, EV or poker decisions.
 """
 import argparse
 import csv
+import hashlib
 import io
 import json
 import math
@@ -18,6 +19,14 @@ from PIL import Image, ImageEnhance, ImageOps
 PROBES = ((.30, .52), (.70, .52), (.30, .68), (.70, .68))
 PTS = re.compile(r'\bpts_time:\s*(-?\d+(?:\.\d+)?)')
 BB = re.compile(r'(?<!\d)(\d{1,4}(?:[.,]\d{1,2})?)\s*BB\b', re.I)
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as f:
+        for block in iter(lambda: f.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def require(ok, message):
@@ -116,6 +125,7 @@ def analyze(video, config, output, times):
             not output.exists() and not output.is_symlink() and
             output.resolve() not in (video.resolve(),Path(config).resolve()),
             'output must be a distinct new JSON file')
+    video_sha, layout_sha = sha256(video), sha256(config)
     raw=json.loads(cmd(['ffprobe','-v','error','-select_streams','v:0',
                         '-show_entries','stream=width,height,start_time,avg_frame_rate:format=duration',
                         '-of','json',str(video)],30).stdout)
@@ -151,7 +161,10 @@ def analyze(video, config, output, times):
             candidates.append(present)
         rows.append({'requested_playback_seconds':t,'decoded_source_pts_seconds':points[0],
                      'table_proposals':candidates})
+    require(sha256(video) == video_sha and sha256(config) == layout_sha,
+            'input changed during processing')
     report={'schema_version':1,'status':'real_video_ocr_and_layout_proposals_only',
+            'source_video_sha256':video_sha, 'source_layout_sha256':layout_sha,
             'recording':{'width':width,'height':height,'duration_seconds':duration},
             'samples':rows,'hands_reconstructed':False,'equity_ev_authorized':False,
             'automatic_clip_selection_authorized':False,
