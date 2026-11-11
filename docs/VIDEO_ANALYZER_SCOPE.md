@@ -34,5 +34,9 @@ O Poker Kernel permanece como biblioteca de regras, não como interface do produ
 ## Não incluído
 Mesas jogáveis, adversários de IA para jogar, integração com plataformas de pôquer, decisões ao vivo, execução de apostas.
 
-## Bloqueios e estado de validação
-Falta vídeo real autorizado e anotado de 3–5 minutos para calibrar reconhecimento visual e medir a precisão de detecção de mãos, cartas, ações e OCR. A prova de conceito offline de ingestão, amostragem, mudança visual, refinamento temporal e OCR de ROIs possui testes **sintéticos** (ciclos 168–172), mas ainda não foi validada com sessões reais de 40–60 minutos. O texto OCR é apenas proposta sujeita à revisão humana; não é entrada automática de equity/EV. Testes completos no Windows e validação de ponta a ponta permanecem pendentes.
+## Bloqueios e estado de validação (atualizado no ciclo 276)
+Uma gravação autorizada foi fornecida pelo usuário como arquivo RAR: MP4 com 3610,1 segundos (60min10s), 1730×800, 20 FPS, PLO5; durante a gravação aparecem trechos com 3 e com 4 mesas. O **arquivo de vídeo e seus quadros não são publicados neste repositório**. Não há ainda um conjunto de anotações humanas por mão que permita medir acurácia de identificação de cartas, ações ou potes.
+
+A prova de conceito `video_analyzer/offline_real_video_probe.py` foi executada localmente usando FFmpeg, FFprobe e Tesseract reais em cinco timestamps: 5, 60, 600, 1800 e 3000 segundos. As *propostas* de mesas presentes foram, respectivamente, 4/4/3/4/4. O OCR produziu 13 valores numéricos candidatos de pote entre 20 regiões potenciais, alguns potencialmente incorretos. O resultado **não** comprova reconstrução de mãos, cartas privadas, ações, equity, EV ou precisão de OCR.
+
+O novo módulo foi testado com **10 testes sintéticos aprovados**, inclusive um MP4 sintético processado por FFmpeg + Tesseract. A origem PTS foi conferida nas cinco amostras da gravação real. Os dados reais não são fixture de CI e não devem ser enviados ao GitHub. A validação de todo o vídeo minuto a minuto, métricas contra anotações humanas e processamento de ponta a ponta ainda são pendências.
