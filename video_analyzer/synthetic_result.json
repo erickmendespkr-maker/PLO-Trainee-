@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "analysis_status": "hypothetical_range_sensitivity_not_video_verified",
+  "scenario_id": "example_1",
+  "pot_before_call_bb": 150,
+  "call_cost_bb": 50,
+  "break_even_equity": 0.25,
+  "range_sensitive": true,
+  "source_hand_reconstruction_verified": false,
+  "strategic_error_established": false,
+  "automatic_clip_selection_authorized": false,
+  "range_results": [
+    {
+      "range_id": "wide",
+      "equity": 0.3,
+      "equity_ci95": [
+        0.27999999999999997,
+        0.32
+      ],
+      "ev_call_bb": 10.0,
+      "ev_call_ci95_bb": [
+        5.999999999999993,
+        14.0
+      ],
+      "conditional_label": "positive_under_interval",
+      "iterations": 10000,
+      "seed": 42
+    },
+    {
+      "range_id": "tight",
+      "equity": 0.2,
+      "equity_ci95": [
+        0.18000000000000002,
+        0.22
+      ],
+      "ev_call_bb": -10.0,
+      "ev_call_ci95_bb": [
+        -13.999999999999993,
+        -6.0
+      ],
+      "conditional_label": "negative_under_interval",
+      "iterations": 10000,
+      "seed": 42
+    }
+  ]
+}
