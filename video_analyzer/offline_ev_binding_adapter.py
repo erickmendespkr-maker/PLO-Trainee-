@@ -55,6 +55,16 @@ def adapt_sensitivity(source, scenario_id):
             "ev_call_bb": ev, "ev_interval_conditional_bb": bounds,
             "conditional_label": label, "range_is_user_assumption": True,
             "range_uncertainty_included_in_interval": False})
+    # The envelope is an auditable summary, not an independent claim.
+    envelope = source.get("ev_envelope_bb")
+    expected = [
+        min(r["ev_interval_conditional_bb"][0] for r in converted),
+        max(r["ev_interval_conditional_bb"][1] for r in converted),
+    ]
+    if (type(envelope) is not list or len(envelope) != 2 or
+        any(type(x) not in (int, float) or not math.isfinite(x) for x in envelope) or
+        any(abs(x - y) > 1e-6 for x, y in zip(envelope, expected))):
+        raise ValueError("inconsistent EV envelope")
     sensitive = labels not in ({"positive_under_interval"}, {"negative_under_interval"})
     odds = c/(p+c)
     be = source.get("break_even_equity")
