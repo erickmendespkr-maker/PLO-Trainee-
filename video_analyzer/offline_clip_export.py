@@ -32,7 +32,7 @@ def export_clip(source, output_dir, plan, *, timeout=180):
     if sha256_file(source) != expected:
         raise ValueError("source SHA-256 mismatch")
     name = plan.get("output_name")
-    if not isinstance(name, str) or not name.endswith(".mp4") or name in (".mp4", "..mp4") or Path(name).name != name or "/" in name or "\\" in name:
+    if not isinstance(name, str) or not name.endswith(".mp4") or name in (".mp4", "..mp4") or Path(name).name != name or "/" in name or "\\" in name or len(name) > 120 or any(ord(ch) < 32 or ord(ch) == 127 for ch in name):
         raise ValueError("unsafe output filename")
     start, end = plan.get("start_seconds"), plan.get("end_seconds")
     if any(type(x) not in (int, float) or not math.isfinite(x) for x in (start, end)) or not 0 <= start < end:
