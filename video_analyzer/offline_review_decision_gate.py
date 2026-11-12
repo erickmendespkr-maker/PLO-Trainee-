@@ -78,6 +78,6 @@ def assess(record):
     return {'schema_version': 1, 'hand_id': record['hand_id'], 'table_id': record['table_id'],
             'analysis_status': status, 'missing_or_unconfirmed': sorted(set(missing)),
             'source_video_sha256': record['source_video_sha256'],
-            'source_hand_reconstruction_verified': status == 'READY_FOR_CONDITIONAL_MODEL',
+            'source_hand_reconstruction_verified': False,
             'strategic_error_established': False, 'gto_solution': False,
             'warning': 'Ready means evidence may be modeled under assumed ranges, not that a strategic verdict is proven.'}
