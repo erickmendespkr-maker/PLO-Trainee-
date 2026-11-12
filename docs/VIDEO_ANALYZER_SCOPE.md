@@ -58,3 +58,10 @@ O novo módulo foi testado com **10 testes sintéticos aprovados**, inclusive um
 - Novo `video_analyzer/offline_ev_scenario_audit.py` valida matematicamente os resultados de EV de call sob **ranges hipotéticos fornecidos**, e produz um envelope entre cenários, não uma confiança estatística sobre ranges desconhecidos.
 - 13 testes sintéticos do auditor passaram localmente; hashes Git dos arquivos publicados correspondem exatamente aos bytes testados. A suíte de 15 testes do módulo anterior de EV ponderado permanece sem execução nesta sessão.
 - Nenhuma gravação PLO5 original acessível neste ambiente; somente um vídeo sintético e um recorte demonstrativo anterior foram localizados. Nenhuma nova mão real foi validada. Consultar `video_analyzer/CHANGELOG_CYCLE288.md`.
+
+## Progresso: ciclo 304 (12/11/2026)
+- A gravação PLO5 original foi extraída localmente do RAR e inspecionada com FFprobe/FFmpeg: 3610,1 s, 1730×800, 20 FPS, H.264. **Nem o vídeo nem seus quadros foram publicados no GitHub.**
+- Novo detector conservador de presença de cartas comunitárias brancas: `video_analyzer/offline_board_street_proposals.py`; configuração de quatro mesas e 18 testes sintéticos aprovados. Usa PTS de quadros reais, SHA-256 e regiões calibradas, sempre com `verified_by_human = false`.
+- Em 12 instantes dos primeiros dois minutos, 16 intervalos candidatos de mudanças de estado visual; em 24 instantes espalhados pela sessão inteira, 60 intervalos. São diferenças entre duas observações esparsas, **não 60 mãos nem eventos exatos**.
+- Dos 96 estados individuais da amostragem horária: 51 sem board face-up detectado, 24 flop, 12 turn, 7 river candidatos, 2 ambíguos. O detector não reconhece ranks/suits e a ausência de fundo branco não prova preflop.
+- Foi gerado um clip local de 20 s da mesa 1 com aviso “revisão pendente”, sem afirmação de EV daquela jogada. Consulte `video_analyzer/CHANGELOG_CYCLE304.md`.
