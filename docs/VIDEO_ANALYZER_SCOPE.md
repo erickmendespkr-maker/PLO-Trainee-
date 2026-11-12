@@ -53,3 +53,8 @@ O novo módulo foi testado com **10 testes sintéticos aprovados**, inclusive um
 - **31/31 testes locais aprovados** (14 do cartão e 17 da composição), incluindo geração FFmpeg real com vídeo sintético, auditoria de SHA/tempo e rejeição de anotações promovidas indevidamente.
 - Foi gerado localmente um vídeo de demonstração **visual** de 16,933 s usando apenas um corte real preexistente de 10 s, com indicação explícita de que **o cartão de EV é hipotético e não descreve a jogada**. O footage real e seus quadros não foram publicados no repositório.
 - A sessão inteira permanece sem histórico de mãos revisado que autorize análise estratégica ou classificação automática de erros. Consultar `video_analyzer/CHANGELOG_CYCLE282.md`.
+
+## Progresso: ciclo 288 (11/11/2026)
+- Novo `video_analyzer/offline_ev_scenario_audit.py` valida matematicamente os resultados de EV de call sob **ranges hipotéticos fornecidos**, e produz um envelope entre cenários, não uma confiança estatística sobre ranges desconhecidos.
+- 13 testes sintéticos do auditor passaram localmente; hashes Git dos arquivos publicados correspondem exatamente aos bytes testados. A suíte de 15 testes do módulo anterior de EV ponderado permanece sem execução nesta sessão.
+- Nenhuma gravação PLO5 original acessível neste ambiente; somente um vídeo sintético e um recorte demonstrativo anterior foram localizados. Nenhuma nova mão real foi validada. Consultar `video_analyzer/CHANGELOG_CYCLE288.md`.
