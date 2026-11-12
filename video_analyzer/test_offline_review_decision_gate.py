@@ -16,6 +16,7 @@ class GateTests(unittest.TestCase):
         result=assess(sample())
         self.assertEqual(result['analysis_status'],'READY_FOR_CONDITIONAL_MODEL')
         self.assertFalse(result['strategic_error_established'])
+        self.assertFalse(result['source_hand_reconstruction_verified'])
     def test_ocr_never_promoted(self):
         s=sample();s['field_evidence']['hero_cards']['status']='ocr_candidate'
         self.assertEqual(assess(s)['analysis_status'],'INSUFFICIENT_DATA')
