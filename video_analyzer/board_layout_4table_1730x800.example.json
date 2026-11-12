@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "slots": [
+    {"table_id": 1, "x": 0, "y": 30, "width": 430, "height": 700},
+    {"table_id": 2, "x": 432, "y": 30, "width": 430, "height": 700},
+    {"table_id": 3, "x": 864, "y": 30, "width": 430, "height": 700},
+    {"table_id": 4, "x": 1296, "y": 30, "width": 430, "height": 700}
+  ],
+  "board_strip": {
+    "offset_x": 82,
+    "offset_y": 265,
+    "step_x": 57,
+    "width": 28,
+    "height": 55,
+    "white_min_rgb": 200,
+    "min_white_fraction": 0.5
+  }
+}
