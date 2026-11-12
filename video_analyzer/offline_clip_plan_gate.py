@@ -17,7 +17,10 @@ def plan_clip(video_sha256, table_id, hand_id, start_seconds, end_seconds,
         raise ValueError("clip outside source duration")
     if review_status not in ("confirmed", "insufficient_data"):
         raise ValueError("unknown review status")
-    if not isinstance(output_name, str) or not output_name.endswith(".mp4") or Path(output_name).name != output_name or output_name in (".mp4", "..mp4"):
+    if (not isinstance(output_name, str) or len(output_name) > 128 or
+            not output_name.endswith(".mp4") or output_name in (".mp4", "..mp4") or
+            Path(output_name).name != output_name or "/" in output_name or
+            "\\" in output_name or any(ord(c) < 32 for c in output_name)):
         raise ValueError("unsafe output name")
     return {
         "source_sha256": video_sha256,
