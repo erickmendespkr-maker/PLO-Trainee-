@@ -79,6 +79,18 @@ class AuditIdentityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'source interval mismatch'):
             audit_export(self.clip, expected_interval=(True, 1.0))
 
+    def test_trusted_review_status_matches(self):
+        self.assertTrue(audit_export(self.clip, expected_review_status='insufficient_data')['integrity_verified'])
+
+    def test_forged_review_promotion_rejected(self):
+        self.modify(review_status='confirmed', annotation='CONDITIONAL MODEL ONLY')
+        with self.assertRaisesRegex(ValueError, 'review status mismatch'):
+            audit_export(self.clip, expected_review_status='insufficient_data')
+
+    def test_invalid_expected_review_status_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'review status mismatch'):
+            audit_export(self.clip, expected_review_status='unverified')
+
 
 if __name__ == '__main__':
     unittest.main()
