@@ -55,6 +55,30 @@ class AuditIdentityTests(unittest.TestCase):
         self.modify(review_status='confirmed', annotation='CONDITIONAL MODEL ONLY')
         self.assertTrue(audit_export(self.clip)['integrity_verified'])
 
+    def test_external_identity_matches(self):
+        result = audit_export(self.clip, expected_hand_id='hand-001',
+                              expected_table_id=1, expected_interval=(0.0, 1.0))
+        self.assertTrue(result['integrity_verified'])
+
+    def test_forged_hand_id_rejected_against_review_record(self):
+        self.modify(hand_id='hand-999')
+        with self.assertRaisesRegex(ValueError, 'hand identity mismatch'):
+            audit_export(self.clip, expected_hand_id='hand-001')
+
+    def test_forged_table_rejected_against_review_record(self):
+        self.modify(table_id=2)
+        with self.assertRaisesRegex(ValueError, 'table identity mismatch'):
+            audit_export(self.clip, expected_table_id=1)
+
+    def test_forged_interval_rejected_against_review_record(self):
+        self.modify(start_seconds=0.1, end_seconds=1.1)
+        with self.assertRaisesRegex(ValueError, 'source interval mismatch'):
+            audit_export(self.clip, expected_interval=(0.0, 1.0))
+
+    def test_invalid_external_interval_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'source interval mismatch'):
+            audit_export(self.clip, expected_interval=(True, 1.0))
+
 
 if __name__ == '__main__':
     unittest.main()
