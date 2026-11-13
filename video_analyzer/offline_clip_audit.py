@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 
-def audit_export(mp4_path, *, expected_source_sha256=None, expected_hand_id=None, expected_table_id=None, expected_interval=None, tolerance_seconds=0.25):
+def audit_export(mp4_path, *, expected_source_sha256=None, expected_hand_id=None, expected_table_id=None, expected_interval=None, expected_review_status=None, tolerance_seconds=0.25):
     path = Path(mp4_path)
     sidecar = path.with_name(path.name + '.json')
     if path.suffix.lower() != '.mp4' or not path.is_file() or path.is_symlink():
@@ -53,6 +53,8 @@ def audit_export(mp4_path, *, expected_source_sha256=None, expected_hand_id=None
         raise ValueError('sidecar interval mismatch')
     if metadata.get('strategic_verdict_allowed') is not False or metadata.get('review_status') not in ('confirmed', 'insufficient_data'):
         raise ValueError('invalid review gate')
+    if expected_review_status is not None and (expected_review_status not in ('confirmed', 'insufficient_data') or metadata['review_status'] != expected_review_status):
+        raise ValueError('review status mismatch')
     expected_annotation = ('INSUFFICIENT_DATA' if metadata['review_status'] == 'insufficient_data'
                            else 'CONDITIONAL MODEL ONLY')
     if metadata.get('annotation') != expected_annotation:
