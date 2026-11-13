@@ -2,6 +2,7 @@
 import hashlib
 import json
 import math
+import re
 import subprocess
 from pathlib import Path
 
@@ -30,6 +31,9 @@ def audit_export(mp4_path, *, expected_source_sha256=None, tolerance_seconds=0.2
             digest.update(chunk)
     if digest.hexdigest() != metadata['clip_sha256']:
         raise ValueError('clip hash mismatch')
+    hand_id = metadata.get('hand_id')
+    if type(hand_id) is not str or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', hand_id) is None:
+        raise ValueError('invalid hand id')
     if type(metadata.get('table_id')) is not int or not 1 <= metadata['table_id'] <= 4:
         raise ValueError('invalid table id')
     start, end, recorded = (metadata.get(k) for k in ('start_seconds', 'end_seconds', 'actual_clip_duration_seconds'))
@@ -39,8 +43,10 @@ def audit_export(mp4_path, *, expected_source_sha256=None, tolerance_seconds=0.2
         raise ValueError('sidecar interval mismatch')
     if metadata.get('strategic_verdict_allowed') is not False or metadata.get('review_status') not in ('confirmed', 'insufficient_data'):
         raise ValueError('invalid review gate')
-    if metadata['review_status'] == 'insufficient_data' and metadata.get('annotation') != 'INSUFFICIENT_DATA':
-        raise ValueError('unverified annotation promoted')
+    expected_annotation = ('INSUFFICIENT_DATA' if metadata['review_status'] == 'insufficient_data'
+                           else 'CONDITIONAL MODEL ONLY')
+    if metadata.get('annotation') != expected_annotation:
+        raise ValueError('annotation does not match review status')
     probe = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name:format=duration', '-of', 'json', str(path)], capture_output=True, text=True, check=True, timeout=30)
     data = json.loads(probe.stdout)
     if not data.get('streams') or not data['streams'][0].get('codec_name'):
