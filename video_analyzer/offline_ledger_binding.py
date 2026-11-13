@@ -16,13 +16,15 @@ def audit_against_ledger(mp4_path, ledger_path, *, hand_id, table_id,
     head = entries[-1]['entry_sha256']
     if expected_head_sha256 is not None and head != expected_head_sha256:
         raise ValueError('ledger head checkpoint mismatch')
-    matches = [entry for entry in entries if
-               entry['review']['hand_id'] == hand_id and
-               entry['review']['table_id'] == table_id and
-               entry['review']['source_sha256'] == source_sha256]
+    # Select the newest assertion for this hand first. Filtering by table/source
+    # before selecting could silently accept an older, superseded review.
+    matches = [entry for entry in entries if entry['review']['hand_id'] == hand_id]
     if not matches:
         raise ValueError('no matching reviewed hand in ledger')
     selected = matches[-1]
+    if (selected['review']['table_id'] != table_id or
+            selected['review']['source_sha256'] != source_sha256):
+        raise ValueError('latest hand review identity mismatch')
     result = audit_against_review(mp4_path, selected['review'])
     return {**result, 'ledger_entry_sha256': selected['entry_sha256'],
             'ledger_head_sha256': head, 'ledger_sequence': selected['sequence'],
