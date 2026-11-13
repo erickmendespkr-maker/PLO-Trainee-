@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 
-def audit_export(mp4_path, *, expected_source_sha256=None, tolerance_seconds=0.25):
+def audit_export(mp4_path, *, expected_source_sha256=None, expected_hand_id=None, expected_table_id=None, expected_interval=None, tolerance_seconds=0.25):
     path = Path(mp4_path)
     sidecar = path.with_name(path.name + '.json')
     if path.suffix.lower() != '.mp4' or not path.is_file() or path.is_symlink():
@@ -34,11 +34,21 @@ def audit_export(mp4_path, *, expected_source_sha256=None, tolerance_seconds=0.2
     hand_id = metadata.get('hand_id')
     if type(hand_id) is not str or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}', hand_id) is None:
         raise ValueError('invalid hand id')
+    if expected_hand_id is not None and (type(expected_hand_id) is not str or hand_id != expected_hand_id):
+        raise ValueError('hand identity mismatch')
     if type(metadata.get('table_id')) is not int or not 1 <= metadata['table_id'] <= 4:
         raise ValueError('invalid table id')
+    if expected_table_id is not None and (type(expected_table_id) is not int or metadata['table_id'] != expected_table_id):
+        raise ValueError('table identity mismatch')
     start, end, recorded = (metadata.get(k) for k in ('start_seconds', 'end_seconds', 'actual_clip_duration_seconds'))
     if any(type(v) not in (int, float) or not math.isfinite(v) for v in (start, end, recorded)) or not 0 <= start < end or recorded <= 0:
         raise ValueError('invalid timestamps')
+    if expected_interval is not None:
+        if (not isinstance(expected_interval, (tuple, list)) or len(expected_interval) != 2
+                or any(type(v) not in (int, float) or not math.isfinite(v) for v in expected_interval)
+                or not 0 <= expected_interval[0] < expected_interval[1]
+                or abs(start - expected_interval[0]) > 1e-6 or abs(end - expected_interval[1]) > 1e-6):
+            raise ValueError('source interval mismatch')
     if abs(recorded - (end - start)) > tolerance_seconds:
         raise ValueError('sidecar interval mismatch')
     if metadata.get('strategic_verdict_allowed') is not False or metadata.get('review_status') not in ('confirmed', 'insufficient_data'):
