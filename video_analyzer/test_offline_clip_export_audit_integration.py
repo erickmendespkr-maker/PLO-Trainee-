@@ -59,11 +59,11 @@ class ExportAuditIntegration(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.export()
 
-    def test_invalid_table_is_detected_by_audit(self):
+    def test_invalid_table_is_rejected_before_export(self):
         self.plan['table_id'] = 5
-        self.export()
         with self.assertRaisesRegex(ValueError, 'invalid table id'):
-            audit_export(self.out / 'hand_001.mp4')
+            self.export()
+        self.assertFalse((self.out / 'hand_001.mp4').exists())
 
 
 if __name__ == '__main__':
