@@ -19,22 +19,31 @@ def audit_visual_gate(manifest, source_path, clip_path, *, source_first_frame, m
     technical = audit_clip_bundle(manifest, clip_path)
     if technical.get('status') != 'TECHNICAL_CLIP_AUDITS_PASSED_ONLY':
         raise ValueError('technical audit not passed')
-    if technical.get('approved_for_publication') is not False:
-        raise ValueError('unexpected technical approval')
+    for key in ('approved_for_publication', 'source_timeline_verified', 'visual_hand_verified', 'ev_verified'):
+        if technical.get(key) is not False:
+            raise ValueError('unexpected technical evidence claim: ' + key)
+    pts = technical.get('pts_audit')
+    if not isinstance(pts, dict) or type(pts.get('frame_count')) is not int or pts['frame_count'] < 1:
+        raise ValueError('invalid technical frame count')
     visual = audit_exact_frames(source_path, clip_path,
                                 source_first_frame=source_first_frame, max_frames=max_frames)
-    if visual.get('approved_for_publication') is not False or visual.get('visual_hand_verified') is not False:
-        raise ValueError('unexpected visual approval')
+    for key in ('approved_for_publication', 'visual_hand_verified', 'ev_verified'):
+        if visual.get(key) is not False:
+            raise ValueError('unexpected visual evidence claim: ' + key)
     if type(visual.get('clip_frames')) is not int or visual['clip_frames'] < 1:
         raise ValueError('empty visual audit')
-    if visual['clip_frames'] != technical['pts_audit']['frame_count']:
+    if visual['clip_frames'] != pts['frame_count']:
         raise ValueError('frame count disagreement')
+    if any(type(visual.get(k)) is not int or visual[k] < 0 for k in ('matching_frames', 'mismatch_count')):
+        raise ValueError('invalid pixel counts')
     if visual['matching_frames'] + visual['mismatch_count'] != visual['clip_frames']:
         raise ValueError('inconsistent pixel counts')
     if visual['status'] not in ('EXACT_DECODED_FRAMES_MATCH', 'FRAME_CONTENT_MISMATCH'):
         raise ValueError('unknown visual status')
     if (visual['status'] == 'EXACT_DECODED_FRAMES_MATCH') != (visual['mismatch_count'] == 0):
         raise ValueError('inconsistent visual status')
+    if type(visual.get('source_first_frame')) is not int or visual['source_first_frame'] != source_first_frame:
+        raise ValueError('visual audit source index mismatch')
     return {
         'status': 'PIXEL_AND_TECHNICAL_CANDIDATE_ONLY' if visual['mismatch_count'] == 0 else 'FRAME_CONTENT_MISMATCH',
         'technical_audit': technical, 'visual_audit': visual,
