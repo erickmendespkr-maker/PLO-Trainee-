@@ -4,6 +4,7 @@ import json
 import math
 import subprocess
 from pathlib import Path
+from offline_clip_plan_preflight import validate_clip_plan
 
 def sha256_file(path):
     digest = hashlib.sha256()
@@ -21,6 +22,7 @@ def probe_duration(source):
 
 def export_clip(source, output_dir, plan, *, timeout=180):
     """Export reencoded MP4 and JSON sidecar; plan must come from validated clip gate."""
+    validate_clip_plan(plan)
     source, outdir = Path(source), Path(output_dir)
     if not source.is_file() or source.is_symlink():
         raise ValueError("source must be a regular local file")
