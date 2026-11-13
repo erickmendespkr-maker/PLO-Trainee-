@@ -48,5 +48,21 @@ class LedgerBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'empty'):
             audit_against_ledger('clip.mp4', self.ledger, hand_id='h1', table_id=1, source_sha256='a'*64)
 
+    @patch('offline_ledger_binding.audit_against_review', return_value={'ok': True})
+    def test_superseded_table_review_rejected(self, audit):
+        append_review(self.ledger, BASE)
+        append_review(self.ledger, {**BASE, 'table_id': 2})
+        with self.assertRaisesRegex(ValueError, 'latest hand review identity mismatch'):
+            audit_against_ledger('clip.mp4', self.ledger, hand_id='h1', table_id=1, source_sha256='a'*64)
+        audit.assert_not_called()
+
+    @patch('offline_ledger_binding.audit_against_review', return_value={'ok': True})
+    def test_superseded_source_review_rejected(self, audit):
+        append_review(self.ledger, BASE)
+        append_review(self.ledger, {**BASE, 'source_sha256': 'b'*64})
+        with self.assertRaisesRegex(ValueError, 'latest hand review identity mismatch'):
+            audit_against_ledger('clip.mp4', self.ledger, hand_id='h1', table_id=1, source_sha256='a'*64)
+        audit.assert_not_called()
+
 if __name__ == '__main__':
     unittest.main()
