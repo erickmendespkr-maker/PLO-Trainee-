@@ -44,8 +44,6 @@ def validate_annotations(bundle, annotations):
         hand_id = hand.get('hand_id')
         if not isinstance(table, str) or not table or not isinstance(hand_id, str) or not hand_id:
             raise ValueError('missing identifiers')
-        if table not in ('1', '2', '3', '4'):
-            raise ValueError('noncanonical or unsupported table ID')
         if hand.get('human_confirmed', False) not in (True, False) or type(hand.get('human_confirmed', False)) is not bool:
             raise ValueError('invalid human confirmation')
         for flag in ('equity_ev_verified', 'gto_verified', 'cards_visually_verified', 'actions_visually_verified'):
