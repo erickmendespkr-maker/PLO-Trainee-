@@ -32,7 +32,15 @@ def audit_annotation_evidence(bundle, annotations, *, require_samples=True):
         if (tid, idx) in identities:
             raise ValueError('duplicate evidence')
         identities.add((tid, idx))
-        indexed.setdefault(tid, []).append((pts, idx, digest))
+        nominal = event.get('nominal_source_seconds')
+        if nominal is not None:
+            if type(nominal) not in (int, float) or not math.isfinite(nominal) or nominal < pts:
+                raise ValueError('invalid nominal source timestamp')
+            if event.get('nominal_source_seconds_verified') is not False:
+                raise ValueError('nominal source time cannot be verified')
+        elif 'nominal_source_seconds_verified' in event:
+            raise ValueError('nominal verification flag without timestamp')
+        indexed.setdefault(tid, []).append((pts, idx, digest, nominal))
     for samples in indexed.values():
         samples.sort()
         if any(b[0] <= a[0] for a, b in zip(samples, samples[1:])):
@@ -46,7 +54,7 @@ def audit_annotation_evidence(bundle, annotations, *, require_samples=True):
         if tid not in indexed:
             raise ValueError('absent table')
         start, end = hand['start_seconds'], hand['end_seconds']
-        samples = [s for s in indexed[tid] if start <= s[0] <= end]
+        # Annotation intervals are nominal source seconds when a crop offset exists.\n        # Never compare them to crop-relative PTS in that case.\n        modes = {sample[3] is not None for sample in indexed[tid]}\n        if len(modes) != 1:\n            raise ValueError('mixed timestamp coordinate systems')\n        samples = [s for s in indexed[tid] if start <= (s[3] if True in modes else s[0]) <= end]
         if require_samples and not samples:
             raise ValueError('interval without sampled frames')
         results.append({'table_id': tid, 'hand_id': hand['hand_id'],
