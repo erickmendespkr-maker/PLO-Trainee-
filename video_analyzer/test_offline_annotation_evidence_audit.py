@@ -41,6 +41,37 @@ class AuditTests(unittest.TestCase):
         b=copy.deepcopy(B);e=copy.deepcopy(b['timeline']['events'][0]);e['frame_index']=1
         b['timeline']['events'].append(e)
         with self.assertRaises(ValueError):self.run_audit(b=b)
+    def test_nominal_source_offset_not_crop_pts(self):
+        b=copy.deepcopy(B)
+        for event in b['timeline']['events']:
+            event['nominal_source_seconds']=102.0
+            event['nominal_source_seconds_verified']=False
+        a=copy.deepcopy(A)
+        for hand in a['hands']:
+            hand['start_seconds']=101
+            hand['end_seconds']=103
+        self.assertEqual(self.run_audit(b=b,a=a)['hands'][0]['sample_count'],1)
+        with self.assertRaises(ValueError):
+            self.run_audit(b=b)
+
+    def test_mixed_time_coordinates_rejected(self):
+        b=copy.deepcopy(B)
+        e=copy.deepcopy(b['timeline']['events'][0])
+        e['frame_index']=1
+        e['crop_pts_seconds']=3.0
+        e['nominal_source_seconds']=103.0
+        e['nominal_source_seconds_verified']=False
+        b['timeline']['events'].append(e)
+        with self.assertRaises(ValueError):
+            self.run_audit(b=b)
+
+    def test_unverified_nominal_claim_rejected(self):
+        b=copy.deepcopy(B)
+        b['timeline']['events'][0]['nominal_source_seconds']=102.0
+        b['timeline']['events'][0]['nominal_source_seconds_verified']=True
+        with self.assertRaises(ValueError):
+            self.run_audit(b=b)
+
     def test_digest_mismatch(self):
         a=copy.deepcopy(A);a['evidence_json_sha256']='b'*64
         with self.assertRaises(ValueError):self.run_audit(a=a)
