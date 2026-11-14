@@ -54,7 +54,13 @@ def audit_annotation_evidence(bundle, annotations, *, require_samples=True):
         if tid not in indexed:
             raise ValueError('absent table')
         start, end = hand['start_seconds'], hand['end_seconds']
-        # Annotation intervals are nominal source seconds when a crop offset exists.\n        # Never compare them to crop-relative PTS in that case.\n        modes = {sample[3] is not None for sample in indexed[tid]}\n        if len(modes) != 1:\n            raise ValueError('mixed timestamp coordinate systems')\n        samples = [s for s in indexed[tid] if start <= (s[3] if True in modes else s[0]) <= end]
+        # Annotation intervals use nominal source seconds when crop offsets exist.
+        # Never silently mix nominal source coordinates with crop-relative PTS.
+        modes = {sample[3] is not None for sample in indexed[tid]}
+        if len(modes) != 1:
+            raise ValueError('mixed timestamp coordinate systems')
+        use_nominal = True in modes
+        samples = [s for s in indexed[tid] if start <= (s[3] if use_nominal else s[0]) <= end]
         if require_samples and not samples:
             raise ValueError('interval without sampled frames')
         results.append({'table_id': tid, 'hand_id': hand['hand_id'],
