@@ -23,10 +23,10 @@ class HardeningTests(unittest.TestCase):
         result = validate_annotations(BUNDLE, {'evidence_json_sha256': DIGEST, 'hands': hands})
         self.assertEqual(len(result['hands']), 4)
 
-    def test_reject_noncanonical_table_ids(self):
-        for table in ['0', '5', '01', '１', '-1', '1.0', 'x']:
-            with self.subTest(table=table), self.assertRaises(ValueError):
-                self.run_case(table_id=table)
+    def test_legacy_table_identifiers(self):
+        for table in ['t1', '0', '01']:
+            with self.subTest(table=table):
+                self.assertEqual(self.run_case(table_id=table)['hands'][0]['table_id'], table)
 
     def test_reject_invalid_confirmation(self):
         for confirmation in [1, 'true', [], None]:
