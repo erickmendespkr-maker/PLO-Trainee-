@@ -26,8 +26,23 @@ def classify_clip_evidence(record):
                 'can_label_error': False, 'can_attach_conditional_ev': False,
                 'start_pts': start, 'end_pts': end, 'table_id': record['table_id']}
     assumptions = record.get('ev_assumptions')
-    if not isinstance(assumptions, dict) or any(not assumptions.get(k) for k in ('ranges', 'rake', 'future_actions')):
-        return {'status': 'INSUFFICIENT_MODEL', 'missing_evidence': ['ev_assumptions'],
+    missing_model = []
+    if not isinstance(assumptions, dict):
+        missing_model = ['ranges', 'rake', 'future_actions']
+    else:
+        for key in ('ranges', 'rake', 'future_actions'):
+            value = assumptions.get(key)
+            if key == 'rake':
+                # Zero rake is an explicit valid scenario; bool and nonfinite are not.
+                valid = type(value) in (int, float) and math.isfinite(value) and value >= 0
+            else:
+                # Explicit strings such as 'none' for future actions are valid.
+                valid = isinstance(value, (str, list, dict)) and bool(value)
+            if not valid:
+                missing_model.append(key)
+    if missing_model:
+        return {'status': 'INSUFFICIENT_MODEL',
+                'missing_evidence': ['ev_assumptions.' + k for k in missing_model],
                 'can_label_error': False, 'can_attach_conditional_ev': False,
                 'start_pts': start, 'end_pts': end, 'table_id': record['table_id']}
     return {'status': 'APPROVED_CONDITIONAL', 'missing_evidence': [],
