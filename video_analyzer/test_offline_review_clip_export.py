@@ -61,7 +61,7 @@ class ExportTests(unittest.TestCase):
         record = {**self.record, **dict.fromkeys((
             'table_verified', 'hand_verified', 'hero_cards_verified',
             'board_verified', 'action_verified', 'amounts_verified'), True),
-            'ev_assumptions': {'ranges': 'hypothetical', 'rake': 'zero', 'future_actions': 'none'}}
+            'ev_assumptions': {'ranges': 'hypothetical', 'rake': 0, 'future_actions': 'none'}}
         result = export_review_clip(self.source, dst, record)
         self.assertEqual(result['evidence_gate']['status'], 'APPROVED_CONDITIONAL')
         self.assertFalse(result['evidence_gate']['can_label_error'])
