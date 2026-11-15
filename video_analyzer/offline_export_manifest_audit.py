@@ -29,7 +29,7 @@ def audit_export(mp4_path, *, ffprobe='ffprobe', tolerance_seconds=0.35):
         return result
     data = json.loads(sidecar.read_text(encoding='utf-8'), object_pairs_hook=unique,
                       parse_constant=lambda _: (_ for _ in ()).throw(ValueError('nonfinite JSON')))
-    if type(data) is not dict or data.get('schema_version') != 1:
+    if type(data) is not dict or type(data.get('schema_version')) is not int or data['schema_version'] != 1:
         raise ValueError('invalid manifest schema')
     if data.get('gto_solution') is not False or data.get('human_review_of_export') is not False or data.get('ev_is_conditional') is not True:
         raise ValueError('invalid review or strategy status')
