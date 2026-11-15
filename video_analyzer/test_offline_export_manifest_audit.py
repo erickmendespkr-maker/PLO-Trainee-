@@ -36,6 +36,12 @@ class ManifestAuditTests(unittest.TestCase):
     def test_missing_json(self):
         self.mp4.with_suffix('.json').unlink()
         with self.assertRaises(ValueError): audit_export(self.mp4)
+    def test_boolean_schema_version_rejected(self):
+        self.data['schema_version'] = True
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'invalid manifest schema'):
+            audit_export(self.mp4)
+
     def test_bad_interval(self):
         self.data['requested_interval_seconds']=[3,1]; self.save()
         with self.assertRaises(ValueError): audit_export(self.mp4)
