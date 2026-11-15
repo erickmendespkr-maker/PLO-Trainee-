@@ -3,9 +3,11 @@ from pathlib import Path
 try:
     from .offline_batch_execute import execute_review_batch
     from .offline_export_manifest_audit import audit_export
+    from .offline_audit_contract import validate_audit_result
 except ImportError:
     from offline_batch_execute import execute_review_batch
     from offline_export_manifest_audit import audit_export
+    from offline_audit_contract import validate_audit_result
 
 def execute_and_audit(source, plan, source_duration, output_root, *,
                       exporter=None, auditor=None, ffprobe='ffprobe',
@@ -25,16 +27,10 @@ def execute_and_audit(source, plan, source_duration, output_root, *,
             try:
                 verification = (checker(Path(item['destination']), ffprobe=ffprobe)
                                 if auditor is None else checker(Path(item['destination'])))
-                if (verification.get('verified_artifacts') is not True
-                    or verification.get('strategic_verdict_allowed') is not False
-                    or verification.get('human_review_required') is not True):
-                    raise ValueError('unsafe or incomplete audit')
-                if (item.get('clip_sha256') is not None
-                    and item['clip_sha256'] != verification.get('clip_sha256')):
-                    raise ValueError('exporter and auditor hashes disagree')
+                validated = validate_audit_result(verification, item.get('clip_sha256'))
                 item.update(verified_artifacts=True,
-                            clip_sha256=verification['clip_sha256'],
-                            duration_seconds=verification['duration_seconds'],
+                            clip_sha256=validated['clip_sha256'],
+                            duration_seconds=validated['duration_seconds'],
                             status='ARTIFACTS_VERIFIED_UNREVIEWED')
             except Exception as exc:
                 item.update(status='AUDIT_FAILED_UNREVIEWED',
