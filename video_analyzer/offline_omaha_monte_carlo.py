@@ -33,8 +33,11 @@ def sample_showdown_shares(*, hero, board, opponent_ranges, iterations=1000, see
             if not isinstance(combo, (list, tuple)) or len(combo) != len(hero):
                 raise ValueError("opponent combo must match hero variant")
             combos.append(_cards(combo, len(hero)))
-        if len(set(combos)) != len(combos):
-            raise ValueError("duplicate range combo")
+        # Card order does not distinguish Omaha hole-card combinations.
+        # Otherwise reordered duplicates silently overweight a range.
+        canonical = [tuple(sorted(combo)) for combo in combos]
+        if len(set(canonical)) != len(canonical):
+            raise ValueError("duplicate range combo, including reordered cards")
         ranges.append(combos)
     if len(hero) * (len(ranges) + 1) + 5 > 52:
         raise ValueError("too many cards")
