@@ -12,9 +12,9 @@ def batch(status='EXPORTED_UNREVIEWED', count=1):
             'planned_count': count, 'attempted_count': count}
 
 def verified(**changes):
-    return {'verified_artifacts': True, 'human_review_required': True,
-            'strategic_verdict_allowed': False, 'clip_sha256': 'a'*64,
-            'duration_seconds': 2.0, **changes}
+    return {**{'verified_artifacts': True, 'human_review_required': True,
+               'strategic_verdict_allowed': False, 'clip_sha256': 'a'*64,
+               'duration_seconds': 2.0}, **changes}
 
 class VerifiedBatchTests(unittest.TestCase):
     def invoke(self, payload, audit):
