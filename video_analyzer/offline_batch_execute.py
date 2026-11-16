@@ -60,7 +60,8 @@ def execute_review_batch(source, plan, source_duration, output_root, *, exporter
                 os.close(fd)
             if owned:
                 lock.unlink(missing_ok=True)
-    return {'status': 'PARTIAL_OR_FAILED' if any(r['status'] == 'FAILED' for r in results)
+    return {'status': 'PARTIAL_OR_FAILED' if not results or len(results) != len(plan)
+            or any(r['status'] == 'FAILED' for r in results)
             else 'EXPORTED_UNREVIEWED', 'results': results,
             'planned_count': len(plan), 'attempted_count': len(results),
             'human_review_required': True, 'gto_solution': False}
