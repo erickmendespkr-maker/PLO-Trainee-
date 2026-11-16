@@ -52,4 +52,13 @@ class GateTests(unittest.TestCase):
         x=example();x["ranges"]={}
         self.assertIn("missing_ranges",assess(x)["reasons"])
 
+    def test_unhashable_variant_fails_closed(self):
+        for variant in ([], {}, ["PLO5"]):
+            x=example();x["variant"]=variant
+            self.assertIn("invalid_variant",assess(x)["reasons"])
+    def test_unhashable_range_source_fails_closed(self):
+        for source in ([], {}, ["synthetic"]):
+            x=example();x["ranges"]["villain"]["source"]=source
+            self.assertIn("untraceable_range_assumption",assess(x)["reasons"])
+
 if __name__=="__main__": unittest.main()
