@@ -34,6 +34,24 @@ class TestScenarioStability(unittest.TestCase):
             with self.subTest(value=str(value)[:80]), self.assertRaises(ValueError):
                 compare_scenarios(value)
 
+    def test_single_scenario_not_cross_range_stable(self):
+        result = compare_scenarios([s(1, [0, 0], [2, 3], [-1, 1])])
+        self.assertIsNone(result['stable_action'])
+        self.assertFalse(result['cross_range_comparison_available'])
+        self.assertEqual(result['scenarios'][0]['strict_winner'], 'call')
+        self.assertFalse(result['hand_error_verified'])
+
+    def test_normalized_duplicate_ids_rejected(self):
+        with self.assertRaises(ValueError):
+            compare_scenarios([s(' range A ', [0, 0], [2, 3], [-1, 1]),
+                               s('range A', [0, 0], [3, 4], [-1, 1])])
+
+    def test_multiple_scenarios_enable_comparison(self):
+        result = compare_scenarios([s(1, [0, 0], [2, 3], [-1, 1]),
+                                    s(2, [0, 0], [3, 4], [-1, 1])])
+        self.assertTrue(result['cross_range_comparison_available'])
+        self.assertEqual(result['stable_action'], 'call')
+
     def test_different_actions(self):
         x = s(1, [0, 0], [1, 2], [2, 3])
         y = s(2, [0, 0], [1, 2], [2, 3])
