@@ -2,14 +2,15 @@
 import hashlib
 import json
 import math
-import os
 from pathlib import Path
 import subprocess
 import tempfile
 try:
     from .offline_clip_evidence_gate import classify_clip_evidence
+    from .offline_atomic_artifact_publish import publish_pair_no_clobber
 except ImportError:
     from offline_clip_evidence_gate import classify_clip_evidence
+    from offline_atomic_artifact_publish import publish_pair_no_clobber
 
 class ClipExportError(ValueError):
     pass
@@ -70,10 +71,7 @@ def export_review_clip(source, destination, record, *, ffmpeg='ffmpeg', ffprobe=
         side_tmp.write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8')
         if dst.exists() or dst.with_suffix('.json').exists():
             raise ClipExportError('output appeared during export')
-        os.replace(video_tmp, dst)
-        try:
-            os.replace(side_tmp, dst.with_suffix('.json'))
-        except Exception:
-            dst.unlink(missing_ok=True)
-            raise
+        # Hard-link publication is no-clobber even if another process wins
+        # the race after preflight. Roll back only our own inode on failure.
+        publish_pair_no_clobber(video_tmp, side_tmp, dst, dst.with_suffix('.json'))
     return manifest
