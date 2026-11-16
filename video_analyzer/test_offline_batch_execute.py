@@ -70,6 +70,14 @@ class BatchExecutorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             execute_review_batch(self.src, self.plan, 4, self.root, exporter=self.writer)
 
+    def test_empty_prepared_batch_never_reports_success(self):
+        from unittest.mock import patch
+        with patch('offline_batch_execute.prepare_batch',
+                   return_value={'clips': [], 'total_seconds': 0}):
+            out = execute_review_batch(self.src, [], 4, self.root, exporter=self.writer)
+        self.assertEqual(out['status'], 'PARTIAL_OR_FAILED')
+        self.assertEqual(out['attempted_count'], 0)
+
     def test_invalid_stop_flag(self):
         with self.assertRaises(ValueError):
             execute_review_batch(self.src, self.plan, 4, self.root, exporter=self.writer, stop_on_error=1)
