@@ -36,7 +36,16 @@ def execute_and_audit(source, plan, source_duration, output_root, *,
                 item.update(status='AUDIT_FAILED_UNREVIEWED',
                             error_type=type(exc).__name__, error=str(exc)[:300])
         audited.append(item)
-    complete = (len(audited) > 0 and len(audited) == result['planned_count']
+    # Individual artifact integrity is not enough: enforce one unique export
+    # per planned index, in order, before accepting the whole batch.
+    indexes = [item.get('index') for item in audited]
+    destinations = [item.get('destination') for item in audited]
+    plan_count = result.get('planned_count')
+    complete = (type(plan_count) is int and plan_count > 0
+                and len(audited) == plan_count
+                and indexes == list(range(plan_count))
+                and all(type(p) is str and p for p in destinations)
+                and len(set(destinations)) == plan_count
                 and all(x['verified_artifacts'] for x in audited))
     return {**result, 'results': audited,
             'status': ('ARTIFACTS_VERIFIED_UNREVIEWED' if complete else 'PARTIAL_OR_FAILED'),
