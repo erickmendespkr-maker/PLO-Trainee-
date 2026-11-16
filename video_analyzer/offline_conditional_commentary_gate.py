@@ -45,7 +45,7 @@ def assess_conditional_commentary(hand, comparison):
     hero, board = hand.get('hero_cards'), hand.get('board_cards')
     if isinstance(hero, list) and isinstance(board, list):
         expected = {'PLO5': 5, 'PLO6': 6}.get(variant, -1) if type(variant) is str else -1
-        if len(hero) != expected or len(board) > 5:
+        if len(hero) != expected or not (3 <= len(board) <= 5):
             reasons.append('invalid_card_count')
         if not all(isinstance(c, str) and _CARD.fullmatch(c) for c in hero + board):
             reasons.append('invalid_card_notation')
@@ -67,6 +67,11 @@ def assess_conditional_commentary(hand, comparison):
     sensitive = comparison.get('range_sensitive_or_inconclusive')
     if type(sensitive) is not bool:
         reasons.append('invalid_range_sensitivity')
+    # Do not present mutually contradictory stability metadata as a recommendation.
+    if stable is not None and sensitive is True:
+        reasons.append('contradictory_stability')
+    if stable is None and sensitive is False:
+        reasons.append('missing_stable_action')
     if reasons:
         return {'status': 'REVIEW_ONLY', 'reasons': sorted(set(reasons)), 'verified_error': False}
     return {'status': 'CONDITIONAL_EXPLANATION_ALLOWED', 'reasons': [], 'verified_error': False,
