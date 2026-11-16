@@ -4,6 +4,7 @@ import json
 import math
 import subprocess
 import tempfile
+import os
 from pathlib import Path
 from offline_clip_plan_preflight import validate_clip_plan
 from offline_atomic_artifact_publish import publish_pair_no_clobber
@@ -52,9 +53,10 @@ def export_clip(source, output_dir, plan, *, timeout=180):
     target, sidecar = outdir / name, outdir / (name + ".json")
     if target.exists() or sidecar.exists() or target.is_symlink() or sidecar.is_symlink():
         raise FileExistsError("output already exists")
-    partial = outdir / (name + ".partial.mp4")
-    if partial.exists() or partial.is_symlink():
-        raise FileExistsError("partial output exists")
+    # Each export owns its staging file; never delete a competitor's partial.
+    fd, partial_name = tempfile.mkstemp(prefix=name + ".", suffix=".partial.mp4", dir=outdir)
+    os.close(fd)
+    partial = Path(partial_name)
     try:
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-ss", str(start), "-i", str(source), "-t", str(end - start), "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-c:a", "aac", "-movflags", "+faststart", "-y", str(partial)], check=True, capture_output=True, text=True, timeout=timeout)
         actual = probe_duration(partial)
