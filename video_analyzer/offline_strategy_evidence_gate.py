@@ -17,9 +17,9 @@ def assess(record):
     for flag in ("human_reviewed","cards_visibility_confirmed","action_amounts_confirmed","model_assumptions_reviewed"):
         if record.get(flag) is not True: reasons.append("unconfirmed_"+flag)
     variant=record.get("variant")
-    if variant not in ("PLO5","PLO6"): reasons.append("invalid_variant")
+    if not isinstance(variant, str) or variant not in ("PLO5","PLO6"): reasons.append("invalid_variant")
     hero,board=record.get("hero_cards"),record.get("board_cards")
-    if not isinstance(hero,(list,tuple)) or len(hero)!={"PLO5":5,"PLO6":6}.get(variant,-1):
+    if not isinstance(hero,(list,tuple)) or len(hero)!=(5 if variant=="PLO5" else 6 if variant=="PLO6" else -1):
         reasons.append("invalid_hero")
     if not isinstance(board,(list,tuple)) or not 3<=len(board)<=5:
         reasons.append("invalid_board")
@@ -48,7 +48,7 @@ def assess(record):
         reasons.append("missing_ranges")
     elif any(not isinstance(k, str) or not k.strip() or not isinstance(v, dict) or not v for k, v in ranges.items()):
         reasons.append("invalid_range_specification")
-    elif any(v.get("source") not in ("user_assumption", "manual_review", "synthetic") or not isinstance(v.get("description"), str) or not v["description"].strip() for v in ranges.values()):
+    elif any(not isinstance(v.get("source"), str) or v.get("source") not in ("user_assumption", "manual_review", "synthetic") or not isinstance(v.get("description"), str) or not v["description"].strip() for v in ranges.values()):
         reasons.append("untraceable_range_assumption")
     if record.get("range_sensitive") is True:
         reasons.append("range_sensitive")
