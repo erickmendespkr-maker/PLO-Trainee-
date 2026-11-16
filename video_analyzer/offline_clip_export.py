@@ -5,6 +5,7 @@ import math
 import subprocess
 from pathlib import Path
 from offline_clip_plan_preflight import validate_clip_plan
+from offline_atomic_artifact_publish import publish_pair_no_clobber
 
 def sha256_file(path):
     digest = hashlib.sha256()
@@ -59,15 +60,15 @@ def export_clip(source, output_dir, plan, *, timeout=180):
         if abs(actual - (end - start)) > .25:
             raise ValueError("exported clip duration outside tolerance")
         metadata = {"schema_version": 1, "source_sha256": expected, "clip_sha256": sha256_file(partial), "table_id": plan.get("table_id"), "hand_id": plan.get("hand_id"), "start_seconds": start, "end_seconds": end, "actual_clip_duration_seconds": actual, "review_status": plan["review_status"], "annotation": "INSUFFICIENT_DATA" if plan["review_status"] == "insufficient_data" else "CONDITIONAL MODEL ONLY", "strategic_verdict_allowed": False, "method": "ffmpeg reencode; timestamps approximate within codec tolerance"}
-        created = False
+        staged_json = outdir / (name + ".partial.json")
+        if staged_json.exists() or staged_json.is_symlink():
+            raise FileExistsError("partial JSON output exists")
         try:
-            partial.rename(target)
-            created = True
-            sidecar.write_text(json.dumps(metadata, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-        except Exception:
-            if created:
-                target.unlink(missing_ok=True)
-            raise
+            with staged_json.open("x", encoding="utf-8") as stream:
+                stream.write(json.dumps(metadata, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
+            publish_pair_no_clobber(partial, staged_json, target, sidecar)
+        finally:
+            staged_json.unlink(missing_ok=True)
         return metadata
     finally:
         partial.unlink(missing_ok=True)
