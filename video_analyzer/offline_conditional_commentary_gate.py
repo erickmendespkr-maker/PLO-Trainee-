@@ -19,6 +19,11 @@ def assess_conditional_commentary(hand, comparison):
         value = hand.get(key)
         if value is None or isinstance(value, str) and not value.strip() or isinstance(value, (list, dict)) and not value:
             reasons.append('missing_' + key)
+    # Identifiers must be auditable strings, not truthy objects or numbers.
+    for key in ('table_id', 'hand_id'):
+        value = hand.get(key)
+        if not isinstance(value, str) or not value.strip():
+            reasons.append('invalid_' + key)
     if hand.get('human_reviewed') is not True:
         reasons.append('human_review_required')
     variant = hand.get('variant')
@@ -55,6 +60,13 @@ def assess_conditional_commentary(hand, comparison):
         reasons.append('scenario_comparison_required')
     if comparison.get('hand_error_verified') is not False or comparison.get('gto_solution') is not False:
         reasons.append('unsupported_strategy_claim')
+    # A consumer must never render a stable recommendation from an unknown action.
+    stable = comparison.get('stable_action')
+    if stable is not None and (not isinstance(stable, str) or stable not in ('fold', 'call', 'raise', 'bet', 'check')):
+        reasons.append('invalid_stable_action')
+    sensitive = comparison.get('range_sensitive_or_inconclusive')
+    if type(sensitive) is not bool:
+        reasons.append('invalid_range_sensitivity')
     if reasons:
         return {'status': 'REVIEW_ONLY', 'reasons': sorted(set(reasons)), 'verified_error': False}
     return {'status': 'CONDITIONAL_EXPLANATION_ALLOWED', 'reasons': [], 'verified_error': False,
