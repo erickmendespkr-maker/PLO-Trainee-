@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
+import os
 try:
     from .offline_review_clip_export import ClipExportError, export_review_clip
 except ImportError:
@@ -35,6 +37,22 @@ class ExportTests(unittest.TestCase):
         probe = subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries',
                                          'format=duration', '-of', 'default=nw=1:nk=1', str(dst)])
         self.assertAlmostEqual(float(probe), 1.0, delta=0.2)
+
+    def test_race_does_not_overwrite_unrelated_sidecar(self):
+        dst = self.root / 'race.mp4'
+        sidecar = dst.with_suffix('.json')
+        original_link = os.link
+
+        def competing_writer(src, target, *args, **kwargs):
+            if Path(target) == sidecar:
+                sidecar.write_text('owned by another process')
+            return original_link(src, target, *args, **kwargs)
+
+        with patch('os.link', side_effect=competing_writer):
+            with self.assertRaises(FileExistsError):
+                export_review_clip(self.source, dst, self.record)
+        self.assertEqual(sidecar.read_text(), 'owned by another process')
+        self.assertFalse(dst.exists())
 
     def test_reject_out_of_bounds(self):
         with self.assertRaises(ClipExportError):
