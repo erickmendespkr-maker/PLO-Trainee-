@@ -8,7 +8,8 @@ except ImportError:
 
 def batch(status='EXPORTED_UNREVIEWED', count=1):
     return {'results': [{'destination': '/tmp/clip.mp4', 'status': status,
-                         'clip_sha256': 'a'*64} for _ in range(count)],
+                         'clip_sha256': 'a'*64, 'index': i,
+                         'destination': f'/tmp/clip_{i}.mp4'} for i in range(count)],
             'planned_count': count, 'attempted_count': count}
 
 def verified(**changes):
@@ -26,6 +27,21 @@ class VerifiedBatchTests(unittest.TestCase):
         self.assertEqual(r['verified_count'], 1)
         self.assertEqual(r['status'], 'ARTIFACTS_VERIFIED_UNREVIEWED')
         self.assertFalse(r['results'][0]['strategic_verdict_allowed'])
+
+    def test_duplicate_index(self):
+        payload = batch(count=2)
+        payload['results'][1]['index'] = 0
+        self.assertEqual(self.invoke(payload, lambda _: verified())['status'], 'PARTIAL_OR_FAILED')
+
+    def test_duplicate_destination(self):
+        payload = batch(count=2)
+        payload['results'][1]['destination'] = payload['results'][0]['destination']
+        self.assertEqual(self.invoke(payload, lambda _: verified())['status'], 'PARTIAL_OR_FAILED')
+
+    def test_reordered(self):
+        payload = batch(count=2)
+        payload['results'].reverse()
+        self.assertEqual(self.invoke(payload, lambda _: verified())['status'], 'PARTIAL_OR_FAILED')
 
     def test_hash_mismatch(self):
         r = self.invoke(batch(), lambda _: {**verified(), 'clip_sha256': 'b'*64})
