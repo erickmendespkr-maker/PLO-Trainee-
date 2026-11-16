@@ -6,6 +6,11 @@ def assess(record):
     if not isinstance(record,dict):
         return {"eligible":False,"status":"INSUFFICIENT_DATA","reasons":["invalid_record"]}
     reasons=[f"missing_{k}" for k in required if record.get(k) is None]
+    for key in ("table_id", "hand_id", "action"):
+        if not isinstance(record.get(key), str) or not record[key].strip():
+            reasons.append("invalid_" + key)
+    if record.get("action") not in ("fold", "check", "call", "bet", "raise"):
+        reasons.append("unsupported_action")
     sha=record.get("video_sha256")
     if not isinstance(sha,str) or len(sha)!=64 or any(c not in "0123456789abcdef" for c in sha):
         reasons.append("invalid_sha256")
@@ -38,8 +43,13 @@ def assess(record):
     for key in ("equity_seed","equity_trials"):
         if type(record.get(key)) is not int or (key=="equity_trials" and record[key]<=0):
             reasons.append("invalid_"+key)
-    if not isinstance(record.get("ranges"),dict) or not record["ranges"]:
+    ranges = record.get("ranges")
+    if not isinstance(ranges, dict) or not ranges:
         reasons.append("missing_ranges")
+    elif any(not isinstance(k, str) or not k.strip() or not isinstance(v, dict) or not v for k, v in ranges.items()):
+        reasons.append("invalid_range_specification")
+    elif any(v.get("source") not in ("user_assumption", "manual_review", "synthetic") or not isinstance(v.get("description"), str) or not v["description"].strip() for v in ranges.values()):
+        reasons.append("untraceable_range_assumption")
     if record.get("range_sensitive") is True:
         reasons.append("range_sensitive")
     reasons=sorted(set(reasons))
