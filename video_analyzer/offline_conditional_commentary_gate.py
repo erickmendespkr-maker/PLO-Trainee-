@@ -49,7 +49,7 @@ def assess_conditional_commentary(hand, comparison):
     sources = hand.get('range_sources')
     if not isinstance(sources, list) or len(sources) < 2 or any(not isinstance(s, str) or not s.strip() for s in sources) or len(set(s.strip() for s in sources if isinstance(s, str))) != len(sources):
         reasons.append('invalid_range_sources')
-    if hand.get('action') not in ('fold', 'call', 'raise', 'bet', 'check') if isinstance(hand.get('action'), str) else True:
+    if not isinstance(hand.get('action'), str) or hand['action'] not in ('fold', 'call', 'raise', 'bet', 'check'):
         reasons.append('invalid_action')
     if comparison.get('status') != 'CONDITIONAL_ONLY' or comparison.get('cross_range_comparison_available') is not True:
         reasons.append('scenario_comparison_required')
