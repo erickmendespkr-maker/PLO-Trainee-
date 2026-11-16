@@ -7,9 +7,8 @@ except ImportError:
     from offline_batch_verified import execute_and_audit
 
 def batch(status='EXPORTED_UNREVIEWED', count=1):
-    return {'results': [{'destination': '/tmp/clip.mp4', 'status': status,
-                         'clip_sha256': 'a'*64, 'index': i,
-                         'destination': f'/tmp/clip_{i}.mp4'} for i in range(count)],
+    return {'results': [{'destination': f'/tmp/clip_{i}.mp4', 'status': status,
+                         'clip_sha256': 'a'*64, 'index': i} for i in range(count)],
             'planned_count': count, 'attempted_count': count}
 
 def verified(**changes):
