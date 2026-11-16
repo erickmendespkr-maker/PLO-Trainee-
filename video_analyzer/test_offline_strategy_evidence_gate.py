@@ -5,7 +5,7 @@ from offline_strategy_evidence_gate import assess
 def example():
     return dict(video_sha256="a"*64,table_id="t1",hand_id="h1",start_pts=10.0,end_pts=20.0,
         hero_cards=["Ac","Kd","Qh","Js","Tc"],board_cards=["2c","3d","4h"],action="call",
-        pot_before=100,call_cost=40,ranges={"villain":"hypothetical"},
+        pot_before=100,call_cost=40,ranges={"villain":{"source":"user_assumption","description":"synthetic opponent range"}},
         equity_seed=42,equity_trials=10000,equity_ci_low=.35,equity_ci_high=.40,
         human_reviewed=True,cards_visibility_confirmed=True,action_amounts_confirmed=True,
         model_assumptions_reviewed=True,variant="PLO5")
@@ -36,6 +36,18 @@ class GateTests(unittest.TestCase):
         self.assertTrue(assess(x)["eligible"])
     def test_no_record(self):
         self.assertFalse(assess(None)["eligible"])
+    def test_untraceable_range(self):
+        x=example();x["ranges"]={"villain":"hypothetical"}
+        self.assertIn("invalid_range_specification",assess(x)["reasons"])
+    def test_empty_hand_id(self):
+        x=example();x["hand_id"]=" "
+        self.assertIn("invalid_hand_id",assess(x)["reasons"])
+    def test_unsupported_action(self):
+        x=example();x["action"]="all-in maybe"
+        self.assertIn("unsupported_action",assess(x)["reasons"])
+    def test_missing_range_source(self):
+        x=example();x["ranges"]={"villain":{"description":"wide"}}
+        self.assertIn("untraceable_range_assumption",assess(x)["reasons"])
     def test_no_ranges(self):
         x=example();x["ranges"]={}
         self.assertIn("missing_ranges",assess(x)["reasons"])
