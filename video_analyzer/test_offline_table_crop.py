@@ -63,6 +63,21 @@ class CropTests(unittest.TestCase):
             self.assertEqual(probe_dimensions(out/'table_2.mkv'), (64,48))
             self.assertEqual(len(json.loads((out/'manifest.json').read_text())['tables']), 2)
             with self.assertRaises(ValueError): export_table_crops(source, out, R, start_seconds=0, duration_seconds=1)
+    def test_reject_source_eof_before_creating_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root/'source.mkv'
+            subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi',
+                            '-i', 'testsrc2=size=128x96:rate=10:duration=3',
+                            '-c:v', 'ffv1', str(source)], check=True, timeout=30)
+            for start, duration in ((1, 3), (3, 0.1), (100, 1)):
+                with self.subTest(start=start, duration=duration):
+                    output = root/'crops'
+                    with self.assertRaisesRegex(ValueError, 'beyond source duration'):
+                        export_table_crops(source, output, R, start_seconds=start,
+                                           duration_seconds=duration)
+                    self.assertFalse(output.exists())
+
     def test_invalid_timeline(self):
         with tempfile.TemporaryDirectory() as tmp:
             src = Path(tmp)/'s'; src.write_bytes(b'x')
