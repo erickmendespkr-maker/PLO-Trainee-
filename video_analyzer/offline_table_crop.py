@@ -25,6 +25,23 @@ def probe_dimensions(source):
         raise ValueError('expected exactly one selected video stream')
     return streams[0]['width'], streams[0]['height']
 
+def probe_duration(source):
+    """Read source container duration before exporting any crop."""
+    result = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                             '-of', 'json', str(source)], capture_output=True, text=True,
+                            check=True, timeout=30)
+    duration = float(json.loads(result.stdout).get('format', {}).get('duration', 'nan'))
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError('source duration unavailable')
+    return duration
+
+def validate_source_interval(source, start_seconds, duration_seconds, *, tolerance=0.05):
+    """Reject requests beyond EOF; tolerance covers container rounding only."""
+    source_duration = probe_duration(source)
+    if start_seconds >= source_duration or start_seconds + duration_seconds > source_duration + tolerance:
+        raise ValueError('requested crop extends beyond source duration')
+    return source_duration
+
 def export_table_crops(source, output_dir, regions, *, start_seconds, duration_seconds):
     """Export lossless FFV1 Matroska crops for offline visual/OCR inspection."""
     source = Path(source)
@@ -37,6 +54,7 @@ def export_table_crops(source, output_dir, regions, *, start_seconds, duration_s
         raise ValueError('invalid timeline')
     if start_seconds < 0 or not 0 < duration_seconds <= 300:
         raise ValueError('invalid crop interval')
+    validate_source_interval(source, start_seconds, duration_seconds)
     width, height = probe_dimensions(source)
     validated = validate_regions(regions, width, height)
     output_dir.mkdir(parents=True, exist_ok=True)
