@@ -26,6 +26,20 @@ def _source_probe(path):
     return streams[0]
 
 
+def _source_has_frame(path, start, duration):
+    """Probe a bounded source interval rather than decoding the whole session."""
+    interval = f'{max(0, start - 0.5):.3f}%+{min(duration + 1.0, 302.0):.3f}'
+    cmd = ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+           '-read_intervals', interval, '-show_entries',
+           'frame=best_effort_timestamp_time', '-of', 'json', str(path)]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=90)
+    frames = json.loads(result.stdout).get('frames', [])
+    return any('best_effort_timestamp_time' in frame and
+               math.isfinite(float(frame['best_effort_timestamp_time'])) and
+               start - 0.5 <= float(frame['best_effort_timestamp_time']) <= start + duration + 0.5
+               for frame in frames)
+
+
 def _probe(path):
     cmd = ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
            '-show_entries', 'stream=width,height:frame=best_effort_timestamp_time',
@@ -83,8 +97,8 @@ def audit_table_crops(source, output_dir, *, duration_tolerance=0.25):
         start, duration = table.get('source_start_seconds'), table.get('requested_duration_seconds')
         if any(type(v) not in (int, float) or not math.isfinite(v) for v in (start, duration)) or start < 0 or not 0 < duration <= 300:
             raise ValueError('invalid source interval')
-        if not 0 <= start <= 86400:
-            raise ValueError('source start outside supported timeline')
+        if not 0 <= start <= 86400 or not _source_has_frame(source, start, duration):
+            raise ValueError('source interval has no verifiable frames')
         path = directory / table['file']
         if path.is_symlink() or not path.is_file():
             raise ValueError('missing regular crop')
