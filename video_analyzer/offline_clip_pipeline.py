@@ -33,25 +33,37 @@ def render_candidates(video_path, output_dir, proposals, *, padding_seconds=2.0,
             digest.update(chunk)
     manifest = build_clip_manifest(digest.hexdigest(), duration, proposals,
                                    padding_seconds=padding_seconds, max_tables=max_tables)
-    target.mkdir(parents=True, exist_ok=True)
-    results = []
-    for clip in manifest['clips']:
-        output = target / (clip['clip_id'] + '.mp4')
-        if output.exists():
-            raise FileExistsError('refusing to overwrite clip: ' + str(output))
-        argv = ffmpeg_clip_arguments(str(source), str(output), clip)
-        argv[argv.index('-y')] = '-n'
-        try:
-            subprocess.run(argv, check=True, capture_output=True, timeout=timeout_seconds)
-            audit = audit_render(clip, probe_video(str(output)))
-            results.append({'clip': clip, 'file': output.name, 'audit': audit})
-        except Exception:
-            output.unlink(missing_ok=True)
-            raise
-    report = {'schema_version': 1, 'video_sha256': digest.hexdigest(),
-              'status': 'candidate_clips_only', 'results': results}
+    # Fail before writing anything if a previous report or candidate exists.
     report_path = target / 'candidate_clip_report.json'
     if report_path.exists():
         raise FileExistsError('refusing to overwrite report')
-    report_path.write_text(json.dumps(report, sort_keys=True, indent=2) + '\n', encoding='utf-8')
-    return report
+    planned_outputs = [target / (clip['clip_id'] + '.mp4') for clip in manifest['clips']]
+    for output in planned_outputs:
+        if output.exists():
+            raise FileExistsError('refusing to overwrite clip: ' + str(output))
+    target.mkdir(parents=True, exist_ok=True)
+    results = []
+    created_outputs = []
+    try:
+        for clip in manifest['clips']:
+            output = target / (clip['clip_id'] + '.mp4')
+            argv = ffmpeg_clip_arguments(str(source), str(output), clip)
+            argv[argv.index('-y')] = '-n'
+            try:
+                subprocess.run(argv, check=True, capture_output=True, timeout=timeout_seconds)
+                created_outputs.append(output)
+                audit = audit_render(clip, probe_video(str(output)))
+                results.append({'clip': clip, 'file': output.name, 'audit': audit})
+            except Exception:
+                output.unlink(missing_ok=True)
+                raise
+        report = {'schema_version': 1, 'video_sha256': digest.hexdigest(),
+                  'status': 'candidate_clips_only', 'results': results}
+        # Exclusive create: never overwrite a report created concurrently.
+        with report_path.open('x', encoding='utf-8') as fh:
+            fh.write(json.dumps(report, sort_keys=True, indent=2) + '\n')
+        return report
+    except Exception:
+        for output in created_outputs:
+            output.unlink(missing_ok=True)
+        raise
