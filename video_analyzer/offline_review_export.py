@@ -1,5 +1,6 @@
 """Export conservative review-only JSON for offline recorded sessions."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,23 @@ def export_review_report(handoff, journal):
         raise ValueError("video mismatch")
     if handoff.get("equity_or_ev_computed") is not False or handoff.get("mp4_exported") is not False:
         raise ValueError("unsupported claims")
+    def valid_sha(value):
+        return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+    if handoff.get("schema_version") != 1 or journal.get("schema_version") != 1:
+        raise ValueError("unsupported schema")
+    if not valid_sha(handoff.get("video_sha256")):
+        raise ValueError("invalid video sha256")
+    if journal.get("requires_separate_strategic_evidence_validation") is not True:
+        raise ValueError("missing strategic validation boundary")
+    digest = journal.get("journal_sha256")
+    if not valid_sha(digest):
+        raise ValueError("invalid journal digest")
+    unsigned = {key: value for key, value in journal.items() if key != "journal_sha256"}
+    canonical = json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
+    actual = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if actual != digest:
+        raise ValueError("journal integrity mismatch")
     tasks, entries = handoff.get("tasks"), journal.get("entries")
     if not isinstance(tasks, list) or not isinstance(entries, list):
         raise ValueError("invalid tasks")
@@ -22,7 +40,7 @@ def export_review_report(handoff, journal):
         if not isinstance(task, dict) or task.get("review_status") != "PENDING" or task.get("strategic_commentary_allowed") is not False:
             raise ValueError("untrusted task")
         rid = task.get("review_id")
-        if not isinstance(rid, str) or rid in task_by_id:
+        if not valid_sha(rid) or rid in task_by_id:
             raise ValueError("duplicate or invalid task")
         task_by_id[rid] = task
     if len(entries) != len(tasks):
