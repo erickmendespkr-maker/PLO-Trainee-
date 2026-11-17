@@ -4,25 +4,17 @@ import math
 import subprocess
 from pathlib import Path
 
+try:
+    from .offline_table_crop_geometry_integration import validated_table_regions
+except ImportError:  # direct script/test execution from video_analyzer/
+    from offline_table_crop_geometry_integration import validated_table_regions
+
 def validate_regions(regions, width, height):
-    if type(width) is not int or type(height) is not int or width < 2 or height < 2:
-        raise ValueError('invalid source dimensions')
-    if not isinstance(regions, list) or not 1 <= len(regions) <= 4:
-        raise ValueError('expected 1-4 table regions')
-    ids = set()
-    for region in regions:
-        if not isinstance(region, dict) or set(region) != {'table_id', 'x', 'y', 'width', 'height'}:
-            raise ValueError('invalid region fields')
-        table_id = region['table_id']
-        if type(table_id) is not int or not 1 <= table_id <= 4 or table_id in ids:
-            raise ValueError('invalid or duplicate table id')
-        ids.add(table_id)
-        x, y, w, h = (region[k] for k in ('x', 'y', 'width', 'height'))
-        if any(type(v) is not int for v in (x, y, w, h)):
-            raise ValueError('region coordinates must be integers')
-        if x < 0 or y < 0 or w < 2 or h < 2 or x+w > width or y+h > height:
-            raise ValueError('region outside source frame')
-    return sorted(regions, key=lambda r: r['table_id'])
+    """Reject overlapping, odd-pixel and out-of-frame table ROIs before FFmpeg."""
+    return [
+        {key: region[key] for key in ('table_id', 'x', 'y', 'width', 'height')}
+        for region in validated_table_regions(width, height, regions)
+    ]
 
 def probe_dimensions(source):
     result = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
