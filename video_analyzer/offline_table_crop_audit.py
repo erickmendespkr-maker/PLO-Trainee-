@@ -7,8 +7,10 @@ from pathlib import Path
 
 try:
     from .offline_crop_manifest_geometry import validate_manifest_geometry
+    from .offline_crop_time_bounds import has_frame_inside_interval, validate_source_interval
 except ImportError:
     from offline_crop_manifest_geometry import validate_manifest_geometry
+    from offline_crop_time_bounds import has_frame_inside_interval, validate_source_interval
 
 
 def _sha256_file(path):
@@ -49,10 +51,13 @@ def _source_has_frame(path, start, duration):
            'frame=best_effort_timestamp_time', '-of', 'json', str(path)]
     result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=90)
     frames = json.loads(result.stdout).get('frames', [])
-    return any('best_effort_timestamp_time' in frame and
-               math.isfinite(float(frame['best_effort_timestamp_time'])) and
-               start - 0.5 <= float(frame['best_effort_timestamp_time']) <= start + duration + 0.5
-               for frame in frames)
+    timestamps = []
+    for frame in frames:
+        try:
+            timestamps.append(float(frame['best_effort_timestamp_time']))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return has_frame_inside_interval(timestamps, start, duration, _source_duration(path))
 
 
 def _probe(path):
@@ -114,8 +119,7 @@ def audit_table_crops(source, output_dir, *, duration_tolerance=0.25):
         start, duration = table.get('source_start_seconds'), table.get('requested_duration_seconds')
         if any(type(v) not in (int, float) or not math.isfinite(v) for v in (start, duration)) or start < 0 or not 0 < duration <= 300:
             raise ValueError('invalid source interval')
-        if start + duration > source_duration + duration_tolerance:
-            raise ValueError('requested crop extends beyond source duration')
+        validate_source_interval(start, duration, source_duration, duration_tolerance)
         if not 0 <= start <= 86400 or not _source_has_frame(source, start, duration):
             raise ValueError('source interval has no verifiable frames')
         path = directory / table['file']
