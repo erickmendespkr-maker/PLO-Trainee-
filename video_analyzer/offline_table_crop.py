@@ -43,18 +43,32 @@ def export_table_crops(source, output_dir, regions, *, start_seconds, duration_s
     if any(output_dir.iterdir()):
         raise ValueError('output directory must be empty')
     outputs = []
-    for region in validated:
-        destination = output_dir / f"table_{region['table_id']}.mkv"
-        crop = f"crop={region['width']}:{region['height']}:{region['x']}:{region['y']}"
-        command = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-n',
-                   '-ss', str(start_seconds), '-i', str(source), '-t', str(duration_seconds),
-                   '-map', '0:v:0', '-an', '-vf', crop, '-c:v', 'ffv1', str(destination)]
-        subprocess.run(command, check=True, capture_output=True, timeout=180)
-        outputs.append({'table_id': region['table_id'], 'file': destination.name,
-                        'region': region, 'source_start_seconds': start_seconds,
-                        'requested_duration_seconds': duration_seconds,
-                        'verified_by_human': False, 'hand_reconstructed': False})
+    created = []
+    try:
+        for region in validated:
+            destination = output_dir / f"table_{region['table_id']}.mkv"
+            crop = f"crop={region['width']}:{region['height']}:{region['x']}:{region['y']}"
+            command = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-n',
+                       '-ss', str(start_seconds), '-i', str(source), '-t', str(duration_seconds),
+                       '-map', '0:v:0', '-an', '-vf', crop, '-c:v', 'ffv1', str(destination)]
+            subprocess.run(command, check=True, capture_output=True, timeout=180)
+            created.append(destination)
+            outputs.append({'table_id': region['table_id'], 'file': destination.name,
+                            'region': region, 'source_start_seconds': start_seconds,
+                            'requested_duration_seconds': duration_seconds,
+                            'verified_by_human': False, 'hand_reconstructed': False})
+    except Exception:
+        for artifact in created:
+            artifact.unlink(missing_ok=True)
+        for region in validated:
+            (output_dir / f"table_{region['table_id']}.mkv").unlink(missing_ok=True)
+        raise
     manifest = {'status': 'UNREVIEWED_TABLE_CROPS', 'source_dimensions': [width, height],
                 'tables': outputs, 'poker_analysis_verified': False}
-    (output_dir / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+    try:
+        (output_dir / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+    except Exception:
+        for artifact in created:
+            artifact.unlink(missing_ok=True)
+        raise
     return manifest
