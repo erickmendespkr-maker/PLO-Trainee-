@@ -22,6 +22,31 @@ class CropTests(unittest.TestCase):
         with self.assertRaises(ValueError): validate_regions([dict(R[0], x=True)], 128, 96)
     def test_too_many(self):
         with self.assertRaises(ValueError): validate_regions([R[0]]*5, 128, 96)
+    def test_reject_overlapping_regions(self):
+        with self.assertRaises(ValueError):
+            validate_regions([R[0], dict(R[1], x=32)], 128, 96)
+
+    def test_reject_odd_pixel_regions(self):
+        for field in ('x', 'y', 'width', 'height'):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_regions([dict(R[0], **{field: R[0][field] + 1})], 128, 96)
+
+    def test_touching_regions_allowed(self):
+        self.assertEqual(len(validate_regions(R, 128, 96)), 2)
+
+    def test_reject_overlapping_before_creating_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root/'source.mkv'
+            subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+                            '-i', 'testsrc2=size=128x96:rate=10', '-t', '1', '-c:v', 'ffv1',
+                            str(source)], check=True, timeout=30)
+            output = root/'crops'
+            with self.assertRaises(ValueError):
+                export_table_crops(source, output, [R[0], dict(R[1], x=32)],
+                                   start_seconds=0, duration_seconds=1)
+            self.assertFalse(output.exists())
+
     def test_actual_ffmpeg_export(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
