@@ -3,7 +3,10 @@
 No detection or poker interpretation is performed. Regions must be calibrated
 externally and reviewed. This module has no live-poker integration.
 """
-from .offline_table_crop_geometry import table_crop_filters
+try:
+    from .offline_table_crop_geometry import table_crop_filters
+except ImportError:  # standalone test execution from video_analyzer/
+    from offline_table_crop_geometry import table_crop_filters
 
 
 def validated_table_regions(frame_width, frame_height, regions):
