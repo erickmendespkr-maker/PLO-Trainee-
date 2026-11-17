@@ -37,12 +37,24 @@ def review_gate(hand):
         not isinstance(e, dict) or e.get("human_verified") is not True
         or type(e.get("pts_seconds")) not in (int, float)
         or not math.isfinite(e["pts_seconds"])
+        or e["pts_seconds"] < 0
+        or (type(start) in (int, float) and type(end) in (int, float)
+            and math.isfinite(start) and math.isfinite(end)
+            and not (start <= e["pts_seconds"] <= end))
         or not isinstance(e.get("frame_sha256"), str)
         or len(e["frame_sha256"]) != 64
         or any(ch not in "0123456789abcdef" for ch in e["frame_sha256"])
         for e in evidence
     ):
         reasons.append("frame_evidence_unverified")
+    if isinstance(evidence, list) and evidence and all(isinstance(e, dict) for e in evidence):
+        source_hash = hand.get("source_video_sha256")
+        if not isinstance(source_hash, str) or len(source_hash) != 64 or any(ch not in "0123456789abcdef" for ch in source_hash):
+            reasons.append("source_video_hash_missing")
+        if any(e.get("source_video_sha256") != source_hash for e in evidence):
+            reasons.append("source_video_link_unverified")
+        if any(e.get("table_id") != table for e in evidence):
+            reasons.append("frame_table_link_unverified")
     if not isinstance(hand.get("range_assumptions"), dict) or not hand["range_assumptions"]:
         reasons.append("opponent_range_missing")
     if not isinstance(hand.get("model_assumptions"), dict) or not hand["model_assumptions"]:
