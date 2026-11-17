@@ -45,6 +45,15 @@ class CropAuditTests(unittest.TestCase):
     def test_bad_interval(self):
         self.manifest['tables'][0]['requested_duration_seconds']=8;self.save()
         with self.assertRaises(ValueError): audit_table_crops(self.source,self.out)
+    def test_requested_interval_extends_past_source_eof(self):
+        # The source is three seconds long, but this asks for four seconds.
+        # A valid frame at the start alone must not validate the whole interval.
+        self.manifest['tables'][0]['source_start_seconds'] = 1.0
+        self.manifest['tables'][0]['requested_duration_seconds'] = 3.0
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'beyond source duration'):
+            audit_table_crops(self.source, self.out)
+
     def test_bad_tolerance(self):
         with self.assertRaises(ValueError): audit_table_crops(self.source,self.out,duration_tolerance=float('nan'))
     def test_source_changed(self):
