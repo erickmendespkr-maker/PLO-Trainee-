@@ -26,6 +26,16 @@ def _source_probe(path):
     return streams[0]
 
 
+def _source_duration(path):
+    """Read container duration to reject crop intervals extending past EOF."""
+    cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'json', str(path)]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=90)
+    duration = float(json.loads(result.stdout).get('format', {}).get('duration', 'nan'))
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError('source duration unavailable')
+    return duration
+
+
 def _source_has_frame(path, start, duration):
     """Probe a bounded source interval rather than decoding the whole session."""
     interval = f'{max(0, start - 0.5):.3f}%+{min(duration + 1.0, 302.0):.3f}'
@@ -77,6 +87,7 @@ def audit_table_crops(source, output_dir, *, duration_tolerance=0.25):
     source_stream = _source_probe(source)
     if manifest.get('source_dimensions') != [source_stream['width'], source_stream['height']]:
         raise ValueError('source dimensions changed')
+    source_duration = _source_duration(source)
     seen = set()
     audited = []
     for table in tables:
@@ -97,6 +108,8 @@ def audit_table_crops(source, output_dir, *, duration_tolerance=0.25):
         start, duration = table.get('source_start_seconds'), table.get('requested_duration_seconds')
         if any(type(v) not in (int, float) or not math.isfinite(v) for v in (start, duration)) or start < 0 or not 0 < duration <= 300:
             raise ValueError('invalid source interval')
+        if start + duration > source_duration + duration_tolerance:
+            raise ValueError('requested crop extends beyond source duration')
         if not 0 <= start <= 86400 or not _source_has_frame(source, start, duration):
             raise ValueError('source interval has no verifiable frames')
         path = directory / table['file']
