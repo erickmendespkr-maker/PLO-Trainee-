@@ -5,6 +5,11 @@ import math
 import subprocess
 from pathlib import Path
 
+try:
+    from .offline_crop_manifest_geometry import validate_manifest_geometry
+except ImportError:
+    from offline_crop_manifest_geometry import validate_manifest_geometry
+
 
 def _sha256_file(path):
     """Hash large recordings without reading the entire file into memory."""
@@ -87,6 +92,7 @@ def audit_table_crops(source, output_dir, *, duration_tolerance=0.25):
     source_stream = _source_probe(source)
     if manifest.get('source_dimensions') != [source_stream['width'], source_stream['height']]:
         raise ValueError('source dimensions changed')
+    validate_manifest_geometry(tables, source_stream['width'], source_stream['height'])
     source_duration = _source_duration(source)
     seen = set()
     audited = []
