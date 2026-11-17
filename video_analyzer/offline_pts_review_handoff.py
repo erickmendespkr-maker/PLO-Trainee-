@@ -19,11 +19,19 @@ def build_pts_review_handoff(observations, *, video_sha256, video_duration_secon
         raise ValueError('invalid video SHA-256')
     if type(video_duration_seconds) not in (int, float) or not math.isfinite(video_duration_seconds) or video_duration_seconds <= 0:
         raise ValueError('invalid video duration')
+    if type(max_tables) is not int or not 1 <= max_tables <= 4:
+        raise ValueError('max_tables must be an integer from 1 to 4')
     if not isinstance(observations, list):
         raise ValueError('observations must be a list')
     for observation in observations:
         if not isinstance(observation, dict):
             raise ValueError('invalid observation')
+        table = observation.get('table_id')
+        state = observation.get('state')
+        if not isinstance(table, str) or not table.strip() or table != table.strip():
+            raise ValueError('invalid observation table id')
+        if not isinstance(state, str) or not state.strip() or state != state.strip():
+            raise ValueError('invalid observation state')
         pts = observation.get('pts')
         if type(pts) not in (int, float) or not math.isfinite(pts) or pts > video_duration_seconds:
             raise ValueError('observation outside video')
