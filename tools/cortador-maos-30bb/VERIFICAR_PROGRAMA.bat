@@ -37,7 +37,7 @@ pause
 exit /b 1
 
 :check
-"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "gemini_backend.py" "hud_recognition.py" "pasta_saida.py" "testes_gemini.py" "testes_hud.py" "testes_pasta_saida.py"
+"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "gemini_backend.py" "hud_recognition.py" "pasta_saida.py" "poker_contexto.py" "testes_contexto.py" "testes_gemini.py" "testes_hud.py" "testes_pasta_saida.py"
 if errorlevel 1 (
   echo.
   echo ERRO: a verificacao de sintaxe falhou.
@@ -68,6 +68,15 @@ echo Verificando reconhecimento completo de HUD sem Tesseract real:
 if errorlevel 1 (
   echo.
   echo ERRO nos testes do HUD. Copie a mensagem exibida.
+  pause
+  exit /b 1
+)
+echo.
+echo Testando perdas PLO com rebuy e premiacao do pote:
+"%PYEXE%" %PYARGS% "testes_contexto.py"
+if errorlevel 1 (
+  echo.
+  echo ERRO nos testes de rebuy e leitura contextual do pote.
   pause
   exit /b 1
 )
