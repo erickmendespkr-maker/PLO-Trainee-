@@ -837,11 +837,12 @@ class GUI(tk.Tk):
         self.tell("Iniciando analise visual offline...")
         cfg = json.loads(json.dumps(self.cfg))
         videos = self.videos[:]
+        hero_nick = self.nick.get().strip()
         def worker():
             try:
                 results = scan_videos(videos, cfg, threshold,
                                       lambda msg: self.after(0, lambda m=msg: self.tell(m)),
-                                      hero_nick=self.nick.get().strip())
+                                      hero_nick=hero_nick)
                 self.after(0, lambda: self.finished(results))
             except Exception as exc:
                 self.after(0, lambda e=str(exc): self.failed(e))
@@ -937,6 +938,8 @@ class GUI(tk.Tk):
             return
         self.busy = True
         self.tell(f"Exportando {len(eligible)} maos conferidas...")
+        hero_nick = self.nick.get().strip()
+        layout = self.layout_id()
         def worker():
             logs = []
             for i, c in enumerate(eligible, 1):
@@ -946,10 +949,10 @@ class GUI(tk.Tk):
                     clip = Clip(c.start, c.end, c.table, c.loss_bb, "Video OCR",
                                 "Video", "", True)
                     export_clip(self.videos, clip, Path(folder) / filename,
-                                resource("ffmpeg"), layout=self.layout_id())
+                                resource("ffmpeg"), layout=layout)
                 except Exception as exc:
                     status = "ERRO: " + str(exc)[-180:]
-                logs.append({"arquivo": filename, "nick": c.nick or self.nick.get().strip(),
+                logs.append({"arquivo": filename, "nick": c.nick or hero_nick,
                              "nick_ocr_confirmado": c.nick_verified, "mesa": c.table,
                              "inicio": fmt(c.start), "fim": fmt(c.end),
                              "perda_bb_conferida": c.loss_bb, "status": status})
