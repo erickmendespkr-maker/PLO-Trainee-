@@ -357,7 +357,7 @@ class GeminiClient:
             "Use null para quaisquer campos inseguros. "
         )
         parts = [{"text": prompt}, {"text": "VISÃO GERAL DA TELA DA GRAVACAO:"},
-                 {"inline_data": {"mime_type": "image/png",
+                 {"inline_data": {"mime_type": "image/jpeg",
                                   "data": _context_jpeg(overview)["data"]}}]
         for i, image in enumerate(table_frames):
             parts.append({"text": f"MESA COMPLETA, MOMENTO {i+1}/8 EM ORDEM:"})
