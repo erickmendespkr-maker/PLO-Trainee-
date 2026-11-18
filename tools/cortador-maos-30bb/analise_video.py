@@ -238,8 +238,12 @@ class AutoLayoutTracker:
         self.suspected = None
         self.streak = 0
 
-    def observe(self, frame):
-        guess, confidence, _scores = infer_horizontal_layout(frame, self.stable)
+    def observe(self, frame, observation=None):
+        # Aceita resultado ja calculado para que o diagnostico nao duplique
+        # o custo da inferencia. O scanner normal segue inalterado.
+        if observation is None:
+            observation = infer_horizontal_layout(frame, self.stable)
+        guess, confidence, _scores = observation
         if guess is None:
             self.suspected = None
             self.streak = 0
