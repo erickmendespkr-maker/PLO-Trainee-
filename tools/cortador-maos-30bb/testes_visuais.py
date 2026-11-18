@@ -2,7 +2,8 @@
 """Testes basicos para algoritmos visuais independentes de video real."""
 import unittest
 from PIL import Image, ImageDraw
-from analise_video import parse_stack, changed_fraction, HandState, bright_fraction, screenshot_profile
+from analise_video import (parse_stack, changed_fraction, HandState, bright_fraction,
+                           screenshot_profile, normalize_nick, nickname_matches)
 
 
 class VisualTests(unittest.TestCase):
@@ -32,6 +33,15 @@ class VisualTests(unittest.TestCase):
         self.assertEqual(GUI.infer_table(dummy, 240, 200), 2)
         self.assertEqual(GUI.infer_table(dummy, 959, 539), 4)
 
+    def test_comparacao_nick(self):
+        self.assertEqual(normalize_nick("~Púlgár~"), "pulgar")
+        self.assertTrue(nickname_matches("Pulgar", "~Pulgar~"))
+        self.assertTrue(nickname_matches("~PULGAR~", "~Pulgar~"))
+        self.assertTrue(nickname_matches("Pulgar BB", "~Pulgar~"))
+        self.assertFalse(nickname_matches("Jogador_Diferente", "~Pulgar~"))
+        self.assertFalse(nickname_matches("", "~Pulgar~"))
+        self.assertFalse(nickname_matches("ABC", ""))
+
     def test_perfil_hero_em_quatro_mesas(self):
         perfil = screenshot_profile()
         self.assertEqual(len(perfil), 4)
@@ -41,6 +51,9 @@ class VisualTests(unittest.TestCase):
         for table in range(1, 5):
             hole = perfil[str(table)]["hole"]
             stack = perfil[str(table)]["stack"]
+            nick = perfil[str(table)]["nick"]
+            self.assertLess(nick[0], nick[2])
+            self.assertLess(nick[2], 961)
             self.assertLess(hole[0], hole[2])
             self.assertLess(hole[2], 961)
             self.assertLess(stack[3], 541)
