@@ -4,6 +4,7 @@ import csv
 import io
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 from PIL import Image, ImageDraw
@@ -11,6 +12,7 @@ from analise_video import (parse_stack, changed_fraction, HandState, bright_frac
                            screenshot_profile, normalize_nick, nickname_matches,
                            replicate_horizontal_rect, stack_median, MAX_STACK_BB,
                            Candidate, eligible_losses,
+                           native_stack_crop, read_stack_diagnostics,
                            net_loss_bb, loss_reaches_threshold, layout_key, mode_at,
                            layout_count, layout_bounds, layout_rect,
                            unmap_layout_rect, table_visible,
@@ -19,6 +21,48 @@ from cortador import Video, crop_filter
 
 
 class VisualTests(unittest.TestCase):
+    def test_saldo_nativo_nao_perde_resolucao_do_video(self):
+        picture = Image.new("RGB", (112, 44), "white")
+        buffer = io.BytesIO()
+        picture.save(buffer, format="PNG")
+        video = Video("mock.mp4", 30, 1920, 1080, False)
+        fake = SimpleNamespace(returncode=0, stdout=buffer.getvalue(), stderr=b"")
+        with (patch("analise_video.file_at", return_value=(video, 2.0)),
+              patch("analise_video.subprocess.run", return_value=fake) as cmd):
+            cropped = native_stack_crop(
+                [video], 2.0, (97, 488, 153, 510), "ffmpeg")
+        self.assertEqual(cropped.size, (112, 44))
+        self.assertIn("crop=112:44:194:976", cmd.call_args.args[0])
+
+    def test_ocr_cinza_nativo_com_previa_diagnostica(self):
+        picture = Image.new("RGB", (100, 25), "black")
+        fake = SimpleNamespace(returncode=0, stdout="114,0\\n", stderr="")
+        with patch("analise_video.subprocess.run", return_value=fake) as call:
+            value, details = read_stack_diagnostics(
+                picture, "tesseract", quick=True)
+        self.assertEqual(value, 114.0)
+        self.assertEqual(len(details), 1)
+        self.assertEqual(call.call_count, 1)
+
+    def test_quando_ocr_reduzido_falha_reler_original(self):
+        pictures = [Image.new("L", (40, 20), 50) for _ in range(3)]
+        state = HandState()
+        state.pending = {
+            "start": 10, "end": 50,
+            "before": pictures, "after": pictures,
+            "before_times": [8, 9, 10],
+            "after_times": [50, 51, 52]}
+        with patch("analise_video.stack_median",
+                   side_effect=[(None, 0), (None, 0),
+                                (150.0, 2), (120.0, 2)]) as reader:
+            original = lambda *args: Image.new("RGB", (112, 44), "black")
+            state.finish(1, 1, 30, "tesseract", quick=False,
+                         native_reader=original)
+        self.assertEqual(reader.call_count, 4)
+        self.assertEqual(len(state.results), 1)
+        self.assertEqual(state.results[0].loss_bb, 30.0)
+        self.assertTrue(state.results[0].auto_verified)
+
     def test_ocr_nao_junta_numeros_separados(self):
         # O bug anterior transformava "154 020" em 154020 e inventava perdas.
         self.assertNotEqual(parse_stack("154 020"), 154020)
