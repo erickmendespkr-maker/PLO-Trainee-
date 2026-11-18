@@ -2206,9 +2206,6 @@ class GUI(tk.Tk):
                 {"layout": self.layout.get(), "nick": self.nick.get().strip(),
                  "quick": self.quick.get(), "auto_export": self.auto_export.get(),
                  "auto_rebuy": self.auto_rebuy.get(),
-                 "use_gemini": self.use_gemini.get(),
-                 "gemini_model": self.gemini_model.get(),
-                 "gemini_limit": self.gemini_limit.get(),
                  "timeline": self.timeline, "tables": self.cfg},
                 indent=2), encoding="utf-8")
             self.tell("Configuracao salva.")
@@ -2224,12 +2221,6 @@ class GUI(tk.Tk):
                 self.quick.set(bool(data.get("quick", True)))
                 self.auto_export.set(bool(data.get("auto_export", True)))
                 self.auto_rebuy.set(bool(data.get("auto_rebuy", True)))
-                self.use_gemini.set(
-                    bool(read_key()) and bool(data.get("use_gemini", True)))
-                saved_model = data.get("gemini_model", DEFAULT_MODEL)
-                self.gemini_model.set(
-                    saved_model if saved_model in ALLOWED_MODELS else DEFAULT_MODEL)
-                self.gemini_limit.set(str(data.get("gemini_limit", 40)))
                 self.layout.set(data.get("layout", "2 por 2" if "tables" not in data else "4 lado a lado"))
                 self.timeline = sorted(data.get("timeline", []), key=lambda x: float(x["start"]))
                 self.detected_timeline = []
@@ -2276,9 +2267,6 @@ class GUI(tk.Tk):
                 "nick": self.nick.get().strip(), "quick": self.quick.get(),
                 "auto_export": self.auto_export.get(),
                 "auto_rebuy": self.auto_rebuy.get(),
-                "use_gemini": self.use_gemini.get(),
-                "gemini_model": self.gemini_model.get(),
-                "gemini_limit": self.gemini_limit.get(),
                 "timeline": self.timeline,
                 "detected_timeline": self.detected_timeline,
                 "candidates": [asdict(c) for c in self.candidates]}
@@ -2359,12 +2347,6 @@ class GUI(tk.Tk):
             self.quick.set(bool(data.get("quick", True)))
             self.auto_export.set(bool(data.get("auto_export", True)))
             self.auto_rebuy.set(bool(data.get("auto_rebuy", True)))
-            self.use_gemini.set(
-                bool(read_key()) and bool(data.get("use_gemini", True)))
-            saved_model = data.get("gemini_model", DEFAULT_MODEL)
-            self.gemini_model.set(
-                saved_model if saved_model in ALLOWED_MODELS else DEFAULT_MODEL)
-            self.gemini_limit.set(str(data.get("gemini_limit", 40)))
             self.threshold.set(str(data.get("threshold", 30)))
             self.info.configure(text=f"{len(videos)} arquivo(s) | {fmt(self.total)}")
             self.on_table_change()
@@ -2412,97 +2394,39 @@ class GUI(tk.Tk):
             messagebox.showerror("Pasta de saida", str(exc))
 
     def recheck_inconclusive(self):
-        """Recupera resultado de uma execucao anterior usando a revisao JSON."""
+        """Reutiliza a ultima revisao para estimar aportes sem varrer video inteiro."""
         if self.busy:
             return
         if not self.videos or not self.candidates:
             messagebox.showwarning(
-                "Reanalise", "Abra uma revisao JSON anterior (Abrir revisao) "
-                "ou execute uma analise antes da reanalise.")
-            return
-        key = read_key()
-        if not key:
-            messagebox.showwarning(
-                "Gemini", "A chave Gemini nao esta configurada neste Windows. "
-                "Clique Configurar chave e informe uma nova chave.")
+                "Triagem offline",
+                "Primeiro execute ANALISAR VIDEO(S) ou abra a ultima revisao.")
             return
         try:
-            limit = int(self.gemini_limit.get())
             threshold = float(self.threshold.get().replace(",", "."))
-            if not 1 <= limit <= 300 or threshold <= 0:
-                raise ValueError("Defina limite de 1 a 300 chamadas e perda minima >0.")
-            model = self.gemini_model.get()
-            if model not in ALLOWED_MODELS:
-                raise ValueError("Modelo Gemini nao permitido.")
-            pending = sum(
-                not c.excluded and not c.confirmed and not c.pot_verified and
-                not (c.gemini_checked and c.source == "Gemini - mesa inteira")
-                for c in self.candidates)
-            if pending == 0:
-                messagebox.showinfo("Reanalise", "Nenhuma mao com OCR pendente.")
-                return
+            if threshold <= 0:
+                raise ValueError("Perda minima precisa ser positiva.")
         except ValueError as exc:
-            messagebox.showerror("Reanalise", str(exc))
+            messagebox.showerror("Triagem", str(exc))
             return
-        if not messagebox.askyesno(
-                "Confirmar reanalise Gemini",
-                f"Examinar ate {min(pending, limit)} maos com Gemini?\n"
-                "Cada consulta envia um quadro geral, 8 imagens da mesa "
-                "e 2 HUDs ao longo da mao.\n"
-                "Rebuy para 100 BB nao significa ganho ou perda. "
-                "Exigimos aposta do heroi e pote para o adversario.\n"
-                "A API pode consumir cota ou gerar cobrancas.\n\n"
-                "Deseja continuar?"):
-            return
-        folder = None
-        if self.auto_export.get():
-            try:
-                folder = str(self.current_output_folder(create=True))
-            except (OSError, ValueError) as exc:
-                messagebox.showerror("Pasta dos MP4", str(exc))
-                return
-        current = [Candidate(**asdict(c)) for c in self.candidates]
+        candidates = [Candidate(**asdict(c)) for c in self.candidates]
+        videos = self.videos[:]
         config = json.loads(json.dumps(self.cfg))
-        video_copy = self.videos[:]
         self.busy = True
-        self.tell(f"Reanalisando ocorrencias OCR pendentes com {model}...")
+        self.tell("Estimando aportes por OCR nos quadros DURANTE cada mao...")
         def worker():
             try:
-                client = GeminiClient(key, model=model, max_requests=limit)
-                recheck = (recheck_candidates_with_poker_context
-                           if self.auto_rebuy.get()
-                           else recheck_candidates_with_gemini)
-                revised, inspected, recovered = recheck(
-                    video_copy, config, current, threshold, client,
-                    lambda info: self.after(0, lambda m=info: self.tell(m)))
-                def done():
-                    self.candidates = revised
-                    self.busy = False
-                    self.refresh()
-                    saved = self.autosave_review()
-                    remaining = sum(
-                        not c.excluded and not c.confirmed and
-                        not c.pot_verified and not (
-                            c.gemini_checked and c.source == "Gemini - mesa inteira")
-                        for c in revised)
-                    self.tell(f"Reanalise: {inspected} ocorrencias verificadas, "
-                              f"{recovered} perdas >= {threshold:g} BB; "
-                              f"{remaining} pendentes; Gemini {client.used}/{client.limit}.")
-                    if folder and recovered:
-                        self.export(folder=folder, automatic_only=True)
-                    else:
-                        messagebox.showinfo(
-                            "Reanalise concluida",
-                            f"{recovered} novas perdas detectadas com IA.\\n"
-                            f"{client.used} chamadas utilizadas, "
-                            f"limite local {client.limit}.\\n\\n"
-                            "Salve a revisao JSON. Mesmo com IA, confira saldos "
-                            "e cortes antes de enviar ao instrutor.")
-                self.after(0, done)
+                revised, analyzed, priority = estimate_candidates_offline(
+                    videos, config, candidates, threshold,
+                    lambda msg: self.after(0, lambda m=msg: self.tell(m)))
+                self.after(0, lambda: self.finished(
+                    revised, self.detected_timeline[:],
+                    f"Triagem offline: {analyzed} maos, {priority} prioritarias",
+                    export_review=False))
             except Exception as exc:
-                self.after(0, lambda e=str(exc): self.failed(
-                    "Nao foi possivel reanalisar: " + e))
+                self.after(0, lambda e=str(exc): self.failed(e))
         threading.Thread(target=worker, daemon=True).start()
+
 
     def check_stacks_before_analysis(self):
         """Alerta se o video nao produz nenhum saldo legivel nas ROIs atuais."""
