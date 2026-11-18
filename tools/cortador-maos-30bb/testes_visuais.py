@@ -8,7 +8,8 @@ from analise_video import (parse_stack, changed_fraction, HandState, bright_frac
                            replicate_horizontal_rect, stack_median,
                            net_loss_bb, loss_reaches_threshold, layout_key, mode_at,
                            layout_count, layout_bounds, layout_rect,
-                           unmap_layout_rect, table_visible)
+                           unmap_layout_rect, table_visible,
+                           infer_horizontal_layout, AutoLayoutTracker)
 from cortador import Video, crop_filter
 
 
@@ -29,6 +30,65 @@ class VisualTests(unittest.TestCase):
         self.assertLess(changed_fraction(blank, reference, rect), .01)
         self.assertGreater(changed_fraction(filled, reference, rect), .08)
 
+
+    @staticmethod
+    def mock_mesatela(count, present=None):
+        """Desenha janelas diferentes em quantidade, com divisorias visiveis."""
+        frame = Image.new("L", (960, 540), 0)
+        present = set(range(1, count + 1) if present is None else present)
+        pen = ImageDraw.Draw(frame)
+        for table in range(1, count + 1):
+            if table not in present:
+                continue
+            left = round(960 * (table - 1) / count)
+            right = round(960 * table / count)
+            width = right - left
+            pen.rectangle((left+6, 12, right-7, 527), fill=45)
+            pen.rectangle((left+6, 12, right-7, 60), fill=115)
+            pen.ellipse((left + round(.10*width), 124,
+                         right - round(.10*width), 415), fill=93)
+            pen.rectangle((left + round(.38*width), 245,
+                           left + round(.64*width), 279), fill=205)
+            pen.rectangle((left + round(.60*width), 475,
+                           left + round(.83*width), 496), fill=156)
+        return frame
+
+    def test_detector_automatico_de_varias_mesas(self):
+        for count in (1, 2, 3, 4):
+            image = self.mock_mesatela(count)
+            detected, confidence, _scores = infer_horizontal_layout(image)
+            self.assertEqual(detected, f"horizontal{count}")
+            self.assertGreater(confidence, 0)
+
+    def test_restam_tres_mesas_nas_quatro_posicoes_originais(self):
+        frame = self.mock_mesatela(4, present=[1, 2, 3])
+        detected, _, _ = infer_horizontal_layout(frame)
+        self.assertEqual(detected, "horizontal4")
+        frame = self.mock_mesatela(4, present=[3])
+        detected, _, _ = infer_horizontal_layout(frame)
+        self.assertEqual(detected, "horizontal4")
+
+    def test_mudanca_automatica_precisa_confirmacao_temporal(self):
+        tracker = AutoLayoutTracker()
+        dummy = Image.new("L", (960, 540), 40)
+        with patch("analise_video.infer_horizontal_layout",
+                   side_effect=[("horizontal4", .9, {})] * 3 +
+                               [("horizontal3", .9, {})] * 3):
+            for step in range(2):
+                mode, safe, _ = tracker.observe(dummy)
+                self.assertIsNone(mode)
+                self.assertFalse(safe)
+            mode, safe, _ = tracker.observe(dummy)
+            self.assertEqual(mode, "horizontal4")
+            self.assertTrue(safe)
+            for step in range(2):
+                mode, safe, _ = tracker.observe(dummy)
+                self.assertEqual(mode, "horizontal4")
+                self.assertFalse(safe)
+            mode, safe, status = tracker.observe(dummy)
+            self.assertEqual(mode, "horizontal3")
+            self.assertTrue(safe)
+            self.assertEqual(status, "alterado")
 
     def test_layout_variavel_de_uma_a_quatro_mesas(self):
         self.assertEqual(layout_key("Auto (ate 4, slots fixos)"), "auto4")
