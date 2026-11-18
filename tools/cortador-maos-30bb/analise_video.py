@@ -602,6 +602,7 @@ class HandState:
     """Deteccao de cartas do heroi por diferenca com quadro vazio de referencia."""
     def __init__(self):
         self.layout = "horizontal4"
+        self.scan_mode = "horizontal4"
         self.active = False
         self.on_count = 0
         self.off_count = 0
@@ -609,17 +610,21 @@ class HandState:
         self.off_start = 0.
         self.start_at = 0.
         self.before = []
+        self.before_times = []
         self.empty_frames = deque(maxlen=9)
         self.pending = None
         self.results = []
 
-    def feed(self, t, occupied, stack_img, table, bb, threshold, tesseract, quick=False):
+    def feed(self, t, occupied, stack_img, table, bb, threshold, tesseract,
+             quick=False, native_reader=None):
         if not self.active:
             if self.pending is not None:
                 if not occupied and len(self.pending["after"]) < 3:
                     self.pending["after"].append(stack_img.copy())
+                    self.pending["after_times"].append(t)
                 if len(self.pending["after"]) >= 3 or occupied:
-                    self.finish(table, bb, threshold, tesseract, quick=quick)
+                    self.finish(table, bb, threshold, tesseract, quick=quick,
+                                native_reader=native_reader)
             if occupied:
                 if self.on_count == 0:
                     self.on_start = t
@@ -628,8 +633,9 @@ class HandState:
                     self.active = True
                     self.start_at = self.on_start
                     # O saldo anterior a distribuicao e melhor que o saldo no flop.
-                    samples = [x[1] for x in list(self.empty_frames)[-5:]]
-                    self.before = [im.copy() for im in samples[-3:]]
+                    samples = list(self.empty_frames)[-3:]
+                    self.before = [im.copy() for _at, im in samples]
+                    self.before_times = [at for at, _im in samples]
                     self.on_count = 0
                     self.off_count = 0
             else:
@@ -646,11 +652,13 @@ class HandState:
             if self.off_count >= 2:
                 self.active = False
                 self.pending = {"start": self.start_at, "end": self.off_start,
-                                "before": self.before[:], "after": [stack_img.copy()]}
+                                "before": self.before[:], "before_times": self.before_times[:],
+                                "after": [stack_img.copy()], "after_times": [t]}
                 self.off_count = 0
                 self.empty_frames.clear()
 
-    def finish(self, table, bb, threshold, tesseract, quick=False):
+    def finish(self, table, bb, threshold, tesseract, quick=False,
+               native_reader=None):
         data = self.pending
         self.pending = None
         if not data:
@@ -673,6 +681,34 @@ class HandState:
             else:
                 # Resultado do passe rapido sozinho nunca e auto verificado.
                 n_pre, n_post = 0, 0
+
+        if native_reader is not None and (
+                loss is None or n_pre < 2 or n_post < 2):
+            # Segundo caminho: os frames originais preservam os digitos
+            # que somem quando o video inteiro e reduzido para 960x540.
+            # So ler 2-3 amostras por lado se o OCR leve falhar.
+            original_samples = {}
+            for name in ("before", "after"):
+                images = []
+                for sample_at in data.get(name + "_times", [])[-3:]:
+                    try:
+                        images.append(native_reader(
+                            sample_at, table, self.scan_mode))
+                    except (OSError, ValueError, RuntimeError,
+                            subprocess.SubprocessError):
+                        pass
+                original_samples[name] = images
+            n_before, c_before = stack_median(
+                original_samples["before"], tesseract, quick=False, bb=bb)
+            n_after, c_after = stack_median(
+                original_samples["after"], tesseract, quick=False, bb=bb)
+            if n_before is not None and n_after is not None:
+                pre, post = n_before, n_after
+                n_pre, n_post = c_before, c_after
+                loss = net_loss_bb(pre, post, bb)
+            elif loss is None:
+                pre, post = n_before, n_after
+                n_pre, n_post = c_before, c_after
 
         if loss is None:
             self.results.append(Candidate(
@@ -757,6 +793,10 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
     # interrompido so e consolidado apos alguns frames ou troca confirmada.
     unsafe_grace_frames = 6
 
+    def read_native_at(global_second, table, scan_mode):
+        roi = table_cfg[(scan_mode, table)]["stack"]
+        return native_stack_crop(videos, global_second, roi, ffmpeg)
+
     def close_state(table, end_time, reason):
         state = states.pop(table, None)
         if state is None:
@@ -764,7 +804,8 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
         key = (state.scan_mode, table)
         cfg = table_cfg.get(key)
         if state.pending and cfg is not None:
-            state.finish(table, cfg["bb"], threshold, tesseract, quick=quick)
+            state.finish(table, cfg["bb"], threshold, tesseract, quick=quick,
+                         native_reader=read_native_at)
         for candidate in state.results:
             candidate.start = max(candidate.start, segment_start)
             candidate.end = min(candidate.end, end_time)
@@ -882,7 +923,8 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                         occupied = changed_fraction(frame, cfg["empty"],
                                                     cfg["hole"]) >= cfg["min_change"]
                     states[table].feed(t, occupied, frame.crop(cfg["stack"]), table,
-                                       cfg["bb"], threshold, tesseract, quick=quick)
+                                       cfg["bb"], threshold, tesseract, quick=quick,
+                                       native_reader=read_native_at)
                 if seen:
                     detected_frames += 1
                 n += 1
