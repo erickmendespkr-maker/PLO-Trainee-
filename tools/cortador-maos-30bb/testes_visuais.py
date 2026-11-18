@@ -18,6 +18,7 @@ from analise_video import (parse_stack, changed_fraction, HandState, bright_frac
                            net_loss_bb, loss_reaches_threshold, layout_key, mode_at,
                            layout_count, layout_bounds, layout_rect,
                            layout_roi, store_layout_roi, unmap_layout_rect,
+                           default_hero_hud, hero_hud_parts,
                            detect_hero_cards_anchor, auto_hero_profile,
                            apply_auto_hero_profile, table_visible,
                            infer_horizontal_layout, AutoLayoutTracker)
@@ -331,97 +332,78 @@ class VisualTests(unittest.TestCase):
                 painter.rectangle([px, 440, px+2, 471], fill=(100, 43, 34))
         return frame
 
-    def test_autoajuste_3_mesas_ancora_cartas_do_heroi(self):
+    def test_um_hud_grande_cobre_cartas_nick_e_saldo_sem_3_caixas(self):
+        config = screenshot_profile()
+        for table in range(1, 4):
+            hud = layout_roi(config[str(table)], table, "horizontal3", "hero_hud")
+            self.assertEqual(hud, default_hero_hud("horizontal3", table))
+            self.assertTrue(400 <= hud[1] < 420)
+            self.assertTrue(520 <= hud[3] < 540)
+            segments = hero_hud_parts(hud)
+            for key in ("hole", "nick", "stack"):
+                rect = segments[key]
+                self.assertTrue(hud[0] <= rect[0] < rect[2] <= hud[2])
+                self.assertTrue(hud[1] <= rect[1] < rect[3] <= hud[3])
+                self.assertEqual(
+                    layout_roi(config[str(table)], table, "horizontal3", key), rect)
+            self.assertLessEqual(segments["nick"][3], segments["stack"][1])
+
+    def test_um_hud_manual_na_mesa_1_replica_nas_outras(self):
+        config = screenshot_profile()
+        rect = [100, 405, 285, 527]
+        store_layout_roi(config, 1, "horizontal3", "hero_hud", rect)
+        self.assertEqual(layout_roi(config["1"], 1, "horizontal3", "hero_hud"),
+                         tuple(rect))
+        self.assertEqual(layout_roi(config["2"], 2, "horizontal3", "hero_hud"),
+                         (420, 405, 605, 527))
+        self.assertEqual(layout_roi(config["3"], 3, "horizontal3", "hero_hud"),
+                         (740, 405, 925, 527))
+        # 4 mesas nao herdam a marcacao do layout de 3.
+        self.assertEqual(layout_roi(config["1"], 1, "horizontal4", "hero_hud"),
+                         default_hero_hud("horizontal4", 1))
+        with tempfile.TemporaryDirectory() as temp:
+            file = Path(temp) / "marcacoes_padrao.json"
+            save_markings_file(file, config, "~Pulgar~",
+                               "Automatico (1 a 4 mesas)")
+            loaded = load_markings_file(file)["tables"]
+            self.assertEqual(
+                layout_roi(loaded["3"], 3, "horizontal3", "hero_hud"),
+                (740, 405, 925, 527))
+
+    def test_autoajuste_3_mesas_ancora_hud_grande(self):
         image = self.synthetic_hero_cards(3)
         anchor = detect_hero_cards_anchor(image, "horizontal3", 1)
         self.assertIsNotNone(anchor)
-        self.assertTrue(140 <= anchor[0] < 200)
-        self.assertTrue(420 <= anchor[1] < 465)
         profile = auto_hero_profile(image, "horizontal3")
         self.assertIsNotNone(profile)
-        self.assertLessEqual(profile["nick"][3], profile["stack"][1])
+        self.assertIn("hero_hud", profile)
         config = screenshot_profile()
-        updated = apply_auto_hero_profile(config, image, "horizontal3")
-        self.assertEqual(updated, 9)
+        count = apply_auto_hero_profile(config, image, "horizontal3")
+        self.assertEqual(count, 3)
         for table in range(1, 4):
-            rect = layout_roi(config[str(table)], table, "horizontal3", "hole")
-            self.assertTrue((table-1)*320 <= rect[0] < table*320)
-        # As quatro posicoes de outro layout nao sao recalibradas.
-        self.assertEqual(
-            layout_roi(config["1"], 1, "horizontal4", "hole"),
-            tuple(config["1"]["hole"]))
+            box = layout_roi(config[str(table)], table, "horizontal3", "hero_hud")
+            self.assertTrue((table - 1) * 320 <= box[0] < table * 320)
+            self.assertTrue(box[1] < box[3] and box[3] <= 540)
 
-    def test_autoajuste_nao_apaga_marcacao_manual(self):
+    def test_autoajuste_preserva_hud_manual(self):
         image = self.synthetic_hero_cards(3)
         config = screenshot_profile()
-        store_layout_roi(config, 1, "horizontal3", "stack",
-                         [120, 485, 206, 499], source="manual")
-        saved = layout_roi(config["2"], 2, "horizontal3", "stack")
-        updated = apply_auto_hero_profile(config, image, "horizontal3")
-        self.assertEqual(updated, 6)
-        self.assertEqual(layout_roi(config["2"], 2, "horizontal3", "stack"), saved)
-        updated_force = apply_auto_hero_profile(config, image,
-                                                "horizontal3", force=True)
-        self.assertEqual(updated_force, 9)
-        self.assertNotEqual(layout_roi(config["2"], 2, "horizontal3", "stack"), saved)
+        store_layout_roi(config, 1, "horizontal3", "hero_hud",
+                         [98, 402, 282, 525], source="manual")
+        before = layout_roi(config["2"], 2, "horizontal3", "hero_hud")
+        self.assertEqual(apply_auto_hero_profile(config, image, "horizontal3"), 0)
+        self.assertEqual(
+            layout_roi(config["2"], 2, "horizontal3", "hero_hud"), before)
+        self.assertEqual(
+            apply_auto_hero_profile(config, image, "horizontal3", force=True), 3)
 
-    def test_autoajuste_sem_cartas_nao_movimenta_perfis(self):
+    def test_autoajuste_sem_cartas_nao_altera_hud(self):
         blank = Image.new("RGB", (960, 540), (18, 109, 82))
         config = screenshot_profile()
-        before = config["1"]["stack"][:]
-        self.assertEqual(apply_auto_hero_profile(config, blank,
-                                                 "horizontal3"), 0)
-        self.assertEqual(config["1"]["stack"], before)
-
-    def test_marcacao_de_tres_mesas_nao_move_a_de_quatro(self):
-        config = screenshot_profile()
-        original_four = [
-            {key: value[:] for key, value in config[str(t)].items()
-             if key in ("hole", "stack", "nick")}
-            for t in range(1, 5)]
-        # O usuario selecionou uma gravacao nova com tres mesas.
-        store_layout_roi(config, 1, "horizontal3", "stack",
-                         [126, 475, 184, 494])
+        old = layout_roi(config["1"], 1, "horizontal3", "hero_hud")
+        self.assertEqual(apply_auto_hero_profile(config, blank, "horizontal3"), 0)
         self.assertEqual(
-            layout_roi(config["1"], 1, "horizontal3", "stack"),
-            (126, 475, 184, 494))
-        self.assertEqual(
-            layout_roi(config["2"], 2, "horizontal3", "stack"),
-            (446, 475, 504, 494))
-        self.assertEqual(
-            layout_roi(config["3"], 3, "horizontal3", "stack"),
-            (766, 475, 824, 494))
-        # As regioes no video original de quatro mesas continuam intocadas.
-        for t in range(1, 5):
-            for key, value in original_four[t-1].items():
-                self.assertEqual(config[str(t)][key], value)
-        self.assertEqual(
-            layout_roi(config["1"], 1, "horizontal4", "stack"),
-            tuple(original_four[0]["stack"]))
-        # Ao salvar o perfil, layouts diferentes sobrevivem ao restart.
-        with tempfile.TemporaryDirectory() as tmp:
-            output = Path(tmp) / "padrao.json"
-            save_markings_file(output, config, "~Pulgar~",
-                               "Automatico (1 a 4 mesas)")
-            new = load_markings_file(output)["tables"]
-            self.assertEqual(
-                layout_roi(new["2"], 2, "horizontal3", "stack"),
-                (446, 475, 504, 494))
-            self.assertEqual(new["1"]["stack"], original_four[0]["stack"])
-
-    def test_reposicionar_cartas_e_nick_em_uma_disposicao(self):
-        config = screenshot_profile()
-        store_layout_roi(config, 2, "horizontal3", "hole",
-                         [440, 431, 516, 479])
-        store_layout_roi(config, 2, "horizontal3", "nick",
-                         [446, 478, 507, 498])
-        self.assertEqual(layout_roi(config["1"], 1, "horizontal3", "hole"),
-                         (120, 431, 196, 479))
-        self.assertEqual(layout_roi(config["3"], 3, "horizontal3", "nick"),
-                         (766, 478, 827, 498))
-        # O layout quatro conserva as coordenadas de fabrica.
-        self.assertEqual(layout_roi(config["2"], 2, "horizontal4", "hole"),
-                         tuple(config["2"]["hole"]))
+            layout_roi(config["1"], 1, "horizontal3", "hero_hud"), old)
 
     def test_layout_variavel_de_uma_a_quatro_mesas(self):
         self.assertEqual(layout_key("Auto (ate 4, slots fixos)"), "auto4")
