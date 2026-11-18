@@ -125,6 +125,116 @@ def store_layout_roi(config, table, mode, key, absolute_rect):
             config[str(destination)][key] = new_rect[:]
 
 
+def detect_hero_cards_anchor(frame, mode, table):
+    """Localiza o grupo de cartas claras do heroi na faixa inferior da mesa.
+
+    Opera somente no frame RGB original 960x540, nao depende de OCR/API.
+    Se a evidência visual for fraca, devolve None em vez de mover marcas.
+    """
+    mode = layout_key(mode)
+    if mode in ("auto4", "grid2x2"):
+        return None
+    box = layout_bounds(mode, table)
+    x1, y1, x2, y2 = box
+    width = x2 - x1
+    if width < 175:
+        return None
+    image = frame.convert("RGB")
+    pixels = image.load()
+    left = x1 + round(width * .36)
+    right = min(x2 - 4, x1 + round(width * .90))
+    top = max(y1, round(H * .775))
+    bottom = min(y2 - 4, round(H * .924))
+    if bottom - top < 35:
+        return None
+    density = []
+    for y in range(top, bottom):
+        hits = 0
+        for x in range(left, right):
+            red, green, blue = pixels[x, y]
+            if (red >= 165 and green >= 162 and blue >= 155 and
+                    max(red, green, blue) - min(red, green, blue) <= 85):
+                hits += 1
+        density.append(hits)
+    min_density = max(11, round((right-left) * .16))
+    bands = []
+    first = None
+    for index, amount in enumerate([*density, 0]):
+        if amount >= min_density and first is None:
+            first = index
+        elif amount < min_density and first is not None:
+            last = index
+            if last - first >= 12:
+                bands.append((sum(density[first:last]), first, last))
+            first = None
+    if not bands:
+        return None
+    _, start, finish = max(bands)
+    card_top, card_bottom = top + start, top + finish
+    if not (420 <= card_top <= 474 and 430 <= card_bottom <= 498):
+        return None
+    columns = []
+    for x in range(left, right):
+        hits = 0
+        for y in range(card_top, card_bottom):
+            red, green, blue = pixels[x, y]
+            if (red >= 165 and green >= 162 and blue >= 155 and
+                    max(red, green, blue) - min(red, green, blue) <= 85):
+                hits += 1
+        if hits >= max(4, round((card_bottom-card_top) * .18)):
+            columns.append(x)
+    if len(columns) < round(width * .18):
+        return None
+    # Evitar unir um avatar claro isolado ao conjunto de cartas.
+    runs = []
+    run_start = run_end = columns[0]
+    for x in columns[1:]:
+        if x - run_end <= 5:
+            run_end = x
+        else:
+            runs.append((run_end - run_start, run_start, run_end))
+            run_start = run_end = x
+    runs.append((run_end - run_start, run_start, run_end))
+    run_width, card_left, card_right = max(runs)
+    if not (width * .19 <= run_width <= width * .49):
+        return None
+    return (max(x1, card_left - 3), max(y1, card_top - 3),
+            min(x2, card_right + 4), min(y2, card_bottom + 3))
+
+
+def auto_hero_profile(frame, mode):
+    """Detecta cartas e estima caixas de nick/saldo no mesmo HUD inferior."""
+    mode = layout_key(mode)
+    if mode in ("auto4", "grid2x2"):
+        return None
+    anchors = []
+    for table in range(1, layout_count(mode) + 1):
+        rect = detect_hero_cards_anchor(frame, mode, table)
+        if rect is not None:
+            x1, _, _, _ = layout_bounds(mode, table)
+            anchors.append((rect[0] - x1, rect[1], rect[2] - x1, rect[3]))
+    if not anchors:
+        return None
+    reference = tuple(round(statistics.median(row[index]))
+                      for index in range(4)
+                      for row in [list(zip(*anchors))])
+    width = layout_bounds(mode, 1)[2]
+    hole = [reference[0], reference[1],
+            reference[2], reference[3]]
+    # Nick e stack ficam na pequena barra escura à esquerda/abaixo das cartas.
+    # Separar verticalmente para impedir que o saldo inclua o nick ou botoes.
+    nick = [max(0, hole[0] - round(width * .15)),
+            max(0, hole[3] - 14),
+            min(width, hole[0] + round(width * .12)),
+            min(H, hole[3] + 3)]
+    stack = [nick[0] + 4, min(H-2, hole[3] + 4),
+             max(nick[0] + 8, nick[2] - 3),
+             min(H, hole[3] + 17)]
+    if stack[3] <= stack[1] or nick[3] > stack[1]:
+        return None
+    return {"hole": hole, "nick": nick, "stack": stack}
+
+
 def unmap_layout_rect(rect, table, mode):
     """Transformacao inversa usada ao desenhar uma ROI na previa."""
     rect = roi_tuple(rect)
