@@ -13,23 +13,28 @@ def _sha256(path):
             digest.update(block)
     return digest.hexdigest()
 
+def _has_symlink_component(path):
+    """Inspect lexical ancestors before resolve() can hide symlinks."""
+    return any(part.is_symlink() for part in (path, *path.parents))
+
 def audit_local_evidence(hand, source_video, frame_directory):
     """Fail closed on local bytes. Does not establish PTS, table or frame origin."""
     reasons = []
     if not isinstance(hand, dict):
         return {"status": "INSUFFICIENT_DATA", "reasons": ["invalid_hand"],
                 "verified_file_count": 0, "proves_frame_origin": False}
-    root_input = Path(frame_directory)
+    root_input = Path(frame_directory).absolute()
     root = root_input.resolve()
-    if root_input.is_symlink() or not root.is_dir():
+    if _has_symlink_component(root_input) or not root.is_dir():
         return {"status": "INSUFFICIENT_DATA", "reasons": ["frame_directory_invalid"],
                 "verified_file_count": 0, "proves_frame_origin": False}
-    source_input = Path(source_video)
+    source_input = Path(source_video).absolute()
+    source_unsafe = _has_symlink_component(source_input)
     source = source_input.resolve()
     declared = hand.get("source_video_sha256")
     if not isinstance(declared, str) or not _SHA.fullmatch(declared):
         reasons.append("source_hash_invalid")
-    if not source.is_file() or source_input.is_symlink():
+    if not source.is_file() or source_unsafe:
         reasons.append("source_file_missing_or_symlink")
     elif isinstance(declared, str) and _SHA.fullmatch(declared) and not hmac.compare_digest(_sha256(source), declared):
         reasons.append("source_hash_mismatch")
