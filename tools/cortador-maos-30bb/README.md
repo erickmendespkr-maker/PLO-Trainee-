@@ -71,7 +71,10 @@ Não precisa ter Git.
 - \`analise_video.py\`: **aplicativo principal, somente vídeos**.
 - \`INICIAR_ANALISE_VIDEO.bat\`: iniciador do aplicativo principal.
 - \`cortador.py\`: componente de recorte FFmpeg e **editor legado**. Não precisa abrir este editor nem fornecer históricos.
-- \`testes_visuais.py\`: verificações unitárias dos componentes visuais.
+- `testes_visuais.py`: verificações unitárias dos componentes visuais.
+- `DIAGNOSTICAR_MESAS_WINDOWS.bat`: abre o diagnóstico automático do vídeo completo.
+- `diagnostico_mesas.py`: cria os relatórios CSV de detecção e mudanças.
+- `VERIFICAR_PROGRAMA.bat`: verifica sintaxe e executa testes sintéticos localmente.
 - \`INICIAR_NO_WINDOWS.bat\`: iniciador antigo do editor legado (não é o fluxo principal).
 - \`GERAR_EXE_WINDOWS.bat\`: empacotamento antigo, **não** compila automaticamente o novo aplicativo.
 
@@ -120,3 +123,19 @@ O campo do limite permanece **30 BB inclusivos**: qualquer stack inicial (por ex
 A interface abre em **Automatico (1 a 4 mesas)**, sem exigir seleção prévia de quantidade. Ao carregar um vídeo, o botão **Conferir mesas no frame** usa a inferência visual para apresentar o layout estimado e uma pontuação de confiança. Durante a análise integral, o programa espera três quadros consistentes antes de aceitar uma nova disposição, evita leitura de saldo na transição e registra os modos detectados na revisão JSON. Depois de conferir os resultados, a exportação usa o layout que foi salvo para cada mão, e não o número de mesas do início da sessão.
 
 **Atenção:** o reconhecimento é uma primeira implementação, **não foi validado com o vídeo real do usuário e não passou por uma execução completa de testes neste ambiente**. Se a inferência ficar ambígua ou nenhuma mesa for detectada, é necessário escolher um layout explícito ou registrar a mudança manualmente. A área das cartas e do saldo foi estimada do print e precisa ser verificada, sobretudo após mudanças no tamanho das janelas. A perda mínima permanece **30 BB inclusivos**, calculada a partir do saldo real antes/depois de cada mão, não de um stack padrão de 100 BB.
+
+## Diagnóstico automático de mesas (sem OCR)
+
+Quando o vídeo tem 4 mesas e depois 3, 2 ou 1, use **DIAGNOSTICAR_MESAS_WINDOWS.bat** antes de iniciar a análise inteira. Ele abre uma janela para selecionar o **MP4 completo** e outra para salvar o CSV. Também é possível arrastar um MP4 sobre o arquivo BAT.
+
+O diagnóstico utiliza FFmpeg e Pillow e examina aproximadamente **um quadro a cada cinco segundos**, sem ler saldos e sem usar Tesseract. Ele gera:
+
+- **diagnostico_mesas_NOME.csv** — horário aproximado, layout candidato, disposição confirmada após três amostras, número aproximado de mesas visíveis e estado da detecção;
+- **diagnostico_mesas_NOME_mudancas.csv** — momentos em que o detector confirmou uma nova disposição.
+
+Os tempos representam **amostras**, não o segundo exato da mudança, e as pontuações são heurísticas — não são probabilidades de acerto. Se aparecer `INDEFINIDO`, confirme a imagem naquele horário e use uma disposição explícita ou registre manualmente a mudança no analisador. Não use o diagnóstico como prova de que todas as mesas ou mãos foram encontradas.
+
+Se quiser validar o programa sem conhecimentos de programação, execute **VERIFICAR_PROGRAMA.bat**: ele checa a sintaxe Python e roda os testes visuais sintéticos. Esses testes não substituem verificar uma gravação real. Você já tendo instalado Python, Pillow e FFmpeg, não precisa reinstalá-los.
+
+**Proteção de mãos nas transições:** o scanner não encerra a mão por um único frame ambíguo. Ele tolera breves interrupções (até alguns frames) e, se a mudança persistir ou for confirmada, marca a mão interrompida como inconclusiva em vez de inventar uma perda. Assim, após uma mudança de 4 para 3 mesas, o trecho suspeito deve ser revisado antes de exportar.
+
