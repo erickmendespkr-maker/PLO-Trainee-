@@ -42,8 +42,8 @@ if errorlevel 1 echo AVISO: Tesseract pode nao ter sido instalado. Consulte o te
 echo.
 echo [4/4] Verificando Python e instalando Pillow...
 set "PYEXE="
-if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYEXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
-if not defined PYEXE if exist "%ProgramFiles%\Python312\python.exe" set "PYEXE=%ProgramFiles%\Python312\python.exe"
+if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYEXE=\"%LOCALAPPDATA%\Programs\Python\Python312\python.exe\""
+if not defined PYEXE if exist "%ProgramFiles%\Python312\python.exe" set "PYEXE=\"%ProgramFiles%\Python312\python.exe\""
 if not defined PYEXE (
     py -3.12 -c "import sys" >nul 2>&1
     if not errorlevel 1 set "PYEXE=py -3.12"
