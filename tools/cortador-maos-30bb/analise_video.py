@@ -2096,14 +2096,17 @@ class GUI(tk.Tk):
         """Mostra a imagem nativa: posicionamento e texto ficam visiveis."""
         window = tk.Toplevel(self)
         window.title(f"Diagnostico do saldo — mesa {table}")
-        window.geometry("760x560")
-        window.minsize(610, 470)
+        window.geometry("900x670")
+        window.minsize(650, 500)
 
         ttk.Label(window, text=(
             f"HUD VERDE COMPLETO do MP4: {original.width} x {original.height} pixels. "
             "Busca de nick e saldo dentro dessa area."
         )).pack(pady=(10, 5))
-        scale = max(2, min(9, 640 // max(original.width, 1)))
+        # Nao cortar o HUD inteiro na janela de diagnostico: limitar ambas
+        # as dimensoes, inclusive em videos 1080p/1440p/4K.
+        scale = max(1, min(5, 830 // max(original.width, 1),
+                           260 // max(original.height, 1)))
         scaled = original.resize((original.width * scale, original.height * scale),
                                  Image.Resampling.NEAREST)
         photo = ImageTk.PhotoImage(scaled)
