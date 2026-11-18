@@ -313,14 +313,16 @@ class GeminiClient:
         do pote nao puderem ser confirmados em quadros visiveis.
         """
         from poker_contexto import validate_pot_result
-        if len(table_frames) != 8 or len(hud_frames) != 2:
-            raise GeminiError("A analise da mao exige 8 quadros da mesa e 2 HUDs.")
+        if len(table_frames) != 10 or len(hud_frames) != 2:
+            raise GeminiError("A analise exige 8 quadros durante a mao, 2 apos e 2 HUDs.")
         prompt = (
             "Voce esta REVISANDO UMA GRAVACAO ENCERRADA de cash game PLO5. "
             "Sua tarefa e identificar uma mao PERDIDA por um jogador. "
             "Primeiro ha uma imagem da tela inteira para localizar a mesa; "
-            "em seguida oito imagens DA MESMA MESA em ordem cronologica "
-            "ao longo da mao e dois recortes do HUD do jogador. "
+            "em seguida dez imagens DA MESMA MESA em ordem cronologica: "
+            "OITO durante a mao e DUAS apos as cartas desaparecerem, "
+            "que podem mostrar transferencia do pote ou rebuy automatico. "
+            "Ha ainda dois recortes do HUD do jogador. "
             "O heroi joga na posicao inferior da mesa. "
             f"Nick do heroi a encontrar VISUALMENTE: {expected_nick}. "
             "Veja as cartas privativas (5 cartas), cartas comunitarias, "
@@ -360,7 +362,11 @@ class GeminiClient:
                  {"inline_data": {"mime_type": "image/jpeg",
                                   "data": _context_jpeg(overview)["data"]}}]
         for i, image in enumerate(table_frames):
-            parts.append({"text": f"MESA COMPLETA, MOMENTO {i+1}/8 EM ORDEM:"})
+            parts.append({"text": (
+                f"MESA COMPLETA, MOMENTO {i+1}/10 - "
+                + ("APOS CARTAS SUMIREM / PREMIACAO DO POTE:"
+                   if i >= 8 else "DURANTE A MAO:")
+            )})
             parts.append({"inline_data": {
                 "mime_type": "image/jpeg", "data": _context_jpeg(image)["data"]}})
         for i, image in enumerate(hud_frames):
