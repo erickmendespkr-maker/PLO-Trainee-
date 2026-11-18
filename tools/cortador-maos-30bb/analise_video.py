@@ -515,7 +515,6 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                 mode = mode_at(t, initial_layout, events)
                 if mode != active_mode:
                     if active_mode is not None:
-                        previous_start = segment_start
                         for table in list(states):
                             close_state(table, t, "INCONCLUSIVO - MESA MUDOU DE LUGAR")
                         segment_start = t
@@ -671,6 +670,8 @@ class GUI(tk.Tk):
         ttk.Button(changes, text="Registrar mudanca", command=self.add_layout_change).pack(side="left")
         ttk.Button(changes, text="Remover ultima", command=self.remove_layout_change).pack(
             side="left", padx=5)
+        ttk.Button(changes, text="Conferir mesas no frame",
+                   command=self.check_tables_frame).pack(side="left", padx=5)
         self.events_info = ttk.Label(changes, text="Sem mudancas registradas")
         self.events_info.pack(side="left", padx=8)
 
@@ -786,6 +787,28 @@ class GUI(tk.Tk):
             self.draw()
             self.tell(f"Removida mudanca de {fmt(item['start'])}.")
 
+    def check_tables_frame(self):
+        if self.frame is None:
+            messagebox.showwarning("Mesas", "Selecione o video e clique em Mostrar frame.")
+            return
+        mode = self.layout_id()
+        found = [
+            table for table in range(1, layout_count(mode) + 1)
+            if table_visible(self.frame, layout_bounds(mode, table))
+        ]
+        if found:
+            summary = ", ".join(str(t) for t in found)
+            messagebox.showinfo(
+                "Mesas detectadas no frame",
+                f"Disposicao: {mode}\nMesas com imagem detectada: {summary}\n\n"
+                "Se as janelas mudaram de tamanho/posicao, registre a nova "
+                "disposicao no instante indicado acima.")
+        else:
+            messagebox.showwarning(
+                "Mesas nao detectadas",
+                "Nenhuma janela foi reconhecida neste frame. "
+                "Confira outro instante e use a disposicao correspondente.")
+
     def on_layout_change(self):
         # Perfis de 1-4 janelas lado a lado compartilham a mesma calibracao.
         mode = layout_key(self.layout.get())
@@ -838,6 +861,8 @@ class GUI(tk.Tk):
         self.frame = None
         self.candidates = []
         self.info.configure(text="Nenhum video carregado")
+        self.timeline = []
+        self.refresh_changes()
         self.refresh()
         self.draw()
 
@@ -1080,7 +1105,7 @@ class GUI(tk.Tk):
                                             filetypes=[("Revisao visual", "*.json")])
         if not path:
             return
-        payload = {"version": 2, "videos": [asdict(v) for v in self.videos],
+        payload = {"version": 3, "videos": [asdict(v) for v in self.videos],
                    "layout": self.layout.get(), "config": self.cfg, "threshold": self.threshold.get(),
                    "nick": self.nick.get().strip(), "quick": self.quick.get(),
                    "timeline": self.timeline,
@@ -1104,7 +1129,14 @@ class GUI(tk.Tk):
                 raise FileNotFoundError("Videos nao encontrados:\n" + "\n".join(missing))
             self.videos = videos
             self.total = sum(v.duration for v in videos)
-            self.candidates = [Candidate(**entry) for entry in data["candidates"]]
+            old_layout = layout_key(data.get("layout", "4 lado a lado"))
+            candidates = []
+            for entry in data["candidates"]:
+                entry = dict(entry)
+                if "layout" not in entry:
+                    entry["layout"] = "horizontal4" if old_layout == "auto4" else old_layout
+                candidates.append(Candidate(**entry))
+            self.candidates = candidates
             self.cfg = data.get("config", self.cfg)
             self.layout.set(data.get("layout", "2 por 2"))
             self.timeline = sorted(data.get("timeline", []), key=lambda x: float(x["start"]))
