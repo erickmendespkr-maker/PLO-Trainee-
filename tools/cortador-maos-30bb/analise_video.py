@@ -26,7 +26,7 @@ except ImportError as exc:
 from cortador import Clip, export_clip, file_at, fmt, parse_time, probe, resource
 
 W, H = 960, 540
-VIEW_W, VIEW_H = 768, 432
+VIEW_W, VIEW_H = 720, 405
 TABLES = (1, 2, 3, 4)
 
 
@@ -290,7 +290,7 @@ class GUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("PLO - Analise visual de videos (sem DriveHUD)")
-        self.geometry("1120x820")
+        self.geometry("1090x745")
         self.minsize(950, 700)
         self.videos = []
         self.total = 0.
@@ -350,14 +350,17 @@ class GUI(tk.Tk):
         ttk.Entry(controls, textvariable=self.threshold, width=7).pack(side="left", padx=5)
         ttk.Button(controls, text="Salvar configuracao", command=self.save_cfg).pack(side="left")
         ttk.Button(controls, text="Abrir configuracao", command=self.load_cfg).pack(side="left", padx=5)
-        ttk.Button(controls, text="ANALISAR VIDEO(S)", command=self.analyze).pack(side="left", padx=10)
+        ttk.Button(controls, text="ANALISAR VIDEO(S)", command=self.analyze).pack(side="left", padx=9)
+        ttk.Button(controls, text="Salvar revisao", command=self.save_scan).pack(side="left")
+        ttk.Button(controls, text="Abrir revisao", command=self.load_scan).pack(side="left", padx=4)
+        ttk.Button(controls, text="Adicionar mao", command=self.add_manual).pack(side="left")
         self.status = ttk.Label(self, text="Aguardando videos e calibracao de cada mesa.")
         self.status.pack(fill="x", padx=8)
 
         table_frame = ttk.Frame(self)
         table_frame.pack(fill="both", expand=True, padx=8, pady=4)
         columns = ("inicio", "fim", "mesa", "perda", "status", "conferido")
-        self.grid = ttk.Treeview(table_frame, columns=columns, show="headings", height=6)
+        self.grid = ttk.Treeview(table_frame, columns=columns, show="headings", height=4)
         for col, label, width in [
             ("inicio", "Inicio", 92), ("fim", "Fim", 92), ("mesa", "Mesa", 55),
             ("perda", "Perda BB estimada", 130), ("status", "Resultado OCR", 370),
@@ -537,6 +540,62 @@ class GUI(tk.Tk):
             except Exception as exc:
                 messagebox.showerror("Configuracao", str(exc))
 
+    def add_manual(self):
+        if not self.videos:
+            messagebox.showwarning("Videos", "Adicione o video antes.")
+            return
+        try:
+            start = parse_time(self.seek.get())
+        except ValueError:
+            start = 0
+        self.candidates.append(Candidate(start, min(start + 60, self.total),
+                                         int(self.table.get()), None, None, None,
+                                         "ADICIONADA MANUALMENTE - REVISAR"))
+        self.refresh()
+        self.grid.selection_set(str(len(self.candidates)-1))
+        self.grid.see(str(len(self.candidates)-1))
+        self.select_candidate()
+
+    def save_scan(self):
+        if not self.videos:
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".json",
+                                            filetypes=[("Revisao visual", "*.json")])
+        if not path:
+            return
+        payload = {"version": 1, "videos": [asdict(v) for v in self.videos],
+                   "config": self.cfg, "threshold": self.threshold.get(),
+                   "candidates": [asdict(c) for c in self.candidates]}
+        try:
+            Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            self.tell("Revisao e recortes salvos em " + path)
+        except Exception as exc:
+            messagebox.showerror("Salvar", str(exc))
+
+    def load_scan(self):
+        path = filedialog.askopenfilename(filetypes=[("Revisao visual", "*.json")])
+        if not path:
+            return
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            from cortador import Video
+            videos = [Video(**entry) for entry in data["videos"]]
+            missing = [v.path for v in videos if not Path(v.path).is_file()]
+            if missing:
+                raise FileNotFoundError("Videos nao encontrados:\n" + "\n".join(missing))
+            self.videos = videos
+            self.total = sum(v.duration for v in videos)
+            self.candidates = [Candidate(**entry) for entry in data["candidates"]]
+            self.cfg = data.get("config", self.cfg)
+            self.threshold.set(str(data.get("threshold", 30)))
+            self.info.configure(text=f"{len(videos)} arquivo(s) | {fmt(self.total)}")
+            self.on_table_change()
+            self.refresh()
+            self.show_frame()
+            self.tell(f"Revisao aberta: {len(self.candidates)} candidatas. Confira e exporte.")
+        except Exception as exc:
+            messagebox.showerror("Abrir revisao", str(exc))
+
     def analyze(self):
         if self.busy:
             return
@@ -578,7 +637,7 @@ class GUI(tk.Tk):
         self.candidates = results
         self.busy = False
         self.refresh()
-        self.tell(f"Analise concluida: {len(results)} candidatas / inconclusivas. Revise antes de exportar.")
+        self.tell(f"Analise concluida: {len(results)} candidatas / inconclusivas. Salve revisao e confira.")
         messagebox.showinfo("Concluido",
                             f"{len(results)} ocorrencias encontradas. "
                             "As perdas sao ESTIMADAS por OCR; confirme as fichas e os limites.")
