@@ -95,6 +95,36 @@ def layout_rect(base_rect, table, mode):
             round(new_x + (rect[2] - orig_x) * ratio), rect[3])
 
 
+def layout_roi(data, table, mode, key):
+    """Usa uma ROI especifica por disposicao quando existe."""
+    mode = layout_key(mode)
+    specific = data.get("layout_rois", {}).get(mode, {}).get(key)
+    if specific is not None:
+        return roi_tuple(specific)
+    return layout_rect(data[key], table, mode) if data.get(key) else None
+
+
+def store_layout_roi(config, table, mode, key, absolute_rect):
+    """Preserva calibracoes de outros layouts ao redesenhar uma regiao."""
+    mode = layout_key(mode)
+    if mode == "auto4":
+        raise ValueError("Confirme a disposicao antes de marcar.")
+    rect = list(roi_tuple(absolute_rect))
+    tables = [table] if mode == "grid2x2" else list(range(1, layout_count(mode) + 1))
+    x1, y1, x2, y2 = layout_bounds(mode, table)
+    for destination in tables:
+        dx1, dy1, dx2, dy2 = layout_bounds(mode, destination)
+        new_rect = [rect[0]-x1+dx1, rect[1]-y1+dy1,
+                    rect[2]-x1+dx1, rect[3]-y1+dy1]
+        if not (dx1 <= new_rect[0] < new_rect[2] <= dx2 and
+                dy1 <= new_rect[1] < new_rect[3] <= dy2):
+            raise ValueError("Retangulo nao cabe em todas as janelas deste layout.")
+        config[str(destination)].setdefault("layout_rois", {}).setdefault(
+            mode, {})[key] = new_rect
+        if mode == "horizontal4":
+            config[str(destination)][key] = new_rect[:]
+
+
 def unmap_layout_rect(rect, table, mode):
     """Transformacao inversa usada ao desenhar uma ROI na previa."""
     rect = roi_tuple(rect)
@@ -839,9 +869,9 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
             if detection == "reference" and not data.get("reference"):
                 raise ValueError(f"Mesa {table}: referencia manual ausente.")
             cfg = {
-                "hole": layout_rect(data["hole"], table, mode),
-                "stack": layout_rect(data["stack"], table, mode),
-                "nick": layout_rect(data["nick"], table, mode) if data.get("nick") else None,
+                "hole": layout_roi(data, table, mode, "hole"),
+                "stack": layout_roi(data, table, mode, "stack"),
+                "nick": layout_roi(data, table, mode, "nick"),
                 "detector": detection,
                 "empty": png_image(data["reference"]) if detection == "reference" else None,
                 "bb": float(data["bb"]),
@@ -1141,7 +1171,7 @@ def recheck_candidates_with_gemini(videos, config, candidates, threshold,
             if mode == "auto4":
                 # O modo gravado em Candidate deve ser concreto. Nao inventar.
                 continue
-            roi = layout_rect(data["stack"], c.table, mode)
+            roi = layout_roi(data, c.table, mode, "stack")
             bb = float(data.get("bb", 1))
             if not bb > 0:
                 continue
@@ -1707,7 +1737,7 @@ class GUI(tk.Tk):
             for key in ("hole", "stack", "nick"):
                 rect = data.get(key)
                 if rect:
-                    x1, y1, x2, y2 = layout_rect(rect, table, mode)
+                    x1, y1, x2, y2 = layout_roi(data, table, mode, key)
                     sx, sy = VIEW_W / W, VIEW_H / H
                     self.canvas.create_rectangle(x1*sx, y1*sy, x2*sx, y2*sy, outline=colors[key], width=2)
                     self.canvas.create_text(x1*sx, y1*sy, anchor="sw", text=f"M{table}: {key}", fill=colors[key])
@@ -1743,18 +1773,18 @@ class GUI(tk.Tk):
             self.draw()
             return
         key = {"cartas": "hole", "saldo": "stack", "nick": "nick"}[self.field.get()]
-        stored_rect = unmap_layout_rect(rect, table, self.layout_id())
-        self.cfg[str(table)][key] = stored_rect
+        try:
+            store_layout_roi(self.cfg, table, self.layout_id(), key, rect)
+        except ValueError as exc:
+            messagebox.showwarning("Marcacao", str(exc))
+            self.draw()
+            return
         if key == "hole":
-            self.cfg[str(table)].pop("reference", None)
+            for destination in range(1, layout_count(self.layout_id()) + 1):
+                self.cfg[str(destination)].pop("reference", None)
         self.cfg[str(table)]["detector"] = "bright"
-        if key == "stack" and self.layout_id() != "grid2x2":
-            # Mesmo posicionamento relativo em janelas 1-4, sem presumir 4 ativas.
-            for destination, area in replicate_horizontal_rect(stored_rect, table).items():
-                self.cfg[str(destination)]["stack"] = area
-            self.tell("Saldo corrigido nas quatro mesas. Clique Testar saldo e salve a configuracao.")
-        else:
-            self.tell(f"Mesa {table}: regiao {key} ajustada.")
+        self.tell(f"Regiao {key} ajustada somente para esta disposicao. "
+                  "Outros layouts foram preservados.")
         self.draw()
 
     def test_stack_frame(self):
@@ -1775,7 +1805,7 @@ class GUI(tk.Tk):
             if table > layout_count(mode):
                 messagebox.showwarning("Mesa", "A mesa escolhida nao aparece neste layout.")
                 return
-            area = layout_rect(rect, table, mode)
+            area = layout_roi(self.cfg[str(table)], table, mode, "stack")
             original = native_stack_crop(self.videos, when, area, ffmpeg)
             value, diagnostics = read_stack_diagnostics(original, tesseract, quick=False)
             bb = float(self.cfg[str(table)].get("bb", 1))
@@ -1936,7 +1966,7 @@ class GUI(tk.Tk):
             mode = self.layout_id()
             if table > layout_count(mode):
                 raise ValueError("Mesa indisponivel no instante selecionado.")
-            rect = layout_rect(self.cfg[str(table)]["stack"], table, mode)
+            rect = layout_roi(self.cfg[str(table)], table, mode, "stack")
             bb = float(self.cfg[str(table)].get("bb", 1))
             videos = self.videos[:]
         except (ValueError, KeyError) as exc:
@@ -2245,7 +2275,8 @@ class GUI(tk.Tk):
                 bb = float(self.cfg[str(table)].get("bb", 1))
                 image = native_stack_crop(
                     self.videos, parse_time(self.seek.get()),
-                    layout_rect(rect, table, mode), resource("ffmpeg"))
+                    layout_roi(self.cfg[str(table)], table, mode, "stack"),
+                    resource("ffmpeg"))
                 value = ocr_stack(image, resource("tesseract"), quick=True)
                 if value is not None and 0 <= value / bb <= MAX_STACK_BB:
                     successes.append(f"Mesa {table}: {value / bb:g} BB")
