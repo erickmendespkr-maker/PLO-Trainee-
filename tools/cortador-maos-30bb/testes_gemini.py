@@ -56,7 +56,8 @@ class GeminiTests(unittest.TestCase):
             disabled_reason = None
             limit = 1
             used = 0
-            def read_pair(self, before, after, bb, max_stack_bb):
+            def read_pair(self, before, after, bb, max_stack_bb,
+                          expected_nick=None):
                 self.used += 1
                 assert len(before) == len(after) == 2
                 return 150.0, 120.0
