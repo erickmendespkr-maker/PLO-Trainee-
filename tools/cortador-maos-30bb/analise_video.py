@@ -474,6 +474,7 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
     nick_attempts = {}
     sample_times = {0, 15, 45, 90, 180, 360}
     segment_start = 0.0
+    detected_frames = 0
 
     def close_state(table, end_time, reason):
         state = states.pop(table, None)
@@ -566,7 +567,12 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                                                     cfg["hole"]) >= cfg["min_change"]
                     states[table].feed(t, occupied, frame.crop(cfg["stack"]), table,
                                        cfg["bb"], threshold, tesseract, quick=quick)
+                if seen:
+                    detected_frames += 1
                 n += 1
+                if n == 30 and not detected_frames:
+                    progress("AVISO: nenhum slot reconhecido nos primeiros 30s; "
+                             "confira o layout e use Conferir mesas no frame.")
                 if n % 60 == 0:
                     progress(f"{Path(v.path).name}: {fmt(n)} / {fmt(v.duration)} "
                              f"| mesas visiveis: {seen} | {mode}")
@@ -579,6 +585,9 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
             if proc.stdout:
                 proc.stdout.close()
 
+    if detected_frames == 0:
+        raise ValueError("Nenhuma mesa foi reconhecida. Confira a disposicao inicial, "
+                         "as mudancas do video e o botao Conferir mesas no frame.")
     total = sum(v.duration for v in videos)
     for table in list(states):
         close_state(table, total, "INCONCLUSIVO - MAO INTERROMPIDA NO FIM")
@@ -628,7 +637,7 @@ class GUI(tk.Tk):
         ttk.Label(top, text="Disposicao:").pack(side="left", padx=(12, 3))
         layout_box = ttk.Combobox(top, textvariable=self.layout,
                                   values=LAYOUT_LABELS,
-                                  state="readonly", width=16)
+                                  state="readonly", width=26)
         layout_box.pack(side="left")
         layout_box.bind("<<ComboboxSelected>>", lambda event: self.on_layout_change())
 
@@ -1087,12 +1096,22 @@ class GUI(tk.Tk):
             start = parse_time(self.seek.get())
         except ValueError:
             start = 0
-        self.candidates.append(Candidate(start, min(start + 60, self.total),
-                                         int(self.table.get()), None, None, None,
+        mode = mode_at(start, self.layout.get(), self.timeline)
+        table = int(self.table.get())
+        if table > layout_count(mode):
+            messagebox.showwarning("Mesa", "A mesa selecionada nao existe nesse instante.")
+            return
+        next_change = min(
+            [float(e["start"]) for e in self.timeline if float(e["start"]) > start]
+            or [self.total])
+        end = min(start + 60, self.total, next_change)
+        if end <= start:
+            messagebox.showwarning("Tempo", "Escolha outro instante.")
+            return
+        self.candidates.append(Candidate(start, end, table, None, None, None,
                                          "ADICIONADA MANUALMENTE - REVISAR",
                                          nick=self.nick.get().strip(),
-                                         layout=("horizontal4" if self.layout_id() == "auto4"
-                                                 else self.layout_id())))
+                                         layout=("horizontal4" if mode == "auto4" else mode)))
         self.refresh()
         self.grid.selection_set(str(len(self.candidates)-1))
         self.grid.see(str(len(self.candidates)-1))
@@ -1262,6 +1281,15 @@ class GUI(tk.Tk):
             loss = float(self.loss_edit.get().replace(",", "."))
             if not (0 <= st < en <= self.total) or loss <= 0:
                 raise ValueError("Confira inicio, fim e perda.")
+            mode_start = mode_at(st + 0.01, self.layout.get(), self.timeline)
+            mode_end = mode_at(max(st + 0.01, en - 0.01), self.layout.get(), self.timeline)
+            if mode_start != mode_end:
+                raise ValueError(
+                    "A mao atravessa uma mudanca de disposicao. "
+                    "Ajuste inicio/fim ou divida manualmente o trecho.")
+            if c.table > layout_count(mode_start):
+                raise ValueError("A mesa selecionada nao existe nesse instante.")
+            c.layout = "horizontal4" if mode_start == "auto4" else mode_start
             c.start, c.end, c.loss_bb = st, en, loss
             c.status = "VALOR E LIMITES CONFERIDOS"
             c.confirmed = True
