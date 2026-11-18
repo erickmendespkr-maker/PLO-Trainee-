@@ -1529,10 +1529,9 @@ class GUI(tk.Tk):
         self.table = tk.StringVar(value="1")
         ttk.Combobox(row, textvariable=self.table, values=["1", "2", "3", "4"],
                      state="readonly", width=3).pack(side="left")
-        ttk.Label(row, text="Marcar regiao:").pack(side="left", padx=4)
-        self.field = tk.StringVar(value="cartas")
-        ttk.Combobox(row, textvariable=self.field, values=["cartas", "saldo", "nick"],
-                     state="readonly", width=8).pack(side="left")
+        ttk.Label(row, text="Marcar: HUD unico (cartas + nick + saldo)").pack(
+            side="left", padx=5)
+        self.field = tk.StringVar(value="HUD unico")
         ttk.Button(row, text="Usar regioes do print", command=self.apply_profile).pack(side="left", padx=5)
         ttk.Button(row, text="Salvar como padrao",
                    command=self.save_default_markings).pack(side="left", padx=4)
@@ -1968,16 +1967,17 @@ class GUI(tk.Tk):
             for idx in range(1, layout_count(mode)):
                 x = round(VIEW_W * idx / layout_count(mode))
                 self.canvas.create_line(x, 0, x, VIEW_H, fill="#f7cd46", width=2)
-        colors = {"hole": "#00ff91", "stack": "#00cfff", "nick": "#ec8fff"}
         for table in range(1, layout_count(mode) + 1):
             data = self.cfg[str(table)]
-            for key in ("hole", "stack", "nick"):
-                rect = data.get(key)
-                if rect:
-                    x1, y1, x2, y2 = layout_roi(data, table, mode, key)
-                    sx, sy = VIEW_W / W, VIEW_H / H
-                    self.canvas.create_rectangle(x1*sx, y1*sy, x2*sx, y2*sy, outline=colors[key], width=2)
-                    self.canvas.create_text(x1*sx, y1*sy, anchor="sw", text=f"M{table}: {key}", fill=colors[key])
+            rect = layout_roi(data, table, mode, "hero_hud")
+            if rect:
+                x1, y1, x2, y2 = rect
+                sx, sy = VIEW_W / W, VIEW_H / H
+                self.canvas.create_rectangle(
+                    x1*sx, y1*sy, x2*sx, y2*sy,
+                    outline="#00ff91", width=3)
+                self.canvas.create_text(x1*sx, y1*sy, anchor="sw",
+                                        text=f"M{table}: HUD", fill="#00ff91")
         if self.selection_origin and event is not None:
             x1, y1 = self.selection_origin
             self.canvas.create_rectangle(x1, y1, event.x, event.y, outline="#ff6b4b", width=2)
@@ -2009,12 +2009,28 @@ class GUI(tk.Tk):
             messagebox.showwarning("Mesa", f"Esse retangulo parece estar na mesa {inferred}; voce selecionou a mesa {table}.")
             self.draw()
             return
-        key = {"cartas": "hole", "saldo": "stack", "nick": "nick"}[self.field.get()]
         try:
-            store_layout_roi(self.cfg, table, self.layout_id(), key, rect)
+            hero_hud_parts(rect)
+            store_layout_roi(self.cfg, table, self.layout_id(),
+                             "hero_hud", rect, source="manual")
         except ValueError as exc:
-            messagebox.showwarning("Marcacao", str(exc))
+            messagebox.showwarning("Marcar HUD unico", str(exc))
             self.draw()
+            return
+        # Modos de cartas, nick e saldo passam a ser derivados do mesmo HUD.
+        for destination in range(1, layout_count(self.layout_id()) + 1):
+            self.cfg[str(destination)].pop("reference", None)
+            self.cfg[str(destination)]["detector"] = "bright"
+        try:
+            save_markings_file(default_markings_path(), self.cfg,
+                               self.nick.get(), self.layout.get())
+            self.markings_source = "HUDs salvos automaticamente"
+            self.tell(f"HUD unico salvo nas {layout_count(self.layout_id())} mesas. "
+                      "Cartas, nick e saldo identificados dentro da caixa verde.")
+        except (OSError, ValueError, TypeError):
+            self.tell("HUD ajustado, mas nao foi salvo no Windows. "
+                      "Use Salvar configuracao.")
+        self.draw()
             return
         if key == "hole":
             for destination in range(1, layout_count(self.layout_id()) + 1):
