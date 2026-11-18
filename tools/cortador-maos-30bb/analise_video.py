@@ -351,7 +351,9 @@ def changed_fraction(frame, reference, rect, pixel_threshold=32):
 
 def parse_stack(value):
     # A regiao do OCR deve conter SOMENTE o saldo em fichas do jogador.
-    candidates = re.findall(r"\d[\d.,]*", value.replace(" ", ""))
+    # Nunca junte numeros separados por espacos: isso produzia leituras
+    # falsas como "154020" a partir de varios textos sobrepostos.
+    candidates = re.findall(r"\d+(?:[.,]\d+)*", value)
     if not candidates:
         return None
     token = max(candidates, key=len).rstrip(".,")
