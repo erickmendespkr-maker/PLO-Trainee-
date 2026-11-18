@@ -935,24 +935,39 @@ class GUI(tk.Tk):
         if self.frame is None:
             messagebox.showwarning("Mesas", "Selecione o video e clique em Mostrar frame.")
             return
-        mode = self.layout_id()
+        try:
+            when = parse_time(self.seek.get())
+        except (ValueError, TypeError):
+            when = 0
+        is_auto = mode_at(when, self.layout.get(), self.timeline) == "auto4"
+        if is_auto:
+            mode, confidence, scores = infer_horizontal_layout(self.frame)
+            if mode is None:
+                ranking = ", ".join(
+                    f"{name}: {value:.2f}"
+                    for name, value in sorted(scores.items(),
+                                              key=lambda item: -item[1]))
+                messagebox.showwarning(
+                    "Deteccao inconclusiva",
+                    "Nao foi possivel identificar a quantidade com seguranca "
+                    "neste frame. Tente outro instante.\n\n"
+                    f"Pontuacoes: {ranking or 'sem mesas repetidas reconhecidas'}")
+                return
+        else:
+            mode, confidence = self.layout_id(), None
         found = [
             table for table in range(1, layout_count(mode) + 1)
-            if table_visible(
-                self.frame, layout_bounds(mode, table), strict=(mode == "auto4"))
+            if table_visible(self.frame, layout_bounds(mode, table), strict=False)
         ]
-        if found:
-            summary = ", ".join(str(t) for t in found)
-            messagebox.showinfo(
-                "Mesas detectadas no frame",
-                f"Disposicao: {mode}\nMesas com imagem detectada: {summary}\n\n"
-                "Se as janelas mudaram de tamanho/posicao, registre a nova "
-                "disposicao no instante indicado acima.")
-        else:
-            messagebox.showwarning(
-                "Mesas nao detectadas",
-                "Nenhuma janela foi reconhecida neste frame. "
-                "Confira outro instante e use a disposicao correspondente.")
+        summary = ", ".join(str(t) for t in found) if found else "nenhuma"
+        certainty = (f" | confianca estimada: {confidence:.2f}"
+                     if confidence is not None else "")
+        messagebox.showinfo(
+            "Mesas detectadas no frame",
+            f"Disposicao: {mode}{certainty}\n"
+            f"Mesas com imagem detectada: {summary}\n\n"
+            "A deteccao automatica e experimental; confirme visualmente "
+            "se as linhas amarelas correspondem as janelas.")
 
     def on_layout_change(self):
         # Perfis de 1-4 janelas lado a lado compartilham a mesma calibracao.
@@ -996,6 +1011,7 @@ class GUI(tk.Tk):
                 position += v.duration
             self.total = position
             self.info.configure(text=f"{len(self.videos)} arquivo(s) | {fmt(self.total)}")
+            self.detected_timeline = []
             self.show_frame()
         except Exception as exc:
             messagebox.showerror("Video", str(exc))
