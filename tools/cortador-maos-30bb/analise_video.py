@@ -30,6 +30,7 @@ from gemini_backend import (
     GeminiClient, GeminiError, GeminiLimitError,
     DEFAULT_MODEL, ALLOWED_MODELS, read_key, save_key, remove_key
 )
+from hud_recognition import is_full_hud, read_hud_stack, read_hud_nick
 
 W, H = 960, 540
 VIEW_W, VIEW_H = 720, 405
@@ -640,7 +641,9 @@ def stack_ocr_variants(img):
 
 
 def read_stack_diagnostics(img, tesseract, quick=False):
-    """Retorna numero conservador e leituras brutas para explicar falhas."""
+    """Le o HUD inteiro; so usa OCR legado em recortes antigos pequenos."""
+    if is_full_hud(img):
+        return read_hud_stack(img, tesseract, parse_stack, quick=quick)
     variants = stack_ocr_variants(img)
     if not variants:
         return None, []
@@ -748,7 +751,9 @@ def nickname_matches(recognized, expected):
 
 
 def read_nickname(image, tesseract):
-    """Lê nome apenas na area definida do jogador; pode falhar em fonte pequena."""
+    """Pesquisa o nick no HUD inteiro, nao em uma faixa antiga estreita."""
+    if is_full_hud(image):
+        return read_hud_nick(image, tesseract)
     region = image.convert("L")
     if region.width < 6 or region.height < 6:
         return []
@@ -2094,8 +2099,8 @@ class GUI(tk.Tk):
         window.minsize(610, 470)
 
         ttk.Label(window, text=(
-            f"Recorte ORIGINAL do MP4: {original.width} x {original.height} pixels. "
-            "Ampliação apenas para visualização."
+            f"HUD VERDE COMPLETO do MP4: {original.width} x {original.height} pixels. "
+            "Busca de nick e saldo dentro dessa area."
         )).pack(pady=(10, 5))
         scale = max(2, min(9, 640 // max(original.width, 1)))
         scaled = original.resize((original.width * scale, original.height * scale),
@@ -2109,10 +2114,13 @@ class GUI(tk.Tk):
         else:
             outcome = f"SALDO LIDO: {value:g} fichas ({value / bb:g} BB). Confira no video."
         ttk.Label(window, text=outcome, wraplength=720).pack(pady=6)
+        ttk.Label(window, text="A imagem acima deve mostrar cartas, nick E saldo "
+                  "do jogador. Se algum faltar, redesenhe o HUD verde.",
+                  wraplength=720).pack(pady=3)
 
         details = tk.Text(window, height=9, width=80, wrap="word")
         details.pack(fill="both", expand=True, padx=12, pady=5)
-        details.insert("end", "Leituras brutas por contraste e modo do Tesseract:\n\n")
+        details.insert("end", "Leituras de regioes INTERNAS do HUD e modos OCR:\n\n")
         for variant, psm, raw, amount in results:
             label = raw.replace("\n", " ").strip() or "(vazio)"
             parsed = f"{amount:g}" if amount is not None else "invalido"
@@ -2164,12 +2172,12 @@ class GUI(tk.Tk):
                 self.tell(f"Mesa {table}: nick {nick} confirmado neste frame.")
                 messagebox.showinfo("Nick reconhecido", f"Mesa {table}: {nick} confirmado.\nOCR: {displayed}")
             else:
-                self.tell(f"Mesa {table}: OCR do nick inconclusivo. Ajuste a area roxa se necessario.")
+                self.tell(f"Mesa {table}: nick nao confirmado no HUD verde pelo OCR.")
                 messagebox.showwarning(
                     "Nick nao confirmado",
                     f"Mesa {table}: o OCR nao confirmou {nick}.\nLeitura: {displayed}\n\n"
-                    "Tente outro frame com o nome legivel ou ajuste a regiao roxa. "
-                    "A analise por cartas continua disponivel.")
+                    "O programa agora pesquisa a caixa verde inteira. "
+                    "Experimente Testar Gemini no frame, caso esteja ativado.")
         except Exception as exc:
             messagebox.showerror("OCR de nick", str(exc))
 
