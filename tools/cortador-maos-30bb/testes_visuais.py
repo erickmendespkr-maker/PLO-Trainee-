@@ -168,6 +168,8 @@ class VisualTests(unittest.TestCase):
         self.assertEqual(parse_stack("1,234.50"), 1234.5)
         self.assertEqual(parse_stack("54,75"), 54.75)
         self.assertEqual(parse_stack("100.00"), 100.0)
+        self.assertEqual(parse_stack("114, 0"), 114.0)
+        self.assertEqual(parse_stack("200. 00"), 200.0)
         self.assertIsNone(parse_stack("nada"))
 
     def test_carta_ausente_presente(self):
