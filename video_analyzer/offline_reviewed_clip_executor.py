@@ -80,6 +80,7 @@ def export_reviewed_clip(source, plan, destination):
                     'source_sha256': plan['video_sha256'], 'plan_sha256': manifest_hash,
                     'clip_sha256': digest(tmpfile), 'table_id': plan['table_id'],
                     'hand_id': plan['hand_id'], 'start_pts': start, 'end_pts': end,
+                    'reviewed_explanation': plan['explanation'],
                     'clip_duration_seconds': clip_duration, 'audio_included': False,
                     'conditional_model_only': True, 'not_gto': True,
                     'warning': 'Human review is asserted by plan; not independently verified by exporter.'}
