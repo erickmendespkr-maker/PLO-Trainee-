@@ -241,8 +241,11 @@ def crop_filter(v: Video, table: int, layout: str = "grid2x2") -> str:
         scale = "960:540"
     else:
         raise ValueError("Layout de mesas desconhecido.")
-    # Escalamos mantendo a proporcao da mesa (horizontal ou vertical).
-    return f"crop={w}:{h}:{x}:{y},scale={scale}:flags=lanczos,fps=25,format=yuv420p"
+    # Escalamos sem deformar a mesa: faixas laterais quando necessario.
+    return (f"crop={w}:{h}:{x}:{y},"
+            f"scale={scale}:force_original_aspect_ratio=decrease:flags=lanczos,"
+            f"pad={scale.replace(':', ':')}:(ow-iw)/2:(oh-ih)/2,"
+            f"fps=25,format=yuv420p")
 
 
 def export_clip(videos: list[Video], clip: Clip, dest: Path, ffmpeg: str, layout: str = "grid2x2") -> None:
