@@ -53,62 +53,108 @@ def _ocr(image, executable, psm, path):
         return ""
 
 
-def hud_balance_from_text(raw, parse_amount):
-    """Escolhe somente o saldo que acompanha BB; nao confunde cartas/pote."""
+BALANCE_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9])(\d{1,5}(?:[.,]\s*\d{1,3})?)"
+    r"\s*(?:B\s*B|8\s*B|B\s*8)(?![A-Za-z0-9])",
+    flags=re.IGNORECASE,
+)
+
+
+def _balance_observation(raw, parse_amount):
+    """(saldo, decimal_explicito) ou None se o mesmo recorte tem valores distintos."""
     if not raw:
         return None
-    numbers = []
-    # BB tambem pode ser confundido com 8B pelo OCR.
-    expression = (
-        r"(?<![A-Za-z0-9])"
-        r"(\d{1,5}(?:[.,]\s*\d{1,3})?)"
-        r"\s*(?:B\s*B|8\s*B|B\s*8)(?![A-Za-z0-9])"
-    )
-    for match in re.finditer(expression, raw, flags=re.IGNORECASE):
-        amount = parse_amount(match.group(1))
-        if amount is not None:
-            numbers.append(amount)
-    unique = []
-    for amount in numbers:
-        if not any(abs(amount - x) < .02 for x in unique):
-            unique.append(amount)
-    return unique[0] if len(unique) == 1 else None
+    candidates = []
+    for match in BALANCE_PATTERN.finditer(raw):
+        literal = match.group(1)
+        value = parse_amount(literal)
+        if value is not None:
+            candidates.append((value, "." in literal or "," in literal))
+    if not candidates:
+        return None
+    first = candidates[0][0]
+    if any(abs(value - first) > .025 for value, _decimal in candidates):
+        return None
+    return (first, any(decimal for _value, decimal in candidates))
+
+
+def hud_balance_from_text(raw, parse_amount):
+    """Extrai saldo com BB; preserva informação de vírgula no caminho detalhado."""
+    candidate = _balance_observation(raw, parse_amount)
+    return candidate[0] if candidate else None
+
+
+def _consistent_hud_balance(observations):
+    """Concilia leituras, sem inferir 100 BB como valor inicial.
+
+    Exemplo observado: um filtro lê 990BB e outro 99.0 BB.
+    Só corrigir o primeiro com evidência EXPLÍCITA de decimal no segundo.
+    Nunca dividir valores inteiros por 10 por mera suposição.
+    """
+    if not observations:
+        return None
+    decimals = [value for value, explicit in observations if explicit]
+    if decimals:
+        pivot = sorted(decimals)[len(decimals) // 2]
+        tolerance = max(.06, abs(pivot) * .003)
+        if any(abs(v - pivot) > tolerance for v in decimals):
+            return None
+        for value, explicit in observations:
+            if abs(value - pivot) <= tolerance:
+                continue
+            # "990 BB" e "99.0 BB" têm os mesmos dígitos: o OCR apagou
+            # somente o separador decimal em UM recorte da mesma imagem.
+            if (not explicit and
+                    abs(value - pivot * 10) <= .06 and
+                    abs(pivot * 10 - round(pivot * 10)) <= .06):
+                continue
+            if (not explicit and
+                    abs(value - pivot * 100) <= .06 and
+                    abs(pivot * 100 - round(pivot * 100)) <= .06):
+                continue
+            return None
+        return round(pivot, 3)
+    # Se nenhum filtro enxergou vírgula ou ponto, exigir duas regiões
+    # concordantes antes de devolver um inteiro. Caso contrário, Gemini.
+    if len(observations) < 2:
+        return None
+    first = observations[0][0]
+    if all(abs(value - first) <= max(.1, first * .002)
+           for value, _explicit in observations):
+        return first
+    return None
 
 
 def read_hud_stack(image, executable, parse_amount, quick=False):
-    """Retorna (saldo, diagnosticos), sempre analisando a caixa verde grande."""
+    """OCR do HUD completo. Regiões variam; nenhum retângulo antigo é usado."""
     regions = hud_search_regions(image)
+    by_name = {name: patch for name, patch in regions}
+    # O centro inferior foi a única região que capturou "99.0 BB"
+    # corretamente no vídeo real; o esquerdo inferior leu "990BB".
+    # Consultá-lo primeiro elimina um falso positivo em modo rápido.
     jobs = [
-        (regions[0], 11),
-        (regions[1], 6),
+        ("hud_centro_inferior", 11),
+        ("hud_esquerdo_inferior", 6),
+        ("hud_inteiro", 11),
     ]
     if not quick:
-        jobs += [(regions[2], 11), (regions[3], 7)]
+        jobs += [("hud_linha_saldo", 7)]
     results = []
-    values = []
+    observations = []
     with tempfile.TemporaryDirectory(prefix="plo_hud_stack_") as folder:
-        for index, ((name, patch), psm) in enumerate(jobs):
-            text = _ocr(patch, executable, psm, Path(folder) / f"{index}.png")
-            amount = hud_balance_from_text(text, parse_amount)
-            # Na linha inferior, um unico numero sem BB pode ser aceito
-            # apenas se a faixa for especificamente a ultima linha do HUD.
-            if amount is None and name == "hud_linha_saldo":
-                only_number = text.replace(" ", "").strip()
-                if re.fullmatch(r"\d{1,5}(?:[.,]\d{1,3})?", only_number):
-                    amount = parse_amount(only_number)
-            results.append((name, psm, text, amount))
-            if amount is not None:
-                values.append(amount)
-                if quick:
+        for index, (name, psm) in enumerate(jobs):
+            raw = _ocr(by_name[name], executable, psm,
+                       Path(folder) / f"{index}.png")
+            candidate = _balance_observation(raw, parse_amount)
+            amount = candidate[0] if candidate else None
+            results.append((name, psm, raw, amount))
+            if candidate:
+                observations.append(candidate)
+                # Em modo rápido: decimal legível, sem outra região em
+                # conflito ainda. O uso para corte exige OUTROS FRAMES.
+                if quick and candidate[1]:
                     return amount, results
-    if not values:
-        return None, results
-    # A concordancia de dois QUADROS diferentes continua sendo obrigatoria
-    # antes de exportar uma perda; consenso entre variantes nao a substitui.
-    for value in values:
-        if sum(abs(other-value) <= max(.7, value*.008) for other in values) >= 2:
-            return value, results
-    return values[0] if len(values) == 1 else None, results
+        return _consistent_hud_balance(observations), results
 
 
 def read_hud_nick(image, executable):
