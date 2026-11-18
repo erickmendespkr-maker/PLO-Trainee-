@@ -1036,6 +1036,97 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
     return sorted(collected, key=lambda item: (item.start, item.table))
 
 
+def recheck_sample_times(candidate, duration):
+    """Recupera instantes fora da mao marcada; nao usa apostas intra-mao.
+
+    Candidate criada por HandState tem padding de 5 segundos de cada lado.
+    Isso permite ler o saldo antes da distribuicao e apos a mao.
+    """
+    if (candidate.end - candidate.start < 10 or
+            candidate.start < 0 or candidate.end > duration + 0.02):
+        return None
+    pre = [candidate.start + 1, candidate.start + 3]
+    post = [candidate.end - 4, candidate.end - 2]
+    if pre[1] >= post[0] or post[1] >= duration:
+        return None
+    return pre, post
+
+
+def recheck_candidates_with_gemini(videos, config, candidates, threshold,
+                                   client, on_progress=lambda text: None):
+    """Rele SOMENTE pendencias da revisao com o Gemini; nao varre o MP4 todo.
+
+    Usado em sessoes ja analisadas e salvas em .json, mesmo que nao tenham
+    gerado nenhum video. A interface nao considera IA como evidência infalível.
+    """
+    if not videos:
+        return [], 0, 0
+    duration = sum(video.duration for video in videos)
+    ffmpeg = resource("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("FFmpeg nao encontrado.")
+    copies = [Candidate(**asdict(c)) for c in candidates]
+    checked = 0
+    positives = 0
+    for c in copies:
+        if c.excluded or c.confirmed or c.auto_verified:
+            continue
+        if ("INCONCLUSIVO - SALDO" not in c.status and
+                "POSSIVEL PERDA" not in c.status and
+                "INCONCLUSIVO - OCR" not in c.status):
+            continue
+        if client.disabled_reason or client.used >= client.limit:
+            break
+        times = recheck_sample_times(c, duration)
+        if times is None:
+            c.reliability = "Sem quadros externos suficientes para confirmar a mao."
+            continue
+        try:
+            data = config[str(c.table)]
+            mode = layout_key(c.layout)
+            if mode == "auto4":
+                # O modo gravado em Candidate deve ser concreto. Nao inventar.
+                continue
+            roi = layout_rect(data["stack"], c.table, mode)
+            bb = float(data.get("bb", 1))
+            if not bb > 0:
+                continue
+            before_times, after_times = times
+            before = [native_stack_crop(videos, at, roi, ffmpeg)
+                      for at in before_times]
+            after = [native_stack_crop(videos, at, roi, ffmpeg)
+                     for at in after_times]
+            values = client.read_pair(before, after, bb=bb,
+                                      max_stack_bb=MAX_STACK_BB)
+            checked += 1
+            if values is None:
+                c.reliability = "Gemini tentou mas nao confirmou quatro saldos."
+                continue
+            old_pre, old_post = values
+            loss = net_loss_bb(old_pre, old_post, bb)
+            c.stack_before = old_pre
+            c.stack_after = old_post
+            c.loss_bb = round(loss, 2)
+            c.source = "Gemini"
+            c.reliability = "Gemini reavaliou 2 quadros antes e 2 depois."
+            if loss_reaches_threshold(loss, threshold):
+                c.auto_verified = True
+                c.status = "PERDA >= LIMITE - GEMINI (REANALISE)"
+                positives += 1
+            else:
+                # Não exportar mao ganhadora/menor que o limiar.
+                c.excluded = True
+                c.status = "SEM PERDA >= LIMITE (GEMINI) - REVISAR"
+            on_progress(f"Gemini verificou {checked} pendencias; "
+                        f"{positives} perdas >= {threshold:g} BB.")
+        except GeminiLimitError:
+            break
+        except (GeminiError, OSError, ValueError, RuntimeError) as exc:
+            c.reliability = "Reanalise Gemini indisponivel neste trecho."
+            on_progress("Gemini nao conseguiu conferir um trecho; mantendo revisao.")
+    return copies, checked, positives
+
+
 DEFAULT_MARKINGS_FILE = "marcacoes_padrao.json"
 
 
