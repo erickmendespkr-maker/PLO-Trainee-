@@ -14,10 +14,10 @@ Existe uma **primeira implementação de detecção visual + OCR**, ainda **não
 4. Em um quadro **sem cartas**, registrar a referência visual daquela área e informar o valor de **1 big blind em fichas**.
 5. O analisador passa pelo **vídeo inteiro** em ordem, amostrando 1 quadro por segundo por meio de FFmpeg, e tenta reconhecer transições **sem cartas → cartas visíveis → sem cartas** em cada mesa separadamente.
 6. Usa Tesseract OCR para estimar o saldo **antes e depois** da mão; seleciona prováveis quedas líquidas **estritamente superiores a 30 BB**, além das mãos com leitura inconclusiva.
-7. Mostra a lista com horários absolutos da gravação, mesa e perda **estimada**, e permite conferir/editar os valores e os limites.
+7. Mostra a lista com horários da gravação, mesa e perda **estimada**, e permite conferir/editar os valores e os limites. Você também pode **incluir manualmente** mãos que o OCR não detectou e **salvar/abrir a revisão** em JSON para continuar mais tarde.
 8. **Somente as mãos conferidas** e acima do limite são exportadas em **MP4 independentes**, recortadas na mesa correspondente, com início anterior às cartas e fim após a mão; gera também **indice_das_maos.csv**.
 
-As configurações das regiões das quatro mesas podem ser salvas em JSON e reutilizadas.
+As configurações das regiões das quatro mesas podem ser salvas em JSON e reutilizadas. A revisão das mãos também pode ser salva em arquivo JSON, evitando ter de analisar o vídeo inteiro novamente depois de fechar o programa.
 
 ## Limitações (importante)
 
