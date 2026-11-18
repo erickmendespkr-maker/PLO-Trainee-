@@ -48,9 +48,9 @@ Não precisa ter Git.
 4. Instale [Tesseract OCR para Windows](https://github.com/UB-Mannheim/tesseract/wiki) com o idioma inglês. A instalação padrão em \`C:\Program Files\Tesseract-OCR\` é detectada pelo iniciador. O arquivo \`eng.traineddata\` deve estar na pasta \`tessdata\`.
 5. Execute **INICIAR_ANALISE_VIDEO.bat**. O iniciador instala somente a dependência Python **Pillow** se faltar.
 
-## Calibrar com as quatro mesas
+## Calibrar as mesas visíveis (1 a 4)
 
-**Seu vídeo é horizontal, com quatro janelas verticais lado a lado.** Confirme no topo **Disposição: 4 lado a lado** antes de calibrar. As linhas amarelas devem dividir a prévia em quatro colunas. Na versão antiga as linhas formavam quatro quadrantes e os MP4 saíam incorretos; esta atualização corrige o preview, o mapeamento e o recorte.
+**Exemplo do print:** quatro mesas lado a lado. Para outras gravações, selecione **Disposição: Auto (ate 4, slots fixos)** quando as janelas mantêm as mesmas posições, ou escolha **1 mesa**, **2 lado a lado**, **3 lado a lado** ou **4 lado a lado** quando as janelas ocupam toda a tela. As linhas amarelas acompanham o layout selecionado. Para mudanças durante o vídeo, use **Registrar mudanca** no tempo correspondente.
 
 - Abra o vídeo e escolha uma **mesa** de 1 a 4.
 - Preencha o campo **Nick do jogador**, por exemplo `~Pulgar~`. O nick é salvo na configuração e no relatório final. Confira as **regiões predefinidas em verde (cartas), azul (saldo) e roxo (nome)**. As quatro mesas estão alinhadas horizontalmente, com o herói na posição inferior.
@@ -59,7 +59,7 @@ Não precisa ter Git.
 - Para validar o nick, escolha um frame em que o nome esteja nítido; selecione a mesa e clique **Verificar nick no frame**. Se falhar, use **Marcar região → nick** e redesenhe sobre o texto do nome. Não é preciso confirmar o nick para iniciar a análise.
 - **Não é necessário registrar referência sem cartas.** O programa procura as cartas claras nos retângulos predefinidos; pressione **Usar regiões do print** para restaurar todas as áreas, se necessário.
 - Informe o valor de uma BB naquela mesa: exemplo fictício R$0,50/R$1,00 significa **1** (na mesma unidade do saldo). Se a interface exibe o saldo já em BB, coloque **1**.
-- As quatro mesas já vêm configuradas. Confira se os retângulos cobrem corretamente suas cartas e saldos e, em seguida, salve a configuração.
+- As regiões de até quatro mesas vêm inicialmente configuradas a partir do print, mas **só as mesas visíveis entram no processamento** no modo Auto. Confira as caixas do saldo e das cartas para a quantidade de janelas presente. Salve a configuração.
 - Clique **ANALISAR VIDEO(S)**; a detecção é automática, mas a precisão dos saldos do OCR e a classificação das perdas ainda dependem da revisão humana.
 - Confira individualmente as perdas prováveis e os limites de tempo; use **Conferir/Salvar**. Se incorreto, **Descartar**.
 - Clique **EXPORTAR CONFERIDAS** para gerar MP4 independentes com apenas a mesa escolhida.
@@ -112,3 +112,5 @@ O analisador acompanha a disposição informada a cada segundo. Se uma mesa desa
 **Limite importante:** a detecção automática de ausência de mesa usa uma heurística visual simples e não determina com segurança quando uma janela foi redimensionada ou movida para outra posição. Para reorganizações, registre o tempo da mudança. A assinatura pode falhar com temas de mesa diferentes, overlays, janelas sobrepostas ou área de trabalho complexa; use a conferência no frame. A identificação de perdas também depende do OCR e continua experimental, sem garantia de recuperar todas as mãos relevantes.
 
 O campo do limite permanece **30 BB inclusivos**: qualquer stack inicial (por exemplo, 75, 100, 150 ou 200 BB) é aceito. Só conta a queda líquida do stack antes/depois, não o valor apostado.
+
+**Dica:** no modo Auto, a presença da mesa precisa satisfazer uma assinatura visual mais rigorosa; nos modos explícitos 1 a 4, a verificação é mais tolerante com temas diferentes. Em qualquer modo, se uma janela for removida ou o vídeo receber uma sobreposição, o algoritmo pode falhar. Confirme um quadro por meio do botão da interface antes de executar uma análise longa.
