@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """Testes basicos para algoritmos visuais independentes de video real."""
+import csv
+import io
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from PIL import Image, ImageDraw
 from analise_video import (parse_stack, changed_fraction, HandState, bright_fraction,
@@ -67,6 +71,64 @@ class VisualTests(unittest.TestCase):
         frame = self.mock_mesatela(4, present=[3])
         detected, _, _ = infer_horizontal_layout(frame)
         self.assertEqual(detected, "horizontal4")
+
+    def test_detector_reutiliza_inferencia_sem_duplicar_processamento(self):
+        tracker = AutoLayoutTracker()
+        dummy = Image.new("L", (960, 540), 40)
+        with patch("analise_video.infer_horizontal_layout") as inference:
+            for _ in range(3):
+                mode, safe, _ = tracker.observe(
+                    dummy, observation=("horizontal3", .91, {"horizontal3": .91}))
+            self.assertEqual(mode, "horizontal3")
+            self.assertTrue(safe)
+            inference.assert_not_called()
+
+    def test_frame_ambiguo_nao_troca_layout_imediatamente(self):
+        tracker = AutoLayoutTracker()
+        dummy = Image.new("L", (960, 540), 40)
+        for _ in range(3):
+            tracker.observe(dummy, observation=("horizontal4", .9, {}))
+        mode, safe, reason = tracker.observe(
+            dummy, observation=(None, 0., {}))
+        self.assertEqual(mode, "horizontal4")
+        self.assertFalse(safe)
+        self.assertEqual(reason, "indefinido")
+        mode, safe, reason = tracker.observe(
+            dummy, observation=("horizontal4", .95, {}))
+        self.assertEqual(mode, "horizontal4")
+        self.assertTrue(safe)
+        self.assertEqual(reason, "estavel")
+
+    def test_diagnostico_gera_relatorio_csv_de_mudancas(self):
+        from diagnostico_mesas import diagnosticar
+        frame = self.mock_mesatela(3).tobytes()
+        class FakeProcess:
+            def __init__(self):
+                self.stdout = io.BytesIO(frame * 3)
+            def wait(self, timeout=None):
+                return 0
+            def poll(self):
+                return 0
+            def kill(self):
+                pass
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "teste_mesas.csv"
+            with patch("diagnostico_mesas.resource", return_value="ffmpeg"), \
+                 patch("diagnostico_mesas.probe", return_value=Video("mock.mp4", 15, 960, 540, False)), \
+                 patch("diagnostico_mesas.subprocess.Popen", return_value=FakeProcess()), \
+                 patch("diagnostico_mesas.infer_horizontal_layout",
+                       return_value=("horizontal3", .90, {"horizontal3": .90})):
+                rows, stable, summary = diagnosticar("mock.mp4", path, lambda msg: None)
+            self.assertEqual(rows, 3)
+            self.assertEqual(stable, 1)
+            with path.open(encoding="utf-8-sig", newline="") as handle:
+                data = list(csv.DictReader(handle, delimiter=";"))
+            self.assertEqual(len(data), 3)
+            self.assertEqual(data[-1]["modo_confirmado"], "horizontal3")
+            with summary.open(encoding="utf-8-sig", newline="") as handle:
+                changes = list(csv.DictReader(handle, delimiter=";"))
+            self.assertEqual(len(changes), 1)
+            self.assertEqual(changes[0]["novo_layout"], "horizontal3")
 
     def test_mudanca_automatica_precisa_confirmacao_temporal(self):
         tracker = AutoLayoutTracker()
