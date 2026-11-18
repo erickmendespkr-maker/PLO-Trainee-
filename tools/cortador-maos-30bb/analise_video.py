@@ -488,7 +488,7 @@ def parse_stack(value):
     # falsas como "154020" a partir de varios textos sobrepostos.
     # Tesseract frequentemente devolve '114, 0' para '114,0'.
     # Juntar somente quando existe pontuacao decimal explicita.
-    cleaned = re.sub(r"(?<=\\d)([.,])\\s+(?=\\d)", r"\\1", value)
+    cleaned = re.sub(r"(?<=\d)([.,])\s+(?=\d)", r"\1", value)
     candidates = re.findall(r"\d+(?:[.,]\d+)*", cleaned)
     # A caixa do saldo deve conter um unico numero. Dois tokens indicam
     # captura de outro campo da mesa e nao servem para exportacao automatica.
