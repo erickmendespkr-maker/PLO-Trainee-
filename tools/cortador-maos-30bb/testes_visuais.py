@@ -13,6 +13,8 @@ from analise_video import (parse_stack, changed_fraction, HandState, bright_frac
                            replicate_horizontal_rect, stack_median, MAX_STACK_BB,
                            Candidate, eligible_losses,
                            native_stack_crop, read_stack_diagnostics,
+                           default_markings_path, save_markings_file, load_markings_file,
+                           validated_markings,
                            net_loss_bb, loss_reaches_threshold, layout_key, mode_at,
                            layout_count, layout_bounds, layout_rect,
                            unmap_layout_rect, table_visible,
@@ -123,6 +125,43 @@ class VisualTests(unittest.TestCase):
         self.assertEqual(len(state.results), 1)
         self.assertFalse(state.results[0].auto_verified)
         self.assertEqual(eligible_losses(state.results, 30, True), [])
+
+    def test_salvar_marcacoes_como_padrao_persiste_apos_reabrir(self):
+        config = screenshot_profile()
+        # Simula o usuario ajustando o nick no print.
+        config["1"]["nick"] = [100, 467, 160, 489]
+        config["1"]["bb"] = "2"
+        with tempfile.TemporaryDirectory() as folder:
+            filename = Path(folder) / "CortadorPLO" / "marcacoes_padrao.json"
+            saved = save_markings_file(
+                filename, config, "~Pulgar~", "Automatico (1 a 4 mesas)")
+            self.assertEqual(saved, filename)
+            restored = load_markings_file(filename)
+            self.assertEqual(restored["nick"], "~Pulgar~")
+            self.assertEqual(restored["tables"]["1"]["nick"], [100, 467, 160, 489])
+            self.assertEqual(restored["tables"]["1"]["bb"], "2.0")
+            self.assertEqual(restored["layout"], "Automatico (1 a 4 mesas)")
+            self.assertNotIn("videos", restored)
+            self.assertNotIn("timeline", restored)
+
+    def test_configuracao_corrompida_nao_substitui_as_marcacoes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            filename = Path(folder) / "corrompido.json"
+            filename.write_text('{"tables":{"1":{}}}', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_markings_file(filename)
+            good = screenshot_profile()
+            good["1"]["stack"] = [100, 485, 140, 505]
+            save_markings_file(filename, good, "Herói", "4 lado a lado")
+            self.assertEqual(
+                load_markings_file(filename)["tables"]["1"]["stack"],
+                [100, 485, 140, 505])
+
+    def test_caminho_persistente_do_windows_fica_fora_do_zip(self):
+        with patch.dict("os.environ", {"LOCALAPPDATA": "C:/Users/Test/AppData/Local"}):
+            path = default_markings_path()
+        self.assertEqual(path.name, "marcacoes_padrao.json")
+        self.assertEqual(path.parent.name, "CortadorPLO")
 
     def test_numeros(self):
         self.assertEqual(parse_stack("R$ 1.234,50"), 1234.5)
