@@ -622,6 +622,11 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
     detected_frames = 0
     auto_detector = AutoLayoutTracker()
     no_detection_reported = False
+    unsafe_since = None
+    unsafe_frames = 0
+    # Um frame ambiguo isolado nao deve encerrar a mao. O trecho
+    # interrompido so e consolidado apos alguns frames ou troca confirmada.
+    unsafe_grace_frames = 6
 
     def close_state(table, end_time, reason):
         state = states.pop(table, None)
@@ -664,12 +669,17 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                 if requested_mode == "auto4":
                     mode, safe_to_scan, situation = auto_detector.observe(frame)
                     if not safe_to_scan:
-                        # Nao ler saldo na transicao/ambiguidade: pode gerar falsa
-                        # perda ao fechar ou redimensionar uma janela.
-                        if states:
+                        # Nao ler saldo nesta imagem: houve possivel reorganizacao.
+                        # Preserva as maos durante pequenas animacoes e alertas,
+                        # ao contrario da versao anterior que perdia o estado
+                        # imediatamente apos um unico frame ambiguo.
+                        if unsafe_since is None:
+                            unsafe_since = t
+                        unsafe_frames += 1
+                        if states and unsafe_frames >= unsafe_grace_frames:
                             for table in list(states):
-                                close_state(table, t,
-                                            "INCONCLUSIVO - DETECCAO DE MESAS EM TRANSICAO")
+                                close_state(table, unsafe_since,
+                                            "INCONCLUSIVO - LAYOUT INDEFINIDO")
                             states = {}
                             segment_start = t
                         if situation == "indefinido" and not no_detection_reported and n >= 10:
@@ -683,8 +693,10 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                     auto_detector = AutoLayoutTracker()
                 if mode != active_mode:
                     if active_mode is not None:
+                        boundary = unsafe_since if unsafe_since is not None else t
                         for table in list(states):
-                            close_state(table, t, "INCONCLUSIVO - MESA MUDOU DE LUGAR")
+                            close_state(table, boundary,
+                                        "INCONCLUSIVO - MESA MUDOU DE LUGAR")
                         segment_start = t
                     else:
                         segment_start = t
@@ -696,6 +708,10 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                     progress(f"{fmt(t)}: disposicao detectada {mode}; "
                              f"{layout_count(mode)} posicoes possiveis")
 
+                # Periodos curtos inconclusivos nao encerram uma mao; se a
+                # disposicao mudou, ela ja foi fechada no primeiro frame suspeito.
+                unsafe_since = None
+                unsafe_frames = 0
                 seen = 0
                 for table in range(1, layout_count(mode) + 1):
                     cfg = table_cfg[(mode, table)]
