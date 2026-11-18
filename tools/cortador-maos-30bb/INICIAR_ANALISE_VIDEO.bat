@@ -68,7 +68,7 @@ if errorlevel 1 (
   )
 )
 echo Verificando sintaxe do analisador...
-"%PYTHONEXE%" %PYTHONARGS% -m py_compile "%~dp0analise_video.py" "%~dp0gemini_backend.py" "%~dp0cortador.py"
+"%PYTHONEXE%" %PYTHONARGS% -m py_compile "%~dp0analise_video.py" "%~dp0hud_recognition.py" "%~dp0gemini_backend.py" "%~dp0cortador.py"
 if errorlevel 1 (
   echo.
   echo ERRO DE SINTAXE: atualize os arquivos desta pasta.
