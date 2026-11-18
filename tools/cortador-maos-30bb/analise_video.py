@@ -1095,8 +1095,8 @@ class GUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("PLO - Analise visual de videos (sem DriveHUD)")
-        self.geometry("1120x800")
-        self.minsize(990, 740)
+        self.geometry("1120x845")
+        self.minsize(990, 760)
         self.videos = []
         self.total = 0.
         self.frame = None
@@ -1114,6 +1114,9 @@ class GUI(tk.Tk):
         self.nick = tk.StringVar(value="~Pulgar~")
         self.quick = tk.BooleanVar(value=True)
         self.auto_export = tk.BooleanVar(value=True)
+        self.use_gemini = tk.BooleanVar(value=False)
+        self.gemini_model = tk.StringVar(value=DEFAULT_MODEL)
+        self.gemini_limit = tk.StringVar(value="40")
         self.show_inconclusive = tk.BooleanVar(value=False)
         self.auto_export_folder = None
         self.cfg = screenshot_profile()
@@ -1195,6 +1198,26 @@ class GUI(tk.Tk):
                    command=self.check_tables_frame).pack(side="left", padx=5)
         self.events_info = ttk.Label(changes, text="Sem mudancas registradas")
         self.events_info.pack(side="left", padx=8)
+
+        airow = ttk.Frame(self)
+        airow.pack(fill="x", padx=8, pady=(0, 3))
+        ttk.Checkbutton(airow, text="Gemini quando OCR falhar",
+                        variable=self.use_gemini).pack(side="left")
+        ttk.Label(airow, text="Modelo:").pack(side="left", padx=(12, 3))
+        ttk.Combobox(airow, textvariable=self.gemini_model,
+                     values=list(ALLOWED_MODELS), state="readonly",
+                     width=23).pack(side="left")
+        ttk.Label(airow, text="Max. chamadas/análise:").pack(side="left", padx=(12, 3))
+        ttk.Entry(airow, textvariable=self.gemini_limit,
+                  width=5).pack(side="left")
+        ttk.Button(airow, text="Configurar chave",
+                   command=self.configure_gemini).pack(side="left", padx=5)
+        ttk.Button(airow, text="Testar Gemini no frame",
+                   command=self.test_gemini_frame).pack(side="left", padx=4)
+        self.ai_status = ttk.Label(
+            airow, text="Chave local: configurada" if read_key()
+            else "Chave local: ausente")
+        self.ai_status.pack(side="left", padx=4)
 
         self.canvas = tk.Canvas(self, width=VIEW_W, height=VIEW_H, background="#181818",
                                 highlightthickness=0)
@@ -1703,6 +1726,73 @@ class GUI(tk.Tk):
             self.tell(f"Mesa {self.table.get()}: 1 BB = {value:g} fichas.")
         except ValueError:
             messagebox.showerror("BB", "Informe quanto vale 1 BB em fichas na tela.")
+
+    def configure_gemini(self):
+        """Solicita a chave no computador, nunca a coloca no GitHub ou JSON."""
+        if not messagebox.askokcancel(
+                "Privacidade do Gemini",
+                "Somente recortes de saldo serao enviados ao Google quando "
+                "o OCR local falhar. O uso pode consumir cota e gerar custos "
+                "se a conta estiver no nivel pago.\n\n"
+                "Digite uma chave NOVA do Google AI Studio. Nao reutilize a "
+                "credencial compartilhada no chat."):
+            return
+        candidate = simpledialog.askstring(
+            "Configurar chave Gemini",
+            "Cole a NOVA chave do Gemini (sera armazenada protegida pelo Windows):",
+            show="*", parent=self)
+        if candidate is None:
+            return
+        try:
+            save_key(candidate)
+            self.ai_status.configure(text="Chave local: configurada")
+            self.tell("Chave Gemini salva com protecao do Windows. "
+                      "A chave nao fica no repositorio.")
+        except (GeminiError, OSError) as exc:
+            messagebox.showerror("Credencial Gemini", str(exc))
+
+    def test_gemini_frame(self):
+        if not self.videos or self.frame is None:
+            messagebox.showwarning("Gemini", "Carregue o video e use Mostrar frame.")
+            return
+        key = read_key()
+        if not key:
+            messagebox.showwarning("Gemini", "Clique primeiro em Configurar chave.")
+            return
+        try:
+            model = self.gemini_model.get()
+            table = int(self.table.get())
+            when = parse_time(self.seek.get())
+            mode = self.layout_id()
+            if table > layout_count(mode):
+                raise ValueError("Mesa indisponivel no instante selecionado.")
+            rect = layout_rect(self.cfg[str(table)]["stack"], table, mode)
+            bb = float(self.cfg[str(table)].get("bb", 1))
+            videos = self.videos[:]
+        except (ValueError, KeyError) as exc:
+            messagebox.showerror("Gemini", str(exc))
+            return
+
+        self.tell("Gemini: testando OCR de UM recorte do saldo...")
+        def worker():
+            try:
+                crop = native_stack_crop(videos, when, rect, resource("ffmpeg"))
+                client = GeminiClient(key, model=model, max_requests=1)
+                value = client.read_single(crop, bb=bb, max_stack_bb=MAX_STACK_BB)
+                if value is None:
+                    result = "Gemini nao leu o saldo com seguranca. Confira o recorte."
+                else:
+                    result = f"Gemini leu {value / bb:g} BB na mesa {table}. Confira no video."
+                self.after(0, lambda: messagebox.showinfo("Teste Gemini", result))
+            except GeminiError as exc:
+                self.after(0, lambda msg=str(exc):
+                           messagebox.showwarning("Teste Gemini", msg))
+            except (OSError, ValueError, RuntimeError) as exc:
+                self.after(0, lambda:
+                           messagebox.showwarning(
+                               "Teste Gemini", "Nao foi possivel obter o recorte "
+                               "ou enviar a imagem. Confira a gravacao e a conexao."))
+        threading.Thread(target=worker, daemon=True).start()
 
     def on_table_change(self):
         self.bb.set(str(self.cfg[self.table.get()].get("bb", 1)))
