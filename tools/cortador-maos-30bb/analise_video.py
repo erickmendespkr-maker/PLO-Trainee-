@@ -1653,6 +1653,7 @@ class GUI(tk.Tk):
         self.nick = tk.StringVar(value="~Pulgar~")
         self.quick = tk.BooleanVar(value=True)
         self.auto_export = tk.BooleanVar(value=True)
+        self.auto_rebuy = tk.BooleanVar(value=True)
         self.use_gemini = tk.BooleanVar(value=bool(read_key()))
         self.gemini_model = tk.StringVar(value=DEFAULT_MODEL)
         self.gemini_limit = tk.StringVar(value="40")
@@ -1723,6 +1724,8 @@ class GUI(tk.Tk):
         ttk.Checkbutton(row2, text="OCR rapido", variable=self.quick).pack(side="left", padx=4)
         ttk.Checkbutton(row2, text="Gerar MP4 automaticos",
                         variable=self.auto_export).pack(side="left", padx=6)
+        ttk.Checkbutton(row2, text="Rebuy automatico (verificar pote)",
+                        variable=self.auto_rebuy).pack(side="left", padx=6)
         self.table.trace_add("write", lambda *_: self.on_table_change())
 
         changes = ttk.Frame(self)
@@ -2513,6 +2516,7 @@ class GUI(tk.Tk):
             Path(path).write_text(json.dumps(
                 {"layout": self.layout.get(), "nick": self.nick.get().strip(),
                  "quick": self.quick.get(), "auto_export": self.auto_export.get(),
+                 "auto_rebuy": self.auto_rebuy.get(),
                  "use_gemini": self.use_gemini.get(),
                  "gemini_model": self.gemini_model.get(),
                  "gemini_limit": self.gemini_limit.get(),
@@ -2530,6 +2534,7 @@ class GUI(tk.Tk):
                 self.nick.set(data.get("nick", "~Pulgar~"))
                 self.quick.set(bool(data.get("quick", True)))
                 self.auto_export.set(bool(data.get("auto_export", True)))
+                self.auto_rebuy.set(bool(data.get("auto_rebuy", True)))
                 self.use_gemini.set(
                     bool(read_key()) and bool(data.get("use_gemini", True)))
                 saved_model = data.get("gemini_model", DEFAULT_MODEL)
@@ -2581,6 +2586,7 @@ class GUI(tk.Tk):
                 "threshold": self.threshold.get(),
                 "nick": self.nick.get().strip(), "quick": self.quick.get(),
                 "auto_export": self.auto_export.get(),
+                "auto_rebuy": self.auto_rebuy.get(),
                 "use_gemini": self.use_gemini.get(),
                 "gemini_model": self.gemini_model.get(),
                 "gemini_limit": self.gemini_limit.get(),
@@ -2663,6 +2669,7 @@ class GUI(tk.Tk):
             self.nick.set(data.get("nick", "~Pulgar~"))
             self.quick.set(bool(data.get("quick", True)))
             self.auto_export.set(bool(data.get("auto_export", True)))
+            self.auto_rebuy.set(bool(data.get("auto_rebuy", True)))
             self.use_gemini.set(
                 bool(read_key()) and bool(data.get("use_gemini", True)))
             saved_model = data.get("gemini_model", DEFAULT_MODEL)
@@ -2901,11 +2908,14 @@ class GUI(tk.Tk):
                 return
         self.auto_export_folder = destination
         self.busy = True
-        self.tell("Analisando saldos para selecionar perdas >= limite...")
+        self.tell("Identificando maos e verificando aporte no pote e vencedor "
+                  "(rebuy automatico ativado)." if self.auto_rebuy.get() else
+                  "Analisando saldos para selecionar perdas >= limite...")
         cfg = json.loads(json.dumps(self.cfg))
         videos = self.videos[:]
         hero_nick = self.nick.get().strip()
         quick = self.quick.get()
+        rebuy_mode = self.auto_rebuy.get()
         initial_layout = self.layout.get()
         events = [entry.copy() for entry in self.timeline]
         detections = []
@@ -2922,7 +2932,12 @@ class GUI(tk.Tk):
                                       lambda msg: self.after(0, lambda m=msg: self.tell(m)),
                                       hero_nick=hero_nick, quick=quick,
                                       initial_layout=initial_layout, events=events,
-                                      detected_events=detections, gemini_client=client)
+                                      detected_events=detections, gemini_client=client,
+                                      auto_rebuy=rebuy_mode)
+                if rebuy_mode and client is not None:
+                    results, reviewed, approved = recheck_candidates_with_poker_context(
+                        videos, cfg, results, threshold, client,
+                        lambda msg: self.after(0, lambda m=msg: self.tell(m)))
                 summary = (f"Gemini: {client.used}/{client.limit} chamadas; "
                            f"{sum(c.source == 'Gemini' for c in results)} perdas com IA"
                            if client else "Gemini desligado")
@@ -3035,8 +3050,9 @@ class GUI(tk.Tk):
         except ValueError:
             messagebox.showerror("BB", "Perda minima invalida.")
             return
-        eligible = eligible_losses(self.candidates, threshold,
-                                   automatic_only=automatic_only)
+        eligible = eligible_losses(
+            self.candidates, threshold, automatic_only=automatic_only,
+            require_pot_evidence=self.auto_rebuy.get())
         if folder is None:
             try:
                 folder = str(self.current_output_folder(create=True))
