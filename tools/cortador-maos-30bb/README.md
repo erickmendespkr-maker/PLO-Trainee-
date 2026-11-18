@@ -239,3 +239,28 @@ A partir desta atualizacao, **toda analise concluida salva automaticamente** o a
 Na proxima abertura, clique em **Abrir ultima revisao**. Para enviar a revisao a outra pessoa ou fazer backup manualmente, use **Salvar revisao** e escolha um JSON. A ultima revisao e local, contem os caminhos dos videos do computador e nao envia nenhuma chave de API.
 
 Este salvamento foi implementado agora; **nao pode recuperar retroativamente uma execucao antiga fechada sem salvar**.
+
+
+## Ajustes de marcacao independentes para 1, 2, 3 e 4 mesas
+
+**Problema corrigido:** marcacoes feitas numa gravacao de 3 mesas nao devem sobrescrever os retangulos da gravacao de 4 mesas. Antes, o programa convertia qualquer ROI manual para a grade antiga de quatro colunas e reaproveitava a mesma coordenada para videos diferentes; nick e saldo ficavam deslocados.
+
+Agora cada disposicao possui suas proprias regioes de **cartas (verde)**, **nick (roxo)** e **saldo (azul)**. Ao abrir um video com 3 mesas, o programa tenta adaptar as caixas do perfil antigo, mas se voce corrigir algum retangulo, o ajuste sera usado **apenas no layout de 3 mesas**, mantendo intacto o perfil de 4. O ajuste de uma mesa pode ser replicado para as outras janelas do **mesmo layout**, sem assumir sempre quatro mesas.
+
+**Salvamento automatico:** toda vez que voce arrasta e solta uma regiao, o programa tenta salvar a calibracao completa em `%LOCALAPPDATA%\CortadorPLO\marcacoes_padrao.json`. No proximo video com a mesma disposicao, ela ja aparece na posicao ajustada. O botao **Usar padrao salvo** tambem restaura o arquivo. O programa nao sabe identificar com certeza a posicao do saldo em um novo tema/layout; confira uma vez com **Mostrar frame** e **Testar saldo** antes de uma gravacao longa.
+
+Ao trocar de video, o modo Auto agora limpa a inferencia visual do video anterior, e o campo de tempo volta ao inicio quando os videos sao limpos.
+
+## Ativacao da chave Gemini em um clique (sem repetir a cada analise)
+
+A chave compartilhada em uma conversa **nao pode ser instalada no Windows remotamente** e nao deve ser embutida no GitHub, pois ficaria exposta. Por seguranca, **revogue a chave enviada no chat e gere outra no Google AI Studio**.
+
+Na versao atualizada, voce pode fazer uma unica ativacao local:
+
+1. Copie a **nova chave** no AI Studio com Ctrl+C.
+2. Abra o Cortador PLO e clique **Ativar chave copiada**.
+3. Confirme a importacao. A chave e salva de modo protegido no seu perfil Windows, e a copia da area de transferencia e limpa.
+
+Apos isso, o Gemini passa a ser detectado automaticamente nas proximas aberturas do programa, sem solicitar a chave novamente. O botao antigo **Configurar chave** continua disponivel como alternativa. Se voce desmarcar **Gemini quando OCR falhar**, o programa respeita essa escolha na sessao atual.
+
+A chave nunca e salva em arquivos JSON do perfil, revisoes ou GitHub; seu valor e armazenado localmente com Windows DPAPI. **Ativar Gemini significa enviar pequenos recortes de tela ao Google** e pode consumir cota ou gerar custo em projetos pagos. As leituras da IA ainda precisam ser conferidas.
