@@ -185,3 +185,29 @@ O arquivo e gravado em `%LOCALAPPDATA%\\CortadorPLO\\marcacoes_padrao.json`, **f
 
 **Cuidado:** **Usar regioes do print** restaura a estimativa de fabrica, e nao os ajustes pessoais. Para voltar aos ajustes pessoais, use **Usar padrao salvo**. O padrao pode ser sobrescrito quando voce clicar **Salvar como padrao** de novo; por isso confira a previa. Mesas reorganizadas de forma diferente ainda podem precisar de revisao visual das caixas.
 
+
+## Integração Gemini no backend local (opcional)
+
+O programa continua sendo um aplicativo de Windows com **backend Python local**. A API do Google Gemini atua somente como **segunda leitura visual** quando o Tesseract não confirma os saldos. A detecção de mesas, início e fim das mãos permanece local. Não são enviados vídeos completos: cada requisição de verificação contém até **quatro pequenos recortes do saldo** (dois antes, dois depois) e instruções para retornar apenas os quatro números, sem adivinhar.
+
+### Primeira configuração segura
+
+1. Crie uma **chave NOVA** em `https://aistudio.google.com/api-keys`. Se já compartilhou uma chave em mensagens, **revogue-a** e gere outra; não reutilize a chave exposta.
+2. Abra `INICIAR_ANALISE_VIDEO.bat` da versão nova. Na faixa `Gemini quando OCR falhar`, clique em **Configurar chave**.
+3. Cole a nova chave no campo oculto. O Windows protegerá a credencial com **DPAPI** no arquivo `%LOCALAPPDATA%\CortadorPLO\gemini_credencial.dpapi`, acessível no mesmo perfil do Windows. **Não é necessário criar .env nem colar a chave no GitHub.**
+4. Escolha o modelo (por padrão `gemini-3.5-flash-lite`), marque **Gemini quando OCR falhar** e mantenha o limite inicial de **40 chamadas por análise**. É possível ajustar de 1 a 300.
+5. No vídeo, selecione uma mesa e um frame com saldo visível, clique em **Testar Gemini no frame** e compare o número lido com o saldo real. Esse teste envia um único recorte e consome uma chamada de API.
+6. Clique em **ANALISAR VIDEO(S)**. Quando o OCR local falhar, o Gemini tentará ler dois instantes distintos anteriores e dois posteriores à mão. Somente se cada par apresentar valores coerentes, a mão poderá ser considerada para corte. O filtro continua sendo **perda líquida de pelo menos 30 BB**, sem saldo inicial fixo.
+
+As configurações JSON contêm apenas preferências, modelo e limite; **jamais contêm a chave**. Para configurações avançadas, também é possível fornecer `GEMINI_API_KEY` como variável de ambiente do processo, substituindo o arquivo DPAPI. O backend nunca imprime a chave nos logs, relatórios CSV ou nomes dos cortes.
+
+### Privacidade, limites e verificação
+
+- O uso do Gemini é **desligado até ser autorizado pelo usuário**. A leitura local continua funcionando sem conexão.
+- A cota de 40 chamadas é um limite **deste programa**, não uma garantia de que a API seja gratuita: no plano pago do Google, chamadas podem ser cobradas. No plano gratuito, os limites e a disponibilidade variam.
+- Ao ativar Gemini, recortes de imagens da sessão são enviados aos servidores do Google, sujeitos aos termos de tratamento de dados do plano usado.
+- Se a API retornar 401/403/429 ou esgotar o limite local, o programa encerra as tentativas de IA e mantém leituras inconclusivas para revisão. Não marca uma perda somente por uma imagem.
+- Leituras concordantes da IA ainda podem estar erradas; **confira todos os MP4 antes de enviar ao instrutor**. Os relatórios `indice_das_maos.csv` e `relatorio_analise.csv` identificam `origem = Gemini` ou `OCR`.
+- Para testar o código **sem usar a chave e sem chamadas reais**, execute `VERIFICAR_PROGRAMA.bat`: ele executa `testes_visuais.py` e `testes_gemini.py`, usando respostas simuladas.
+
+O programa não sincroniza nem administra a chave em uma plataforma web. Esta integração é o backend Python da versão desktop, sem hospedagem adicional.
