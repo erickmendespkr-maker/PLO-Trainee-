@@ -2,6 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 title PLO - Analisador Visual (somente videos)
+set "PATH=%LOCALAPPDATA%\Microsoft\WinGet\Links;%ProgramFiles%\WinGet\Links;%PATH%"
 
 where ffmpeg >nul 2>&1
 if errorlevel 1 if not exist "%~dp0ffmpeg.exe" (
@@ -33,7 +34,7 @@ if errorlevel 1 if not exist "%~dp0tesseract.exe" (
 )
 
 if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
-  set "PYTHONCMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+  set "PYTHONCMD=\"%LOCALAPPDATA%\Programs\Python\Python312\python.exe\""
   goto ready
 )
 py -3 -c "import tkinter" >nul 2>&1
