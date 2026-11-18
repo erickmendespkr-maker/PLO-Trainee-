@@ -125,8 +125,12 @@ class PokerContextTests(unittest.TestCase):
 
     def test_tempos_cobrem_streets_ao_longo_da_mao(self):
         times = table_context_timestamps(10, 50, 90)
-        self.assertEqual(len(times), 8)
-        self.assertTrue(all(10 <= x <= 50 for x in times))
+        self.assertEqual(len(times), 10)
+        self.assertTrue(all(10 <= x <= 50 for x in times[:8]))
+        self.assertTrue(all(x > 50 for x in times[8:]))
+        times2 = table_context_timestamps(
+            10, 50, 90, after_times=[51, 52, 53, 54])
+        self.assertEqual(times2[-2:], [51, 53])
         self.assertIsNone(table_context_timestamps(10, 11.5, 90))
 
     def test_contexto_enviado_para_gemini_tela_e_mesa_inteira(self):
@@ -139,11 +143,11 @@ class PokerContextTests(unittest.TestCase):
             "EXAMPLE_NOT_REAL_KEY", transport=fake_transport, max_requests=1)
         picture = Image.new("RGB", (160, 100), "green")
         result = client.read_hand_context(
-            picture, [picture] * 8, [picture] * 2, "~Pulgar~", 30)
+            picture, [picture] * 10, [picture] * 2, "~Pulgar~", 30)
         self.assertTrue(result["verified"])
         parts = sent[0]["contents"][0]["parts"]
         images = [p["inline_data"] for p in parts if "inline_data" in p]
-        self.assertEqual(len(images), 11)
+        self.assertEqual(len(images), 13)
         self.assertTrue(all(p["mime_type"] == "image/jpeg" for p in images))
         self.assertEqual(client.used, 1)
 
@@ -162,7 +166,7 @@ class PokerContextTests(unittest.TestCase):
             def read_hand_context(self, overview, table_frames, hud_frames,
                                   expected_nick, threshold):
                 self.used += 1
-                assert len(table_frames) == 8 and len(hud_frames) == 2
+                assert len(table_frames) == 10 and len(hud_frames) == 2
                 return validate_pot_result(
                     proof(40), expected_nick, threshold)
         stub = StubGemini()
@@ -172,7 +176,7 @@ class PokerContextTests(unittest.TestCase):
             revised, checked, approved = recheck_candidates_with_poker_context(
                 [video], screenshot_profile(), [candidate], 30, stub)
         self.assertEqual((checked, approved), (1, 1))
-        self.assertEqual(crop.call_count, 11)
+        self.assertEqual(crop.call_count, 13)
         self.assertEqual(revised[0].loss_bb, 40)
         self.assertTrue(revised[0].pot_verified)
         self.assertEqual(revised[0].winner_nick, "adversario")
