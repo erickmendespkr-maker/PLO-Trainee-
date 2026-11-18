@@ -1455,6 +1455,7 @@ def recheck_candidates_with_poker_context(videos, config, candidates, threshold,
     revised = [Candidate(**asdict(c)) for c in candidates]
     checked = 0
     confirmed = 0
+    consecutive_errors = 0
     for c in revised:
         if (c.excluded or c.confirmed or c.pot_verified or
                 (c.gemini_checked and c.source == "Gemini - mesa inteira")):
@@ -1464,6 +1465,7 @@ def recheck_candidates_with_poker_context(videos, config, candidates, threshold,
             continue
         if client.disabled_reason or client.used >= client.limit:
             break
+        stage = "validacao dos limites da mao"
         try:
             mode = layout_key(c.layout)
             if mode == "auto4" or not 1 <= c.table <= layout_count(mode):
@@ -1489,16 +1491,26 @@ def recheck_candidates_with_poker_context(videos, config, candidates, threshold,
 
             # Um quadro panoramico ajuda a reconhecer a mesa no video de
             # multiplas janelas. Os outros mostram as streets e o pote.
+            stage = "extracao da tela geral"
             overview = native_stack_crop(
                 videos, moments[3], (0, 0, W, H), ffmpeg)
-            table_frames = [
-                native_stack_crop(videos, t, table_box, ffmpeg) for t in moments]
-            hud_frames = [
-                native_stack_crop(videos, t, hud_box, ffmpeg)
-                for t in (moments[0], moments[-1])]
+            table_frames = []
+            for index, at in enumerate(moments):
+                stage = f"extracao da mesa - quadro {index + 1}/10"
+                table_frames.append(
+                    native_stack_crop(videos, at, table_box, ffmpeg))
+            hud_frames = []
+            for index, at in enumerate((moments[0], moments[-1])):
+                stage = f"extracao do HUD - quadro {index + 1}/2"
+                hud_frames.append(
+                    native_stack_crop(videos, at, hud_box, ffmpeg))
+            stage = "resposta do Gemini"
+            on_progress(f"Mesa {c.table}, {fmt(c.start)}: imagens obtidas; "
+                        "enviando 13 quadros ao Gemini.")
             result = client.read_hand_context(
                 overview, table_frames, hud_frames,
                 expected_nick=c.nick, threshold=threshold)
+            consecutive_errors = 0
             c.gemini_checked = True
             checked += 1
             c.source = "Gemini - mesa inteira"
@@ -1529,13 +1541,32 @@ def recheck_candidates_with_poker_context(videos, config, candidates, threshold,
             on_progress(f"Contexto: {checked} maos revisadas, {confirmed} "
                         f"perdas demonstradas de >= {threshold:g} BB; "
                         f"{client.used}/{client.limit} consultas.")
-        except GeminiLimitError:
+        except GeminiLimitError as exc:
+            # O modelo, a chave ou a cota podem falhar mesmo que a GUI
+            # mostre "chave local: configurada". Nao esconder o motivo.
+            c.status = "INCONCLUSIVO - GEMINI BLOQUEADO"
+            c.reliability = f"{stage}: {str(exc)[:170]}"
+            on_progress(f"Mesa {c.table}, {fmt(c.start)}: {c.reliability}. "
+                        f"Chamadas {client.used}/{client.limit}.")
             break
         except (GeminiError, OSError, ValueError, RuntimeError) as exc:
-            # Não marcar como consultado quando uma falha impediu avaliação.
-            c.reliability = "Contexto da mesa indisponivel: " + str(exc)[:150]
-            on_progress("Falha de leitura contextual; esta mao ficou pendente.")
-            if client.disabled_reason:
+            consecutive_errors += 1
+            # As mensagens do GeminiError sao sanitizadas no backend.
+            # FFmpeg pode conter paths do usuario; mostrar a fase e classe,
+            # nao despejar stderr arbitrario nem dados locais.
+            if isinstance(exc, GeminiError):
+                detail = str(exc)[:180]
+            elif isinstance(exc, ValueError):
+                detail = str(exc)[:90]
+            else:
+                detail = f"{type(exc).__name__} ao obter os quadros"
+            c.status = "INCONCLUSIVO - FALHA DE LEITURA CONTEXTUAL"
+            c.reliability = f"{stage}: {detail}"
+            on_progress(f"Mesa {c.table}, {fmt(c.start)}: "
+                        f"{c.reliability}. Chamadas {client.used}/{client.limit}.")
+            if client.disabled_reason or consecutive_errors >= 3:
+                on_progress("Analise contextual interrompida apos falhas "
+                            "repetidas; outras maos foram preservadas.")
                 break
     return revised, checked, confirmed
 
