@@ -184,6 +184,22 @@ class GeminiTests(unittest.TestCase):
                 self.assertNotIn(b"EXAMPLE_NOT_REAL_KEY", path.read_bytes())
                 self.assertEqual(read_key(), "EXAMPLE_NOT_REAL_KEY")
 
+    def test_ocr_fraco_nao_descarta_perda_real_antes_da_ia(self):
+        frame = Image.new("L", (35, 20), 15)
+        state = HandState()
+        state.pending = {"start": 6, "end": 35,
+                         "before": [frame], "after": [frame],
+                         "before_times": [2, 4], "after_times": [36, 38]}
+        # Sem duas leituras, a estimativa 0BB nao e prova de ausencia
+        # de perda. Deve permanecer pendente para a proxima revisao.
+        with patch("analise_video.stack_median",
+                   side_effect=[(100, 1), (100, 1)]):
+            state.finish(1, 1, 30, "tesseract", quick=False)
+        self.assertEqual(len(state.results), 1)
+        self.assertIn("INCONCLUSIVO - SALDO", state.results[0].status)
+        self.assertIsNone(state.results[0].loss_bb)
+        self.assertFalse(state.results[0].auto_verified)
+
     def test_ia_so_acionada_se_ocr_nao_confirma(self):
         frame = Image.new("L", (35, 20), 15)
         state = HandState()
