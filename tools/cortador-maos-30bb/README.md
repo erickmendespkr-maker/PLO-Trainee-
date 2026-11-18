@@ -211,3 +211,22 @@ As configurações JSON contêm apenas preferências, modelo e limite; **jamais 
 - Para testar o código **sem usar a chave e sem chamadas reais**, execute `VERIFICAR_PROGRAMA.bat`: ele executa `testes_visuais.py` e `testes_gemini.py`, usando respostas simuladas.
 
 O programa não sincroniza nem administra a chave em uma plataforma web. Esta integração é o backend Python da versão desktop, sem hospedagem adicional.
+
+
+## Correção da execução anterior que encontrou 0 cortes (18/11/2026)
+
+A execução que mostrou centenas de ocorrências **INCONCLUSIVO - OCR** e nenhum MP4 não demonstrou que o jogador não perdeu 30 BB. Demonstrou que a análise não obteve duas leituras válidas antes e depois da mão. Foi encontrado também um problema no detector automático: quando as quatro mesas exibiam cartas, apostas e saldos diferentes, a semelhança visual caía e o programa podia classificá-las como uma única mesa.
+
+**Correções deste pacote:** a detecção automática de 2, 3 ou 4 mesas agora considera divisórias estruturais verticais, mesmo com cartas diferentes; o OCR tolera espaços após vírgulas decimais; a leitura do saldo após a mão observa até seis quadros para acompanhar a estabilização do pote; e as ocorrências novas registram os instantes reais de leitura no arquivo JSON de revisão.
+
+O novo botão **REANALISAR MAOS INCONCLUSIVAS COM GEMINI** permite aproveitar candidatos com OCR inconclusivo sem revarrer toda a gravação. Ele consulta recortes de dois instantes antes e dois depois da mão. Só seleciona uma perda de 30 BB ou mais quando a leitura é coerente; não transforma casos duvidosos em MP4 confirmados. A IA pode errar, então confira os cortes antes de enviar ao instrutor.
+
+### Como recuperar a execução anterior
+
+**Se a janela antiga continua aberta** com os resultados, clique em **Salvar revisão** e guarde um arquivo JSON antes de fechá-la. Abra a versão atualizada, use **Abrir revisão**, escolha o JSON, configure uma chave Gemini nova e pressione **REANALISAR MAOS INCONCLUSIVAS COM GEMINI**. Com **Gerar MP4 automaticos** marcado, escolha a pasta em que os cortes recuperados serão gravados.
+
+**Se a execução anterior foi fechada sem salvar a revisão JSON**, os horários das mãos não foram guardados automaticamente. Será necessário analisar a gravação novamente na versão atualizada.
+
+O limite de 40 chamadas cobre no máximo 40 ocorrências por rodada. Você pode repetir a reanálise para outras pendências; **salve a revisão JSON após cada lote** para conservar o registro de quais já foram consultadas e evitar repetir chamadas. Consulte sua cota da API: um projeto pago pode gerar cobranças.
+
+O programa ainda depende de detectar corretamente as transições das mãos e pode deixar de reconhecer perdas em vídeos com mesas móveis ou imagens ilegíveis. Os testes adicionados usam respostas simuladas; não substituem a validação com a gravação original.
