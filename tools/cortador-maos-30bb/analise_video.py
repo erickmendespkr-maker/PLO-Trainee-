@@ -1453,7 +1453,8 @@ def recheck_candidates_with_poker_context(videos, config, candidates, threshold,
     checked = 0
     confirmed = 0
     for c in revised:
-        if c.excluded or c.confirmed or c.pot_verified or c.gemini_checked:
+        if (c.excluded or c.confirmed or c.pot_verified or
+                (c.gemini_checked and c.source == "Gemini - mesa inteira")):
             continue
         if not c.nick:
             c.reliability = "Nick do heroi ausente nesta revisao."
@@ -1786,7 +1787,7 @@ class GUI(tk.Tk):
                         command=self.refresh).pack(side="left", padx=8)
         review_ai = ttk.Frame(self)
         review_ai.pack(fill="x", padx=8)
-        ttk.Button(review_ai, text="REANALISAR MAOS INCONCLUSIVAS COM GEMINI",
+        ttk.Button(review_ai, text="REANALISAR POTES COM GEMINI",
                    command=self.recheck_inconclusive).pack(side="left", pady=3)
         ttk.Button(review_ai, text="Abrir ultima revisao",
                    command=self.load_latest_review).pack(side="left", padx=8)
@@ -2746,11 +2747,8 @@ class GUI(tk.Tk):
             if model not in ALLOWED_MODELS:
                 raise ValueError("Modelo Gemini nao permitido.")
             pending = sum(
-                not c.excluded and not c.confirmed and not c.auto_verified and
-                not c.gemini_checked and
-                ("INCONCLUSIVO - SALDO" in c.status or
-                 "POSSIVEL PERDA" in c.status or
-                 "INCONCLUSIVO - OCR" in c.status)
+                not c.excluded and not c.confirmed and not c.pot_verified and
+                not (c.gemini_checked and c.source == "Gemini - mesa inteira")
                 for c in self.candidates)
             if pending == 0:
                 messagebox.showinfo("Reanalise", "Nenhuma mao com OCR pendente.")
@@ -2760,10 +2758,12 @@ class GUI(tk.Tk):
             return
         if not messagebox.askyesno(
                 "Confirmar reanalise Gemini",
-                f"Reavaliar ate {min(pending, limit)} ocorrencias com Gemini?\\n"
-                "Sera enviada uma imagem com 4 recortes de saldo por consulta.\\n"
-                "O Google pode cobrar no plano pago.\\n"
-                "Nenhum video completo sera enviado.\\n\\n"
+                f"Examinar ate {min(pending, limit)} maos com Gemini?\n"
+                "Cada consulta envia um quadro geral, 8 imagens da mesa "
+                "e 2 HUDs ao longo da mao.\n"
+                "Rebuy para 100 BB nao significa ganho ou perda. "
+                "Exigimos aposta do heroi e pote para o adversario.\n"
+                "A API pode consumir cota ou gerar cobrancas.\n\n"
                 "Deseja continuar?"):
             return
         folder = None
@@ -2781,7 +2781,10 @@ class GUI(tk.Tk):
         def worker():
             try:
                 client = GeminiClient(key, model=model, max_requests=limit)
-                revised, inspected, recovered = recheck_candidates_with_gemini(
+                recheck = (recheck_candidates_with_poker_context
+                           if self.auto_rebuy.get()
+                           else recheck_candidates_with_gemini)
+                revised, inspected, recovered = recheck(
                     video_copy, config, current, threshold, client,
                     lambda info: self.after(0, lambda m=info: self.tell(m)))
                 def done():
@@ -2791,10 +2794,8 @@ class GUI(tk.Tk):
                     saved = self.autosave_review()
                     remaining = sum(
                         not c.excluded and not c.confirmed and
-                        not c.auto_verified and not c.gemini_checked and
-                        ("INCONCLUSIVO - SALDO" in c.status or
-                         "POSSIVEL PERDA" in c.status or
-                         "INCONCLUSIVO - OCR" in c.status)
+                        not c.pot_verified and not (
+                            c.gemini_checked and c.source == "Gemini - mesa inteira")
                         for c in revised)
                     self.tell(f"Reanalise: {inspected} ocorrencias verificadas, "
                               f"{recovered} perdas >= {threshold:g} BB; "
@@ -3073,12 +3074,17 @@ class GUI(tk.Tk):
                 writer = csv.writer(fh, delimiter=";")
                 writer.writerow(["inicio", "fim", "mesa", "layout", "nick",
                                  "saldo_antes", "saldo_depois", "perda_bb",
-                                 "leitura_consistente", "origem", "status", "confiabilidade"])
+                                 "leitura_consistente", "origem", "status",
+                                 "confiabilidade", "aporte_heroi_bb",
+                                 "vencedor_pote", "pote_confirmado", "rebuy_visto"])
                 for c in self.candidates:
                     writer.writerow([fmt(c.start), fmt(c.end), c.table, c.layout,
                                      c.nick, c.stack_before, c.stack_after,
                                      c.loss_bb, "SIM" if c.auto_verified else "NAO",
-                                     c.source, c.status, c.reliability])
+                                     c.source, c.status, c.reliability,
+                                     c.hero_invested_bb, c.winner_nick,
+                                     "SIM" if c.pot_verified else "NAO",
+                                     c.auto_rebuy_seen])
         except OSError as exc:
             messagebox.showerror("Relatorio", str(exc))
             return
@@ -3129,6 +3135,10 @@ class GUI(tk.Tk):
                              "inicio": fmt(c.start), "fim": fmt(c.end),
                              "saldo_antes": c.stack_before,
                              "saldo_depois": c.stack_after,
+                             "aporte_heroi_bb": c.hero_invested_bb,
+                             "vencedor_pote": c.winner_nick,
+                             "pote_confirmado": c.pot_verified,
+                             "rebuy_visto": c.auto_rebuy_seen,
                              "perda_bb": c.loss_bb, "status": status})
                 self.after(0, lambda j=i, st=status:
                            self.tell(f"MP4 {j}/{len(eligible)}: {st}"))
