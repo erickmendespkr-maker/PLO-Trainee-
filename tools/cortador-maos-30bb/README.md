@@ -9,8 +9,8 @@ Existe uma **primeira implementação de detecção visual + OCR**, ainda **não
 ### Fluxo implementado
 
 1. Selecionar **um vídeo completo** ou múltiplos MP4 consecutivos.
-2. Escolher a disposição das **quatro mesas**: `4 lado a lado` (padrão no vídeo do usuário; mesa 1 mais à esquerda, mesa 4 mais à direita) ou `2 por 2` (mesa 1 superior esquerda, 2 superior direita, 3 inferior esquerda, 4 inferior direita).
-3. Preencha **Nick do jogador** (por padrão, `~Pulgar~`). O programa já traz **as regiões das cartas, do saldo e do nome pré-calibradas a partir do print**. O jogador principal fica na parte inferior de todas as mesas e é o único com cartas visíveis no pré-flop. As regiões podem ser corrigidas com o mouse se o layout mudar.
+2. Escolher a **quantidade de mesas e disposição**: `Auto (ate 4, slots fixos)`, `1 mesa`, `2 lado a lado`, `3 lado a lado`, `4 lado a lado` ou `2 por 2`. Uma mesma sessão pode passar de 4 para 3, 2 ou 1 mesa.
+3. Preencha **Nick do jogador** (por padrão, `~Pulgar~`). O programa já traz **as regiões das cartas, do saldo e do nome pré-calibradas a partir do print**, adaptando as coordenadas das janelas quando o usuário seleciona 1, 2 ou 3 colunas. O jogador principal fica na parte inferior de todas as mesas e é o único com cartas visíveis no pré-flop. As regiões podem ser corrigidas com o mouse se o layout mudar.
 4. Em **Marcar região → nick** é possível ajustar a área roxa sobre o nome do jogador, se necessário. O botão **Verificar nick no frame** usa Tesseract OCR para testar se o nome foi reconhecido neste quadro. Não precisa mais registrar quadro sem cartas: a detecção usa a presença das cartas claras na região fixa do herói. O valor de 1 BB começa em **1**, porque a interface do print já exibe o stack em BB.
 5. O analisador passa pelo **vídeo inteiro** em ordem, amostrando 1 quadro por segundo por meio de FFmpeg, e tenta reconhecer transições **sem cartas → cartas visíveis → sem cartas** em cada mesa separadamente.
 6. Usa Tesseract OCR para estimar o saldo **antes e depois** da mão; seleciona prováveis quedas líquidas **de 30 BB ou mais (incluindo exatamente 30 BB)**, além das mãos com leitura inconclusiva.
@@ -96,3 +96,19 @@ Se o retângulo **azul** não estiver exatamente sobre o **número do saldo em B
 A opção **OCR rápido** vem marcada por padrão. Ela conserva 1 quadro por segundo para detectar início/fim da mão, mas reduz os testes OCR de saldo de até três imagens por lado com duas passagens de leitura para até duas imagens por lado com uma passagem quando legível. Em caso de leitura totalmente falha, tenta outra imagem com o método detalhado. Desmarque **OCR rápido** para usar mais leituras nas mãos difíceis.
 
 O OCR rápido pode perder precisão; antes de exportar os MP4, confira as mãos encontradas e seus saldos. O desempenho real depende do tamanho/resolução da gravação e do PC; não há promessa de ganho percentual específico. Não é necessário reinstalar as dependências, apenas atualizar os scripts do ZIP.
+
+## Novidade: mesas variáveis na gravação
+
+**Não existe mais exigência de quatro mesas em todos os vídeos.** O modo inicial é **Auto (ate 4, slots fixos)**. Ele procura mesas visíveis em até quatro posições fixas, ignora janelas vazias e evita tratar o desaparecimento de uma janela como perda financeira. Você pode conferir a detecção com **Conferir mesas no frame**.
+
+- **Vídeo já começa com três mesas expandidas para preencher a tela:** escolha **3 lado a lado** em `Disposicao` antes de iniciar.
+- **Quatro mesas e depois três sem reorganizar as posições** (uma janela some e fica um espaço vazio): mantenha **Auto (ate 4, slots fixos)**. O detector de presença tenta ignorar o espaço vazio.
+- **Quatro mesas e, em determinado instante, as três restantes são redimensionadas para preencher a tela:** navegue até o instante da reorganização no campo **Ir ao tempo global**, escolha **3 lado a lado** em **Mudanca de mesas no tempo acima** e pressione **Registrar mudanca**. Repita se depois mudar para duas ou uma. A linha do tempo será salva na configuração e na revisão.
+- **Vídeo com uma ou duas mesas já no início:** escolha **1 mesa** ou **2 lado a lado**, conforme a imagem.
+- O botão **Conferir mesas no frame** informa quantos slots parecem ter mesas naquele quadro, para facilitar a verificação.
+
+O analisador acompanha a disposição informada a cada segundo. Se uma mesa desaparecer ou o layout mudar durante uma mão, o trecho em aberto fica **inconclusivo** para revisão, em vez de ser lançado como perda de 30 BB. As mãos conferidas são exportadas com o recorte do layout identificado naquele trecho (1, 2, 3 ou 4 colunas). A configuração de pré-calibração do print é transformada horizontalmente; confira as regiões de cartas e saldo em cada mudança de tamanho.
+
+**Limite importante:** a detecção automática de ausência de mesa usa uma heurística visual simples e não determina com segurança quando uma janela foi redimensionada ou movida para outra posição. Para reorganizações, registre o tempo da mudança. A assinatura pode falhar com temas de mesa diferentes, overlays, janelas sobrepostas ou área de trabalho complexa; use a conferência no frame. A identificação de perdas também depende do OCR e continua experimental, sem garantia de recuperar todas as mãos relevantes.
+
+O campo do limite permanece **30 BB inclusivos**: qualquer stack inicial (por exemplo, 75, 100, 150 ou 200 BB) é aceito. Só conta a queda líquida do stack antes/depois, não o valor apostado.
