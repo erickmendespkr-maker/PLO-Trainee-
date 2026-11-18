@@ -78,10 +78,10 @@ class VisualTests(unittest.TestCase):
                                        strict=False))
 
     def test_verificacao_menos_estrita_em_layout_explicito(self):
-        frame = Image.new("L", (960, 540), 25)
-        # Tema de mesa diferente: sem contraste entre felt e barra superior.
-        ImageDraw.Draw(frame).rectangle([0, 0, 239, 539], fill=36)
-        ImageDraw.Draw(frame).rectangle([10, 100, 220, 440], fill=44)
+        frame = Image.new("L", (960, 540), 36)
+        # Tema diferente: muitas bordas, mas mesmo brilho medio em toda altura.
+        for x in range(0, 240, 12):
+            ImageDraw.Draw(frame).rectangle([x, 0, x + 5, 539], fill=76)
         bounds = layout_bounds("horizontal4", 1)
         self.assertFalse(table_visible(frame, bounds, strict=True))
         self.assertTrue(table_visible(frame, bounds, strict=False))
