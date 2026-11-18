@@ -2,7 +2,7 @@
 """Testes basicos para algoritmos visuais independentes de video real."""
 import unittest
 from PIL import Image, ImageDraw
-from analise_video import parse_stack, changed_fraction, HandState
+from analise_video import parse_stack, changed_fraction, HandState, bright_fraction, screenshot_profile
 
 
 class VisualTests(unittest.TestCase):
@@ -31,6 +31,26 @@ class VisualTests(unittest.TestCase):
         self.assertEqual(GUI.infer_table(dummy, 239, 200), 1)
         self.assertEqual(GUI.infer_table(dummy, 240, 200), 2)
         self.assertEqual(GUI.infer_table(dummy, 959, 539), 4)
+
+    def test_perfil_hero_em_quatro_mesas(self):
+        perfil = screenshot_profile()
+        self.assertEqual(len(perfil), 4)
+        self.assertEqual(perfil["1"]["bb"], "1")
+        self.assertEqual(perfil["4"]["hole"][0] - perfil["1"]["hole"][0], 720)
+        self.assertEqual(perfil["3"]["detector"], "bright")
+        for table in range(1, 5):
+            hole = perfil[str(table)]["hole"]
+            stack = perfil[str(table)]["stack"]
+            self.assertLess(hole[0], hole[2])
+            self.assertLess(hole[2], 961)
+            self.assertLess(stack[3], 541)
+
+    def test_detectar_cartas_sem_referencia_manual(self):
+        perfil = screenshot_profile()["1"]
+        image = Image.new("L", (960, 540), 40)
+        self.assertLess(bright_fraction(image, perfil["hole"]), .02)
+        ImageDraw.Draw(image).rectangle(perfil["hole"], fill=245)
+        self.assertGreater(bright_fraction(image, perfil["hole"]), .95)
 
     def test_estado_da_mao(self):
         # Este teste verifica limites sem necessidade de OCR real.
