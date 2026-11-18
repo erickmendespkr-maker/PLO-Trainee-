@@ -1604,7 +1604,7 @@ class GUI(tk.Tk):
         self.grid = ttk.Treeview(table_frame, columns=columns, show="headings", height=4)
         for col, label, width in [
             ("inicio", "Inicio", 92), ("fim", "Fim", 92), ("mesa", "Mesa", 55),
-            ("perda", "Perda BB estimada", 130), ("nick_status", "Nick OCR", 105),
+            ("perda", "Aporte possivel / Perda BB", 160), ("nick_status", "Nick OCR", 105),
             ("status", "Resultado OCR / IA", 300), ("conferido", "Conferido", 90)]:
             self.grid.heading(col, text=label)
             self.grid.column(col, width=width)
@@ -1619,7 +1619,7 @@ class GUI(tk.Tk):
         ttk.Label(edit, text="Fim:").pack(side="left")
         self.end_edit = tk.StringVar()
         ttk.Entry(edit, textvariable=self.end_edit, width=10).pack(side="left", padx=3)
-        ttk.Label(edit, text="Perda (BB):").pack(side="left")
+        ttk.Label(edit, text="Perda liquida (BB):").pack(side="left")
         self.loss_edit = tk.StringVar()
         ttk.Entry(edit, textvariable=self.loss_edit, width=9).pack(side="left", padx=3)
         ttk.Label(edit, text="Pote:").pack(side="left", padx=4)
@@ -2573,7 +2573,9 @@ class GUI(tk.Tk):
                 continue
             self.grid.insert("", "end", iid=str(i), values=(
                 fmt(c.start), fmt(c.end), c.table,
-                f"{c.loss_bb:.2f}" if c.loss_bb is not None else "?",
+                (f"PERDA {c.loss_bb:.1f}" if c.confirmed else
+                 (f"APORTE ~{c.hero_invested_bb:.1f}" if
+                  c.hero_invested_bb is not None else "Sem leitura")),
                 "OK" if c.nick_verified else "Revisar",
                 c.status,
                 "MANUAL" if c.confirmed else ("AUTO" if c.auto_verified else "Revisar")))
@@ -2590,6 +2592,8 @@ class GUI(tk.Tk):
         self.start_edit.set(fmt(c.start))
         self.end_edit.set(fmt(c.end))
         self.loss_edit.set("" if c.loss_bb is None else str(c.loss_bb))
+        self.pot_choice.set(
+            "Adversario levou tudo" if c.confirmed else "Nao sei")
 
     def preview_edge(self, field):
         idx = self.selected()
@@ -2601,30 +2605,47 @@ class GUI(tk.Tk):
         self.show_frame()
 
     def confirm(self):
+        """So o usuario pode comprovar a perda sem um historico de maos."""
         idx = self.selected()
         if idx is None:
             return
         try:
             c = self.candidates[idx]
             st, en = parse_time(self.start_edit.get()), parse_time(self.end_edit.get())
+            threshold = float(self.threshold.get().replace(",", "."))
             loss = float(self.loss_edit.get().replace(",", "."))
-            if not (0 <= st < en <= self.total) or loss <= 0:
-                raise ValueError("Confira inicio, fim e perda.")
-            mode_start = self.effective_layout_at(st + 0.01)
-            mode_end = self.effective_layout_at(max(st + 0.01, en - 0.01))
-            if mode_start != mode_end:
+            choice = self.pot_choice.get()
+            if not offline_review_decision(loss, threshold,
+                                           "oponente_tudo" if choice == "Adversario levou tudo"
+                                           else "hero_parte_liquido_conferido"
+                                           if choice == "Heroi ganhou parte" else "incerto"):
                 raise ValueError(
-                    "A mao atravessa uma mudanca de disposicao. "
-                    "Ajuste inicio/fim ou divida manualmente o trecho.")
+                    f"Para exportar, confirme que perdeu pelo menos {threshold:g} BB "
+                    "LIQUIDOS e selecione um destino do pote compativel. "
+                    "A estimativa de aporte nao e perda confirmada.")
+            if not (0 <= st < en <= self.total):
+                raise ValueError("Confira inicio e fim da mao.")
+            mode_start = self.effective_layout_at(st + .01)
+            mode_end = self.effective_layout_at(max(st + .01, en - .01))
+            if mode_start != mode_end:
+                raise ValueError("Mao cruza mudanca de mesas. Ajuste os tempos.")
             if c.table > layout_count(mode_start):
-                raise ValueError("A mesa selecionada nao existe nesse instante.")
+                raise ValueError("Mesa nao existe no trecho selecionado.")
             c.layout = "horizontal4" if mode_start == "auto4" else mode_start
             c.start, c.end, c.loss_bb = st, en, loss
-            c.status = "VALOR E LIMITES CONFERIDOS"
+            c.status = "PERDA LIQUIDA CONFERIDA MANUALMENTE"
             c.confirmed = True
+            c.auto_verified = False
+            c.pot_verified = True
+            c.source = "Revisao manual offline"
+            c.reliability = "Usuario conferiu o desfecho no video; resultado e BB fornecidos manualmente."
             self.refresh()
-        except Exception as exc:
-            messagebox.showerror("Conferencia", str(exc))
+            self.autosave_review()
+            self.tell(f"Perda confirmada manualmente: {loss:g} BB, mesa {c.table}. "
+                      "Use EXPORTAR PERDAS.")
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("Conferencia da mao", str(exc))
+
 
     def exclude(self):
         idx = self.selected()
@@ -2632,7 +2653,7 @@ class GUI(tk.Tk):
             self.candidates[idx].excluded = True
             self.refresh()
 
-    def export_review_candidates(self):
+    def export_review_candidates(self, confirm=True):
         """Entrega cortes reais de todas as maos detectadas, sem depender de API.
 
         Estes clips NAO sao classificados como perdas confirmadas. Sao uma
@@ -2643,7 +2664,7 @@ class GUI(tk.Tk):
         if not self.videos or not self.candidates:
             messagebox.showwarning(
                 "Revisao offline",
-                "Adicione um video e execute ANALISAR VIDEO(S) sem Gemini, "
+                "Adicione um video e execute ANALISAR VIDEO(S) offline, "
                 "ou clique Abrir ultima revisao para aproveitar os horarios.")
             return
         candidates = [c for c in self.candidates
@@ -2653,13 +2674,16 @@ class GUI(tk.Tk):
             messagebox.showwarning("Revisao offline",
                                    "Nao ha maos candidatas para exportar.")
             return
-        if not messagebox.askyesno(
+        candidates.sort(key=lambda c: (
+            c.hero_invested_bb is None,
+            -(c.hero_invested_bb or 0),
+            c.start))
+        if confirm and not messagebox.askyesno(
                 "Exportar cortes para revisao",
                 f"Gerar {len(candidates)} MP4 separados para revisao?\n\n"
                 "Todos serao marcados como PENDENTES. "
                 "Eles NAO representam perdas comprovadas de 30 BB.\n\n"
-                "Esta opcao funciona 100% localmente, sem Gemini, "
-                "e usa a pasta padrao de MP4.\n\n"
+                "A triagem e 100% local, sem API e sem rede.\n\n"
                 "Deseja continuar?"):
             return
         try:
@@ -2695,6 +2719,7 @@ class GUI(tk.Tk):
                     "arquivo": name, "mesa": c.table, "layout": c.layout,
                     "inicio": fmt(c.start), "fim": fmt(c.end),
                     "nick": c.nick, "perda_bb": "",
+                    "aporte_estimado_bb": c.hero_invested_bb,
                     "classificacao": "PENDENTE - NAO E PERDA CONFIRMADA",
                     "origem": c.source, "estado_analise": c.status,
                     "resultado_exportacao": status
