@@ -1113,6 +1113,9 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
             result = gemini_client.read_pair(
                 images_before, images_after, bb=bb, max_stack_bb=MAX_STACK_BB,
                 expected_nick=hero_nick.strip() or None)
+            if gemini_client.last_pair_nick_verified:
+                nick_verified[(scan_mode, table)] = True
+                progress(f"Gemini: nick {hero_nick} visto em 4 quadros da mesa {table}.")
             gemini_errors = 0
             if result is not None:
                 progress(f"Gemini: mesa {table}, mao em {fmt(data['start'])}, "
@@ -1378,6 +1381,8 @@ def recheck_candidates_with_gemini(videos, config, candidates, threshold,
             c.stack_after = old_post
             c.loss_bb = round(loss, 2)
             c.source = "Gemini"
+            if getattr(client, "last_pair_nick_verified", False):
+                c.nick_verified = True
             c.reliability = "Gemini reavaliou 2 quadros antes e 2 depois."
             if loss_reaches_threshold(loss, threshold):
                 c.auto_verified = True
