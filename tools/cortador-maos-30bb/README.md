@@ -139,3 +139,22 @@ Se quiser validar o programa sem conhecimentos de programação, execute **VERIF
 
 **Proteção de mãos nas transições:** o scanner não encerra a mão por um único frame ambíguo. Ele tolera breves interrupções (até alguns frames) e, se a mudança persistir ou for confirmada, marca a mão interrompida como inconclusiva em vez de inventar uma perda. Assim, após uma mudança de 4 para 3 mesas, o trecho suspeito deve ser revisado antes de exportar.
 
+
+## Correção: selecionar perdas de verdade e gerar MP4 automaticamente
+
+Na versão anterior, o programa misturava centenas de casos **INCONCLUSIVO - OCR** com perdas reais, e o botão **EXPORTAR CONFERIDAS** exigia validar manualmente cada mão antes de gerar qualquer arquivo. Isso não atendia ao fluxo de receber os cortes automaticamente. O OCR ainda podia concatenar números diferentes (por exemplo, interpretar um saldo como **154020 BB**) e criar perdas impossíveis.
+
+A nova versão modifica o processo:
+
+1. **Gerar MP4 automaticos** vem marcado por padrão. Ao clicar em **ANALISAR VIDEO(S)**, escolha a pasta de saída. O programa analisa a gravação, identifica somente **perdas líquidas de pelo menos 30 BB** e inicia a exportação dos MP4 automaticamente ao final.
+2. **Só são exportadas automaticamente perdas com leituras OCR repetidas e coerentes**, obtidas antes e depois da mão. O valor inicial do saldo é variável (100, 150, 200 BB ou outro), sem exigir buy-in fixo.
+3. A caixa **Mostrar OCR inconclusivo** vem desmarcada. Na lista principal, as mãos com ambos os saldos ilegíveis ficam ocultas; elas continuam registradas no relatório, sem serem confundidas com perdas.
+4. O programa gera **indice_das_maos.csv** com os vídeos exportados, os saldos e as perdas estimadas, mais **relatorio_analise.csv** com os casos não confirmados e as falhas de leitura.
+5. Se nenhuma perda passar pelo filtro de qualidade, o programa informa **zero cortes exportáveis** e orienta a corrigir o **retângulo azul**. Ele não gera vídeos de mãos incertas como se fossem perdas comprovadas.
+6. **EXPORTAR PERDAS** continua disponível para salvar novamente as perdas identificadas ou mãos conferidas manualmente. A confirmação manual é opcional para a exportação das perdas com OCR consistente.
+
+**Antes de reprocessar um vídeo de horas:** clique em **Testar saldo** com o frame carregado para conferir o valor exibido na tela. O programa também faz uma pré-verificação simples das caixas azuis no quadro inicial e alerta se nenhuma leitura for válida. Uma caixa azul posicionada sobre o nick, cartas ou apostas continuará provocando falhas, mesmo com a exportação automatizada.
+
+**Proteções:** valores de saldo acima de **5.000 BB** são tratados como suspeitos e rejeitados pelo detector automático para evitar erros grosseiros do OCR; isso NÃO é uma referência de stack inicial (100 BB jamais é assumido). É um limite de segurança de leitura, sujeito a ajuste futuro para jogos com stacks excepcionalmente profundos. O critério de perda continua **30 BB inclusivos**, independentemente do saldo com que o jogador começou a mão.
+
+**Estado da validação:** código atualizado e testes novos adicionados, porém os testes ainda não foram executados no Windows do usuário nem contra o vídeo completo real. OCR pode produzir falso positivo mesmo com duas leituras semelhantes. Revise os MP4 gerados antes de enviar ao instrutor. Para diagnosticar erros, envie o arquivo \`relatorio_analise.csv\` e uma captura onde as caixas azuis apareçam sobre os saldos.
