@@ -286,7 +286,7 @@ class Editor(tk.Toplevel):
         self.geometry("390x350")
         self.resizable(False, False)
         current = root.position.get()
-        data = clip or Clip(max(0, current - 60), min(root.total, current + 15), 0, 31, "Mão para revisão")
+        data = clip or Clip(max(0, current - 60), min(root.total, current + 15), getattr(root, "last_table", 1), 31, "Mão para revisão")
         self.vars = {
             "start": tk.StringVar(value=fmt(data.start)),
             "end": tk.StringVar(value=fmt(data.end)),
@@ -303,8 +303,9 @@ class Editor(tk.Toplevel):
             ttk.Label(self, text=label).grid(row=row * 2, column=0, sticky="w", padx=12, pady=(8, 0))
             ttk.Entry(self, textvariable=self.vars[field], width=40).grid(
                 row=row * 2 + 1, column=0, sticky="ew", padx=12)
-        ttk.Checkbutton(self, text="Perda e limites conferidos", variable=(self.confirmed := tk.BooleanVar(
-            value=data.confirmed))).grid(row=10, column=0, sticky="w", padx=12, pady=5)
+        self.confirmed = tk.BooleanVar(value=data.confirmed)
+        ttk.Checkbutton(self, text="Perda e limites conferidos", variable=self.confirmed).grid(
+            row=10, column=0, sticky="w", padx=12, pady=5)
         ttk.Button(self, text="Salvar mão", command=self.save).grid(row=11, column=0, pady=10)
         self.grab_set()
 
@@ -594,8 +595,10 @@ class App(tk.Tk):
                     start = (datetime.strptime(hand.timestamp, TIME_FMT) - video_start).total_seconds() + offset
                     if hand.loss_bb <= min_bb or not (0 <= start < self.total):
                         continue
-                    next_start = ((datetime.strptime(ordered[i + 1].timestamp, TIME_FMT) - video_start).total_seconds() + offset)
-                                  if i + 1 < len(ordered) else start + 80)
+                    if i + 1 < len(ordered):
+                        next_start = (datetime.strptime(ordered[i + 1].timestamp, TIME_FMT) - video_start).total_seconds() + offset
+                    else:
+                        next_start = start + 80
                     # A próxima mão na mesma mesa delimita a anterior, com duração máxima conservadora.
                     end = min(self.total, max(start + 10, min(next_start, start + 150)))
                     table = self.mapping.get(table_name, 0)
