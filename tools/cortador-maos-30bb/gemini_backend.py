@@ -172,6 +172,24 @@ def _image_png(image: Image.Image):
     return base64.b64encode(stream.getvalue()).decode("ascii")
 
 
+def _context_jpeg(image: Image.Image):
+    """Reduz trafego de muitas telas, preservando texto nas mesas e HUD."""
+    pic = image.convert("RGB")
+    width, height = pic.size
+    if width < 460 and height < 420:
+        factor = min(3, max(1, 720 // max(width, 1)))
+        size = (width * factor, height * factor)
+    else:
+        factor = min(1.0, 1150 / max(width, 1), 1350 / max(height, 1))
+        size = (max(1, round(width * factor)), max(1, round(height * factor)))
+    if size != pic.size:
+        pic = pic.resize(size, Image.Resampling.LANCZOS)
+    stream = io.BytesIO()
+    pic.save(stream, format="JPEG", quality=88, optimize=True)
+    return {"mime_type": "image/jpeg",
+            "data": base64.b64encode(stream.getvalue()).decode("ascii")}
+
+
 def _parse_response(message):
     if not isinstance(message, dict):
         return None
@@ -340,15 +358,15 @@ class GeminiClient:
         )
         parts = [{"text": prompt}, {"text": "VISÃO GERAL DA TELA DA GRAVACAO:"},
                  {"inline_data": {"mime_type": "image/png",
-                                  "data": _image_png(overview)}}]
+                                  "data": _context_jpeg(overview)["data"]}}]
         for i, image in enumerate(table_frames):
             parts.append({"text": f"MESA COMPLETA, MOMENTO {i+1}/8 EM ORDEM:"})
             parts.append({"inline_data": {
-                "mime_type": "image/png", "data": _image_png(image)}})
+                "mime_type": "image/jpeg", "data": _context_jpeg(image)["data"]}})
         for i, image in enumerate(hud_frames):
             parts.append({"text": f"HUD DO HEROI, REFERENCIA {i+1}/2:"})
             parts.append({"inline_data": {
-                "mime_type": "image/png", "data": _image_png(image)}})
+                "mime_type": "image/jpeg", "data": _context_jpeg(image)["data"]}})
         payload = self._request(parts, max_output=780)
         return validate_pot_result(payload, expected_nick, threshold=threshold)
 
