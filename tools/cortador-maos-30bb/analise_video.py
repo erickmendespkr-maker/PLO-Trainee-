@@ -52,6 +52,23 @@ def screenshot_profile():
     return out
 
 
+def replicate_horizontal_rect(rect, source_table):
+    """Repete um retangulo de uma mesa em quatro colunas de igual largura."""
+    rect = roi_tuple(rect)
+    if source_table not in TABLES:
+        raise ValueError("Mesa invalida.")
+    width = W // 4
+    offset = (source_table - 1) * width
+    relative = (rect[0] - offset, rect[1], rect[2] - offset, rect[3])
+    if relative[0] < 0 or relative[2] > width:
+        raise ValueError("Retangulo precisa ficar dentro de uma unica mesa.")
+    return {
+        t: [relative[0] + (t - 1) * width, relative[1],
+            relative[2] + (t - 1) * width, relative[3]]
+        for t in TABLES
+    }
+
+
 def bright_fraction(frame, rect, cutoff=165):
     """Proporcao de pixels brilhantes na area das cartas do jogador."""
     region = frame.crop(roi_tuple(rect)).convert("L")
@@ -676,12 +693,8 @@ class GUI(tk.Tk):
         if key == "stack" and self.layout_id() == "horizontal4":
             # O saldo do hero ocupa a mesma posicao relativa nas quatro mesas.
             # Replicar o retangulo impede que o preset errado das outras mesas persista.
-            dx = (table - 1) * (W // 4)
-            relative = [rect[0] - dx, rect[1], rect[2] - dx, rect[3]]
-            for destination in TABLES:
-                x = (destination - 1) * (W // 4)
-                self.cfg[str(destination)]["stack"] = [
-                    relative[0] + x, relative[1], relative[2] + x, relative[3]]
+            for destination, area in replicate_horizontal_rect(rect, table).items():
+                self.cfg[str(destination)]["stack"] = area
             self.tell("Saldo corrigido nas quatro mesas. Clique Testar saldo e salve a configuracao.")
         else:
             self.tell(f"Mesa {table}: regiao {key} ajustada.")
