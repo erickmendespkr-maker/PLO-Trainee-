@@ -1434,6 +1434,106 @@ def recheck_candidates_with_gemini(videos, config, candidates, threshold,
     return copies, checked, positives
 
 
+def recheck_candidates_with_poker_context(videos, config, candidates, threshold,
+                                          client, on_progress=lambda msg: None):
+    """A IA acompanha A MESA INTEIRA em varios momentos da mao encerrada.
+
+    O saldo pos-rebuy nao entra na formula. So aprova:
+      (1) contribuicao visivelmente mensurada do heroi >= limiar;
+      (2) pote ganho por outro jogador;
+      (3) nenhum side pot ou parte do pote recuperado.
+    """
+    if not videos:
+        return [], 0, 0
+    duration = sum(video.duration for video in videos)
+    ffmpeg = resource("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("FFmpeg nao encontrado.")
+    revised = [Candidate(**asdict(c)) for c in candidates]
+    checked = 0
+    confirmed = 0
+    for c in revised:
+        if c.excluded or c.confirmed or c.pot_verified or c.gemini_checked:
+            continue
+        if not c.nick:
+            c.reliability = "Nick do heroi ausente nesta revisao."
+            continue
+        if client.disabled_reason or client.used >= client.limit:
+            break
+        try:
+            mode = layout_key(c.layout)
+            if mode == "auto4" or not 1 <= c.table <= layout_count(mode):
+                c.reliability = "Disposicao da mesa indefinida no video."
+                continue
+            hand_start = (
+                c.hand_start if c.hand_start is not None
+                else max(0.0, c.start + 5))
+            hand_end = (
+                c.hand_end if c.hand_end is not None
+                else min(duration - .05, c.end - 5))
+            moments = table_context_timestamps(hand_start, hand_end, duration)
+            if moments is None:
+                c.reliability = "Mao curta ou limite de inicio/fim inseguro."
+                continue
+            table_box = layout_bounds(mode, c.table)
+            hud_box = layout_roi(config[str(c.table)], c.table, mode, "hero_hud")
+            if hud_box is None:
+                c.reliability = "HUD inteiro indisponivel nesta disposicao."
+                continue
+
+            # Um quadro panoramico ajuda a reconhecer a mesa no video de
+            # multiplas janelas. Os outros mostram as streets e o pote.
+            overview = native_stack_crop(
+                videos, moments[3], (0, 0, W, H), ffmpeg)
+            table_frames = [
+                native_stack_crop(videos, t, table_box, ffmpeg) for t in moments]
+            hud_frames = [
+                native_stack_crop(videos, t, hud_box, ffmpeg)
+                for t in (moments[0], moments[-1])]
+            result = client.read_hand_context(
+                overview, table_frames, hud_frames,
+                expected_nick=c.nick, threshold=threshold)
+            c.gemini_checked = True
+            checked += 1
+            c.source = "Gemini - mesa inteira"
+            c.reliability = (
+                str(result.get("reason") or "Resultado inconclusivo")[:200]
+                + (" | " + str(result.get("evidence"))[:250]
+                   if result.get("evidence") else ""))
+            c.auto_rebuy_seen = result.get("auto_rebuy_seen")
+            if result.get("hero_invested_bb") is not None:
+                c.hero_invested_bb = result["hero_invested_bb"]
+            if result.get("pot_winner"):
+                c.winner_nick = result["pot_winner"]
+
+            if result.get("verified") and loss_reaches_threshold(
+                    result.get("loss_bb"), threshold):
+                c.pot_verified = True
+                c.auto_verified = True
+                c.nick_verified = True
+                c.loss_bb = result["loss_bb"]
+                c.status = "PERDA >= LIMITE - POTE AO ADVERSARIO (IA)"
+                confirmed += 1
+            else:
+                # Rebuy ou saldo igual apos a mao nao define o resultado.
+                c.pot_verified = False
+                c.auto_verified = False
+                c.loss_bb = None
+                c.status = "INCONCLUSIVO - POTE/CONTRIBUICAO NAO CONFIRMADOS"
+            on_progress(f"Contexto: {checked} maos revisadas, {confirmed} "
+                        f"perdas demonstradas de >= {threshold:g} BB; "
+                        f"{client.used}/{client.limit} consultas.")
+        except GeminiLimitError:
+            break
+        except (GeminiError, OSError, ValueError, RuntimeError) as exc:
+            # Não marcar como consultado quando uma falha impediu avaliação.
+            c.reliability = "Contexto da mesa indisponivel: " + str(exc)[:150]
+            on_progress("Falha de leitura contextual; esta mao ficou pendente.")
+            if client.disabled_reason:
+                break
+    return revised, checked, confirmed
+
+
 DEFAULT_MARKINGS_FILE = "marcacoes_padrao.json"
 
 
