@@ -824,8 +824,10 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
         return native_stack_crop(videos, global_second, roi, ffmpeg)
 
     ai_alerts = set()
+    gemini_errors = 0
 
     def read_with_gemini(data, table, scan_mode, bb):
+        nonlocal gemini_errors
         if gemini_client is None or gemini_client.disabled_reason:
             return None
 
@@ -846,6 +848,7 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
             images_after = [read_native_at(at, table, scan_mode) for at in after]
             result = gemini_client.read_pair(
                 images_before, images_after, bb=bb, max_stack_bb=MAX_STACK_BB)
+            gemini_errors = 0
             if result is not None:
                 progress(f"Gemini: mesa {table}, mao em {fmt(data['start'])}, "
                          "quatro saldos coerentes.")
@@ -855,8 +858,15 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                 progress(f"Gemini suspenso: {exc}")
                 ai_alerts.add("limit")
         except (GeminiError, OSError, ValueError, RuntimeError) as exc:
-            if "error" not in ai_alerts:
-                progress(f"Gemini indisponivel em um trecho: {exc}")
+            gemini_errors += 1
+            if gemini_errors >= 3:
+                gemini_client.disabled_reason = (
+                    "Gemini interrompido apos 3 falhas seguidas. "
+                    "Verifique conexao, recortes ou modelo.")
+            if "error" not in ai_alerts or gemini_errors >= 3:
+                progress(f"Gemini indisponivel: {exc}"
+                         + (" (desativado nesta analise)" if gemini_errors >= 3
+                            else ""))
                 ai_alerts.add("error")
         return None
 
