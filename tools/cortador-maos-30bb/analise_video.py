@@ -349,6 +349,107 @@ def changed_fraction(frame, reference, rect, pixel_threshold=32):
     return ImageStat.Stat(mask).mean[0] / 255.0
 
 
+def native_stack_crop(videos, second, rect, ffmpeg):
+    """Extrai a regiao do saldo do MP4 original, sem reduzir para 960x540.
+
+    'rect' usa coordenadas normalizadas 960x540 e deve corresponder ao
+    layout da mesa naquele instante.
+    """
+    video, local = file_at(videos, max(0.0, second))
+    x1, y1, x2, y2 = roi_tuple(rect)
+    x = max(0, round(x1 * video.width / W))
+    y = max(0, round(y1 * video.height / H))
+    right = min(video.width, round(x2 * video.width / W))
+    bottom = min(video.height, round(y2 * video.height / H))
+    width, height = right - x, bottom - y
+    if width < 4 or height < 4:
+        raise ValueError("Area do saldo muito pequena para OCR nativo.")
+    command = [ffmpeg, "-hide_banner", "-loglevel", "error",
+               "-ss", f"{local:.3f}", "-i", video.path, "-frames:v", "1",
+               "-vf", f"crop={width}:{height}:{x}:{y}",
+               "-f", "image2pipe", "-vcodec", "png", "pipe:1"]
+    proc = subprocess.run(
+        command, capture_output=True, timeout=40,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    if proc.returncode != 0 or not proc.stdout:
+        details = proc.stderr.decode("utf-8", "replace")[-350:]
+        raise RuntimeError("Nao foi possivel extrair saldo nativo: " + details)
+    with Image.open(io.BytesIO(proc.stdout)) as img:
+        return img.convert("RGB").copy()
+
+
+def stack_ocr_variants(img):
+    """Preserva os detalhes de fontes pequenas e gera polaridades diferentes."""
+    if img.width < 4 or img.height < 4:
+        return []
+    factor = max(4, min(10, round(520 / max(img.width, 1))))
+    enlarged = img.convert("L").resize(
+        (img.width * factor, img.height * factor), Image.Resampling.LANCZOS)
+    base = ImageOps.autocontrast(enlarged, cutoff=1)
+    base = ImageOps.expand(base, border=26, fill=255)
+    # Evite destruir a antialiasing fina dos digitos antes de OCR.
+    high = ImageEnhance.Contrast(base).enhance(2.2)
+    return [
+        ("cinza", base),
+        ("inverso", ImageOps.invert(base)),
+        ("alto_contraste", high),
+        ("binario_claro", high.point(lambda p: 255 if p >= 140 else 0)),
+        ("binario_escuro", ImageOps.invert(high).point(
+            lambda p: 255 if p >= 140 else 0)),
+    ]
+
+
+def read_stack_diagnostics(img, tesseract, quick=False):
+    """Retorna numero conservador e leituras brutas para explicar falhas."""
+    variants = stack_ocr_variants(img)
+    if not variants:
+        return None, []
+    # No modo rapido, a escala de cinza com bordas vem antes da binarizacao.
+    jobs = [(variants[0], 7), (variants[1], 7)]
+    if not quick:
+        jobs.extend([((name, image), psm)
+                     for (name, image) in variants[2:] for psm in (7, 13)])
+    results = []
+    parsed = []
+    with tempfile.TemporaryDirectory(prefix="plo_stack_") as folder:
+        for index, ((name, prepared), psm) in enumerate(jobs):
+            filepath = Path(folder) / f"ocr_{index}.png"
+            prepared.save(filepath)
+            cmd = [tesseract, str(filepath), "stdout", "--psm", str(psm),
+                   "-c", "tessedit_char_whitelist=0123456789,."]
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True,
+                                      errors="replace", timeout=20,
+                                      creationflags=getattr(
+                                          subprocess, "CREATE_NO_WINDOW", 0))
+                raw = proc.stdout.strip() if proc.returncode == 0 else ""
+            except (OSError, subprocess.SubprocessError) as exc:
+                raw = f"ERRO: {exc}"
+            amount = parse_stack(raw)
+            results.append((name, psm, raw, amount))
+            if amount is not None:
+                parsed.append(amount)
+                if quick:
+                    return amount, results
+    if not parsed:
+        return None, results
+    # Diferentes algoritmos na MESMA imagem so confirmam formato, nao
+    # confirmam a perda: essa confirmacao exige frames diferentes.
+    choices = []
+    for value in parsed:
+        matches = sum(abs(value - other) <= max(1., value * .01)
+                      for other in parsed)
+        choices.append((matches, value))
+    choices.sort(key=lambda item: item[0], reverse=True)
+    votes, best = choices[0]
+    if votes >= 2:
+        return statistics.median(
+            [value for value in parsed if abs(value - best) <= max(1., best * .01)]
+        ), results
+    # Nao aceitar um unico numero isolado entre multiplos filtros.
+    return (parsed[0] if len(parsed) == 1 else None), results
+
+
 def parse_stack(value):
     # A regiao do OCR deve conter SOMENTE o saldo em fichas do jogador.
     # Nunca junte numeros separados por espacos: isso produzia leituras
@@ -380,31 +481,9 @@ def parse_stack(value):
 
 
 def ocr_stack(img, tesseract, quick=False):
-    # Binarizacao com 2 passes (interface clara/escura).
-    sample = ImageOps.autocontrast(img.convert("L").resize((img.width * 4, img.height * 4)))
-    sample = ImageEnhance.Contrast(sample).enhance(2.4)
-    attempts = [sample.point(lambda x: 255 if x > 130 else 0),
-                ImageOps.invert(sample).point(lambda x: 255 if x > 130 else 0)]
-    values = []
-    with tempfile.TemporaryDirectory(prefix="plo_ocr_") as temp:
-        for i, prepared in enumerate(attempts):
-            path = Path(temp) / f"stack_{i}.png"
-            prepared.save(path)
-            cmd = [tesseract, str(path), "stdout", "--psm", "7",
-                   "-c", "tessedit_char_whitelist=0123456789,."]
-            p = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
-                               timeout=18, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            if p.returncode == 0:
-                val = parse_stack(p.stdout)
-                if val is not None:
-                    values.append(val)
-                    if quick:  # no fast mode do not perform a redundant second OCR pass
-                        break
-    if not values:
-        return None
-    if len(values) == 2 and abs(values[0] - values[1]) > max(3, values[0] * .08):
-        return None  # leituras contraditorias: pedir revisao
-    return statistics.median(values)
+    value, _ = read_stack_diagnostics(img, tesseract, quick=quick)
+    return value
+
 
 
 def normalize_nick(value):
