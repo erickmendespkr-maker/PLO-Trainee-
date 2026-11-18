@@ -230,3 +230,12 @@ O novo botão **REANALISAR MAOS INCONCLUSIVAS COM GEMINI** permite aproveitar ca
 O limite de 40 chamadas cobre no máximo 40 ocorrências por rodada. Você pode repetir a reanálise para outras pendências; **salve a revisão JSON após cada lote** para conservar o registro de quais já foram consultadas e evitar repetir chamadas. Consulte sua cota da API: um projeto pago pode gerar cobranças.
 
 O programa ainda depende de detectar corretamente as transições das mãos e pode deixar de reconhecer perdas em vídeos com mesas móveis ou imagens ilegíveis. Os testes adicionados usam respostas simuladas; não substituem a validação com a gravação original.
+
+
+### Salvamento automatico da ultima revisao
+
+A partir desta atualizacao, **toda analise concluida salva automaticamente** o arquivo de recuperacao em **%LOCALAPPDATA%\\CortadorPLO\\ultima_revisao.json**, mesmo se nenhuma perda for exportada. Uma reanalise Gemini concluida tambem atualiza essa ultima revisao, preservando os itens ja consultados e a quantidade pendente.
+
+Na proxima abertura, clique em **Abrir ultima revisao**. Para enviar a revisao a outra pessoa ou fazer backup manualmente, use **Salvar revisao** e escolha um JSON. A ultima revisao e local, contem os caminhos dos videos do computador e nao envia nenhuma chave de API.
+
+Este salvamento foi implementado agora; **nao pode recuperar retroativamente uma execucao antiga fechada sem salvar**.
