@@ -1340,32 +1340,83 @@ class GUI(tk.Tk):
         self.draw()
 
     def test_stack_frame(self):
-        """Verificacao manual da caixa de saldo para evitar OCR sobre nome/cartas."""
-        if self.frame is None:
-            messagebox.showwarning("Saldo", "Carregue um frame em que seu saldo esteja legivel.")
+        """Usa o MP4 na resolucao original e mostra o que o Tesseract enxergou."""
+        if self.frame is None or not self.videos:
+            messagebox.showwarning("Saldo", "Carregue um video e clique Mostrar frame.")
             return
         table = int(self.table.get())
         rect = self.cfg[str(table)].get("stack")
         tesseract = resource("tesseract")
-        if not rect or not tesseract:
-            messagebox.showwarning("Saldo", "Marque a regiao do saldo e confira o Tesseract.")
+        ffmpeg = resource("ffmpeg")
+        if not rect or not tesseract or not ffmpeg:
+            messagebox.showwarning("Saldo", "Confira a area do saldo, FFmpeg e Tesseract.")
             return
         try:
-            reading = ocr_stack(
-                self.frame.crop(layout_rect(rect, table, self.layout_id())), tesseract)
-            if reading is None or reading / float(self.cfg[str(table)].get("bb", 1)) > MAX_STACK_BB:
-                messagebox.showwarning(
-                    "Saldo nao reconhecido",
-                    "O programa nao leu um numero nesta caixa azul.\n"
-                    "Escolha Marcar regiao -> saldo e desenhe exatamente sobre o valor do stack em BB.")
-            else:
-                messagebox.showinfo(
-                    "Conferir saldo da mesa",
-                    f"OCR da mesa {table}: {reading:g} BB\n\n"
-                    "Compare com o numero mostrado no video. "
-                    "Se diferente, redesenhe o retangulo azul.")
+            when = parse_time(self.seek.get())
+            mode = self.layout_id()
+            if table > layout_count(mode):
+                messagebox.showwarning("Mesa", "A mesa escolhida nao aparece neste layout.")
+                return
+            area = layout_rect(rect, table, mode)
+            original = native_stack_crop(self.videos, when, area, ffmpeg)
+            value, diagnostics = read_stack_diagnostics(original, tesseract, quick=False)
+            bb = float(self.cfg[str(table)].get("bb", 1))
+            if value is not None and not (0 <= value / bb <= MAX_STACK_BB):
+                value = None
+            self.show_stack_diagnostics(table, original, value, diagnostics, bb)
         except Exception as exc:
-            messagebox.showerror("OCR saldo", str(exc))
+            messagebox.showerror("Diagnostico OCR", str(exc))
+
+    def show_stack_diagnostics(self, table, original, value, results, bb):
+        """Mostra a imagem nativa: posicionamento e texto ficam visiveis."""
+        window = tk.Toplevel(self)
+        window.title(f"Diagnostico do saldo — mesa {table}")
+        window.geometry("760x560")
+        window.minsize(610, 470)
+
+        ttk.Label(window, text=(
+            f"Recorte ORIGINAL do MP4: {original.width} x {original.height} pixels. "
+            "Ampliação apenas para visualização."
+        )).pack(pady=(10, 5))
+        scale = max(2, min(9, 640 // max(original.width, 1)))
+        scaled = original.resize((original.width * scale, original.height * scale),
+                                 Image.Resampling.NEAREST)
+        photo = ImageTk.PhotoImage(scaled)
+        preview = ttk.Label(window, image=photo)
+        preview.image = photo
+        preview.pack(pady=8)
+        if value is None:
+            outcome = "OCR NAO RECONHECEU O SALDO. Veja o recorte e as leituras abaixo."
+        else:
+            outcome = f"SALDO LIDO: {value:g} fichas ({value / bb:g} BB). Confira no video."
+        ttk.Label(window, text=outcome, wraplength=720).pack(pady=6)
+
+        details = tk.Text(window, height=9, width=80, wrap="word")
+        details.pack(fill="both", expand=True, padx=12, pady=5)
+        details.insert("end", "Leituras brutas por contraste e modo do Tesseract:\n\n")
+        for variant, psm, raw, amount in results:
+            label = raw.replace("\n", " ").strip() or "(vazio)"
+            parsed = f"{amount:g}" if amount is not None else "invalido"
+            details.insert("end", f"{variant} / psm {psm}: {label} => {parsed}\n")
+        details.configure(state="disabled")
+
+        def save_crop():
+            target = filedialog.asksaveasfilename(
+                parent=window, title="Salvar o recorte para enviar ao suporte",
+                defaultextension=".png", initialfile=f"saldo_mesa_{table}.png",
+                filetypes=[("Imagem PNG", "*.png")])
+            if target:
+                original.save(target)
+                messagebox.showinfo("Imagem salva", f"Recorte salvo em:\n{target}",
+                                    parent=window)
+
+        buttons = ttk.Frame(window)
+        buttons.pack(pady=12)
+        ttk.Button(buttons, text="Salvar recorte PNG",
+                   command=save_crop).pack(side="left", padx=5)
+        ttk.Button(buttons, text="Fechar", command=window.destroy).pack(
+            side="left", padx=5)
+
 
     def verify_nick_frame(self):
         if self.frame is None:
