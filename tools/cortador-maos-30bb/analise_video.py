@@ -28,6 +28,7 @@ except ImportError as exc:
 from cortador import Clip, export_clip, file_at, fmt, parse_time, probe, resource
 from hud_recognition import is_full_hud, read_hud_stack, read_hud_nick
 from analise_local import times_for_hand, assess_stacks, offline_review_decision
+from desfecho_local import read_table_ocr, evaluate_pot_transfer
 from pasta_saida import load_export_folder, save_export_folder, valid_export_folder
 
 W, H = 960, 540
@@ -1341,6 +1342,104 @@ def estimate_candidates_offline(videos, config, candidates, threshold,
             progress(f"Triagem local: {analyzed}/{len(copies)} maos, "
                      f"{priority} com aporte provavel >= {threshold:g} BB.")
     return copies, analyzed, priority
+
+
+def confirm_candidates_by_pot_offline(videos, config, candidates,
+                                      threshold, progress=lambda msg: None):
+    """Passo 3/3: seguir pote e stacks da MESA inteira apos a mao.
+
+    Nao basta stack do heroi cair; so MP4 automaticamente se uma
+    transferencia de fichas a outro assento for confirmada.
+    """
+    result = [Candidate(**asdict(c)) for c in candidates]
+    ffmpeg = resource("ffmpeg")
+    tesseract = resource("tesseract")
+    if not ffmpeg or not tesseract:
+        raise RuntimeError("FFmpeg/Tesseract nao encontrados para o pote.")
+    duration = sum(v.duration for v in videos)
+    approved = 0
+    evaluated = 0
+    for index, c in enumerate(result):
+        if c.excluded or c.confirmed:
+            continue
+        if c.hero_invested_bb is None or not loss_reaches_threshold(
+                c.hero_invested_bb, threshold):
+            continue
+        mode = layout_key(c.layout)
+        if mode == "auto4" or c.table > layout_count(mode):
+            c.status = "PENDENTE - MESA NAO IDENTIFICADA"
+            continue
+        start = (c.hand_start if c.hand_start is not None
+                 else c.start + 5.0)
+        finish = (c.hand_end if c.hand_end is not None
+                  else c.end - 5.0)
+        if not (1.0 <= start < finish < duration - 1):
+            c.status = "PENDENTE - MAO SEM INICIO OU FIM CONFIAVEL"
+            continue
+        # Nao misturar o resultado de outra mao da mesma mesa.
+        next_starts = [
+            other.hand_start for other in result[index + 1:]
+            if other.table == c.table and other.layout == c.layout
+            and other.hand_start is not None
+            and other.hand_start > finish]
+        hard_end = min(duration - .15,
+                       min(next_starts) - .2 if next_starts else finish + 14)
+        after_candidates = [finish + offset for offset in (.75, 2.0, 4.0,
+                                                            7.0, 11.0)]
+        after_candidates = [t for t in after_candidates if t < hard_end]
+        if len(after_candidates) < 2:
+            c.status = "PENDENTE - PREMIACAO NAO OBSERVAVEL"
+            continue
+        table_box = layout_bounds(mode, c.table)
+        def snap(moment):
+            return read_table_ocr(
+                native_stack_crop(videos, moment, table_box, ffmpeg),
+                tesseract)
+        try:
+            before = snap(max(.02, start - 1.0))
+            pot_before = snap(max(start + .1, finish - 1.5))
+            last = None
+            outcome = None
+            # 2 quadros sequenciais apos a transferencia, para confirmar
+            # que o ganho do adversario nao e uma animacao transitoria.
+            for moment in after_candidates:
+                current = snap(moment)
+                if last is not None:
+                    outcome = evaluate_pot_transfer(
+                        before, pot_before, last, current,
+                        c.hero_invested_bb, threshold)
+                    if outcome["confirmed"]:
+                        break
+                last = current
+        except (OSError, RuntimeError, ValueError,
+                subprocess.SubprocessError) as exc:
+            c.status = "PENDENTE - OCR DA MESA INTEIRA FALHOU"
+            c.reliability = type(exc).__name__ + " durante leitura do pote"
+            continue
+        evaluated += 1
+        if outcome is not None and outcome["confirmed"]:
+            c.loss_bb = outcome["loss_bb"]
+            c.pot_verified = True
+            c.auto_verified = True
+            c.status = "PERDA CONFIRMADA - POTE PARA ADVERSARIO (OFFLINE)"
+            c.source = "OCR local da mesa inteira"
+            c.winner_nick = outcome["winner"]
+            c.reliability = outcome["reason"]
+            approved += 1
+        else:
+            c.pot_verified = False
+            c.auto_verified = False
+            c.loss_bb = None
+            c.status = "PENDENTE - DESTINO DO POTE NAO CONFIRMADO"
+            c.reliability = (
+                outcome["reason"] if outcome is not None
+                else "Nao ha quadros de premiacao suficientes")
+        if evaluated % 3 == 0:
+            progress(f"Vencedor do pote: {evaluated} maos examinadas; "
+                     f"{approved} perdas >= {threshold:g} BB confirmadas.")
+    progress(f"Resultado offline: {approved} perdas confirmadas por "
+             f"transferencia do pote; {evaluated} suspeitas verificadas.")
+    return result, evaluated, approved
 
 
 DEFAULT_MARKINGS_FILE = "marcacoes_padrao.json"
