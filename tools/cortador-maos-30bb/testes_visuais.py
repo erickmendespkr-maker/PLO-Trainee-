@@ -74,6 +74,17 @@ class VisualTests(unittest.TestCase):
         ImageDraw.Draw(frame).rectangle([5, 150, 234, 450], fill=105)
         self.assertTrue(table_visible(frame, layout_bounds("horizontal4", 1)))
         self.assertFalse(table_visible(frame, layout_bounds("horizontal4", 2)))
+        self.assertFalse(table_visible(frame, layout_bounds("horizontal4", 2),
+                                       strict=False))
+
+    def test_verificacao_menos_estrita_em_layout_explicito(self):
+        frame = Image.new("L", (960, 540), 25)
+        # Tema de mesa diferente: sem contraste entre felt e barra superior.
+        ImageDraw.Draw(frame).rectangle([0, 0, 239, 539], fill=36)
+        ImageDraw.Draw(frame).rectangle([10, 100, 220, 440], fill=44)
+        bounds = layout_bounds("horizontal4", 1)
+        self.assertFalse(table_visible(frame, bounds, strict=True))
+        self.assertTrue(table_visible(frame, bounds, strict=False))
 
     def test_corte_com_quantidade_variavel_de_mesas(self):
         video = Video("mock.mp4", 100.0, 1920, 1080, True)
