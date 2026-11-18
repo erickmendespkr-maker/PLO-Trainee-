@@ -777,7 +777,18 @@ class HandState:
             return
 
         if not loss_reaches_threshold(loss, threshold):
-            # Mãos ganhas, sem perda ou com perda < limite nao entram.
+            if n_pre < 2 or n_post < 2:
+                # Uma unica leitura insuficiente nao prova que o jogador
+                # ganhou ou perdeu menos de 30 BB. Guardar para Gemini,
+                # em vez de descartar silenciosamente uma perda real.
+                self.results.append(Candidate(
+                    max(0, data["start"] - 5), data["end"] + 5, table,
+                    None, pre, post, "INCONCLUSIVO - SALDO FRACO",
+                    layout=self.layout,
+                    reliability="Menos de dois saldos confirmados por lado",
+                    before_times=data.get("before_times", [])[:],
+                    after_times=data.get("after_times", [])[:]))
+            # Somente ganhos ou perdas pequenas com leitura consistente saem.
             return
 
         # Leitura coerente de 2 amostras antes e 2 depois e exigida para
