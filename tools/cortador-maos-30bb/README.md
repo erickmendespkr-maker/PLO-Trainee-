@@ -1,3 +1,23 @@
+
+## NOVO: analisar pote perdido com REBUY automatico
+
+**Mudanca de criterio:** o saldo do jogador pode retornar automaticamente para **100 BB depois de perder uma mao**, porque o cliente de poker faz rebuy/top-up. Portanto, comparar `saldo_antes - saldo_depois` pode resultar em zero mesmo em uma perda grande. O pote total tambem NAO e o valor individual investido pelo jogador.
+
+A partir desta versao, o programa tem a caixa **Rebuy automatico: analisar aporte e destino do pote**, marcada por padrao para este fluxo. Com ela marcada:
+
+1. A varredura local procura as maos pelas cartas do heroi e guarda seus instantes. **Nenhuma mao e descartada apenas porque o saldo voltou a 100 BB**. Nao exige 100 BB de stack inicial: pode ser 50, 150, 200 BB etc.
+2. O Gemini opcional analisa **uma imagem panoramica da gravacao**, **oito quadros de toda a mesa durante a mao**, **dois quadros apos as cartas desaparecerem** (premiacao do pote e eventual rebuy) e **dois recortes do HUD**. Um total de 13 imagens por consulta; nao e necessario enviar o MP4 inteiro.
+3. Para exportar automaticamente, o codigo exige evidencias convergentes: (a) mesmo jogador `~Pulgar~`, (b) quantidade **que o proprio jogador investiu** >= perda minima configurada (30 BB por padrao), (c) pote entregue a um **adversario identificado**, (d) nenhuma parte do pote/side pot recebida pelo heroi, e (e) encerramento da mao visivel. O **valor do pote global nao substitui o aporte do jogador**.
+4. Se o valor investido nao puder ser lido com seguranca ou a premiacao nao estiver visivel, a mao fica **INCONCLUSIVA**. Rebuy apos perder nao significa vitoria ou derrota por si so.
+5. O relatorio CSV passa a mostrar `aporte_heroi_bb`, `vencedor_pote`, `pote_confirmado` e `rebuy_visto`. O botao **REANALISAR POTES COM GEMINI** aproveita os horarios da revisao, sem refazer a varredura.
+6. **Gerar MP4 automaticos** envia apenas perdas confirmadas por esse criterio para a pasta padrao. A confirmacao manual continua possivel, mas nao equivale a uma comprovacao automatica.
+
+**Exemplos:** (i) investe 45 BB, perde o pote para o adversario e o saldo volta a 100 BB com top-up: perda de **45 BB**; (ii) pote de 80 BB, jogador investiu apenas 15 BB: nao entra; (iii) investe 40 BB mas recupera parte em um side pot: nao se pode atribuir automaticamente perda de 40 BB. A situacao deve ser revisada.
+
+**Custo e desempenho:** como cada verificacao contextual tem mais imagens, utiliza mais dados da API e pode demorar em gravacoes longas. O limite de chamadas configurado (inicialmente 40 por analise) e respeitado; o excedente permanece pendente para lotes futuros, sem autoexportacao indevida. Sem API habilitada, o programa detecta candidatos locais e permite revisao manual, mas nao consegue confirmar o destino do pote automaticamente.
+
+**Validacao:** ha testes de cenarios de rebuy, pote maior que a contribuicao do heroi, side pot, premiacao a adversario e leitura de multiplos frames, executaveis em `VERIFICAR_PROGRAMA.bat`. O sistema ainda nao foi validado contra sua gravacao real: a IA pode nao conseguir reconstruir a contribuicao total com apenas amostras; precisamos conferir resultado, limites do corte e veracidade das explicacoes nos primeiros MP4.
+
 # Cortador de Mãos PLO — somente gravações de vídeo
 
 **Entrada principal: um único MP4 com a sessão completa** (ou, alternativamente, 2, 6 ou mais partes **consecutivas**, sem lacunas). O programa não usa DriveHUD, histórico TXT, banco de dados do poker nem conexão com a sala. Trabalha **offline**, após a sessão.
