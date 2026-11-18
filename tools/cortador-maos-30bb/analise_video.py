@@ -354,9 +354,11 @@ def parse_stack(value):
     # Nunca junte numeros separados por espacos: isso produzia leituras
     # falsas como "154020" a partir de varios textos sobrepostos.
     candidates = re.findall(r"\d+(?:[.,]\d+)*", value)
-    if not candidates:
+    # A caixa do saldo deve conter um unico numero. Dois tokens indicam
+    # captura de outro campo da mesa e nao servem para exportacao automatica.
+    if len(candidates) != 1:
         return None
-    token = max(candidates, key=len).rstrip(".,")
+    token = candidates[0].rstrip(".,")
     if not token:
         return None
     if "." in token and "," in token:
