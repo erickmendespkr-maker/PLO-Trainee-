@@ -245,61 +245,57 @@ def detect_hero_cards_anchor(frame, mode, table):
 
 
 def auto_hero_profile(frame, mode):
-    """Detecta cartas e estima caixas de nick/saldo no mesmo HUD inferior."""
+    """Estima somente uma caixa HUD a partir de cartas visiveis do heroi."""
     mode = layout_key(mode)
     if mode in ("auto4", "grid2x2"):
         return None
     anchors = []
+    width = layout_bounds(mode, 1)[2] - layout_bounds(mode, 1)[0]
     for table in range(1, layout_count(mode) + 1):
         rect = detect_hero_cards_anchor(frame, mode, table)
         if rect is not None:
             x1, _, _, _ = layout_bounds(mode, table)
-            anchors.append((rect[0] - x1, rect[1], rect[2] - x1, rect[3]))
+            anchors.append((rect[0] - x1, rect[1],
+                            rect[2] - x1, rect[3]))
     if not anchors:
         return None
     columns = list(zip(*anchors))
-    reference = tuple(round(statistics.median(values)) for values in columns)
-    width = layout_bounds(mode, 1)[2]
-    hole = [reference[0], reference[1],
-            reference[2], reference[3]]
-    # Nick e stack ficam na pequena barra escura à esquerda/abaixo das cartas.
-    # Separar verticalmente para impedir que o saldo inclua o nick ou botoes.
-    nick = [max(0, hole[0] - round(width * .15)),
-            max(0, hole[3] - 14),
-            min(width, hole[0] + round(width * .12)),
-            min(H, hole[3] + 3)]
-    stack = [nick[0] + 4, min(H-2, hole[3] + 4),
-             max(nick[0] + 8, nick[2] - 3),
-             min(H, hole[3] + 17)]
-    if stack[3] <= stack[1] or nick[3] > stack[1]:
+    hole = [round(statistics.median(col)) for col in columns]
+    hud = [
+        max(0, hole[0] - round(width * .24)),
+        max(0, hole[1] - 27),
+        min(width, hole[2] + round(width * .06)),
+        min(H, hole[3] + 49)
+    ]
+    if hud[2] - hud[0] < 65 or hud[3] - hud[1] < 50:
         return None
-    return {"hole": hole, "nick": nick, "stack": stack}
+    return {"hero_hud": hud}
 
 
 def apply_auto_hero_profile(config, frame, mode, force=False):
-    """Autoajuste por frame, preservando regioes marcadas manualmente."""
+    """Atualiza apenas HUDs automaticos, preservando os manuais."""
     mode = layout_key(mode)
     profile = auto_hero_profile(frame, mode)
     if profile is None:
         return 0
     adjusted = 0
     for table in range(1, layout_count(mode) + 1):
-        x1, y1, x2, y2 = layout_bounds(mode, table)
+        left, top, right, bottom = layout_bounds(mode, table)
         data = config[str(table)]
-        for key, relative in profile.items():
-            source = data.get("layout_roi_sources", {}).get(
-                mode, {}).get(key, "legacy")
-            if source == "manual" and not force:
-                continue
-            rect = [relative[0] + x1, relative[1] + y1,
-                    relative[2] + x1, relative[3] + y1]
-            if not (x1 <= rect[0] < rect[2] <= x2 and
-                    y1 <= rect[1] < rect[3] <= y2):
-                continue
-            data.setdefault("layout_rois", {}).setdefault(mode, {})[key] = rect
-            data.setdefault("layout_roi_sources", {}).setdefault(
-                mode, {})[key] = "auto"
-            adjusted += 1
+        key = "hero_hud"
+        source = data.get("layout_roi_sources", {}).get(
+            mode, {}).get(key, "legacy")
+        if source == "manual" and not force:
+            continue
+        r = profile[key]
+        rect = [r[0]+left, r[1]+top, r[2]+left, r[3]+top]
+        if not (left <= rect[0] < rect[2] <= right and
+                top <= rect[1] < rect[3] <= bottom):
+            continue
+        data.setdefault("layout_rois", {}).setdefault(mode, {})[key] = rect
+        data.setdefault("layout_roi_sources", {}).setdefault(
+            mode, {})[key] = "auto"
+        adjusted += 1
     return adjusted
 
 
@@ -1848,8 +1844,8 @@ class GUI(tk.Tk):
                     self.nick.get(), self.layout.get())
             except (OSError, ValueError, TypeError):
                 self.tell("AVISO: autoajuste aplicado, mas nao foi salvo.")
-            self.tell(f"Autoajuste no layout de {count} mesa(s): "
-                      f"{adjusted} regioes posicionadas pelo video.")
+            self.tell(f"Autoajuste no layout de {layout_count(mode)} mesa(s): "
+                      f"{adjusted} HUDs posicionados pelo video.")
             self.draw()
         return adjusted
 
@@ -1859,8 +1855,8 @@ class GUI(tk.Tk):
             return
         if not messagebox.askyesno(
                 "Autoajustar marcacoes",
-                "Detectar as cartas na parte inferior das mesas e calcular "
-                "as regioes de nick e saldo?\\n\\n"
+                "Localizar suas cartas na parte inferior e ajustar o HUD "
+                "unico que tambem contem nick e saldo?\n\n"
                 "Isto substitui as marcacoes DESTE layout, mas preserva "
                 "as marcacoes dos outros layouts."):
             return
@@ -1874,8 +1870,8 @@ class GUI(tk.Tk):
         else:
             messagebox.showinfo(
                 "Autoajuste aplicado",
-                "As marcacoes foram ajustadas usando as cartas visiveis "
-                "neste video. Confira Testar saldo antes da analise completa.")
+                "O retangulo HUD foi ajustado usando cartas visiveis. "
+                "Confira Testar saldo antes de analisar a gravacao.")
 
     def add_videos(self):
         paths = filedialog.askopenfilenames(filetypes=[("MP4", "*.mp4"), ("Videos", "*.mp4 *.mkv *.mov")])
