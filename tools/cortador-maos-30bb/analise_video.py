@@ -441,6 +441,7 @@ class GUI(tk.Tk):
         ttk.Combobox(row, textvariable=self.field, values=["cartas", "saldo", "nick"],
                      state="readonly", width=8).pack(side="left")
         ttk.Button(row, text="Usar regioes do print", command=self.apply_profile).pack(side="left", padx=7)
+        ttk.Button(row, text="Testar saldo", command=self.test_stack_frame).pack(side="left", padx=4)
 
         row2 = ttk.Frame(self)
         row2.pack(fill="x", padx=8, pady=5)
@@ -658,8 +659,46 @@ class GUI(tk.Tk):
         if key == "hole":
             self.cfg[str(table)].pop("reference", None)
         self.cfg[str(table)]["detector"] = "bright"
-        self.tell(f"Mesa {table}: regiao {key} ajustada. Nao precisa referencia sem cartas.")
+        if key == "stack" and self.layout_id() == "horizontal4":
+            # O saldo do hero ocupa a mesma posicao relativa nas quatro mesas.
+            # Replicar o retangulo impede que o preset errado das outras mesas persista.
+            dx = (table - 1) * (W // 4)
+            relative = [rect[0] - dx, rect[1], rect[2] - dx, rect[3]]
+            for destination in TABLES:
+                x = (destination - 1) * (W // 4)
+                self.cfg[str(destination)]["stack"] = [
+                    relative[0] + x, relative[1], relative[2] + x, relative[3]]
+            self.tell("Saldo corrigido nas quatro mesas. Clique Testar saldo e salve a configuracao.")
+        else:
+            self.tell(f"Mesa {table}: regiao {key} ajustada.")
         self.draw()
+
+    def test_stack_frame(self):
+        """Verificacao manual da caixa de saldo para evitar OCR sobre nome/cartas."""
+        if self.frame is None:
+            messagebox.showwarning("Saldo", "Carregue um frame em que seu saldo esteja legivel.")
+            return
+        table = int(self.table.get())
+        rect = self.cfg[str(table)].get("stack")
+        tesseract = resource("tesseract")
+        if not rect or not tesseract:
+            messagebox.showwarning("Saldo", "Marque a regiao do saldo e confira o Tesseract.")
+            return
+        try:
+            reading = ocr_stack(self.frame.crop(roi_tuple(rect)), tesseract)
+            if reading is None:
+                messagebox.showwarning(
+                    "Saldo nao reconhecido",
+                    "O programa nao leu um numero nesta caixa azul.\n"
+                    "Escolha Marcar regiao -> saldo e desenhe exatamente sobre o valor do stack em BB.")
+            else:
+                messagebox.showinfo(
+                    "Conferir saldo da mesa",
+                    f"OCR da mesa {table}: {reading:g} BB\n\n"
+                    "Compare com o numero mostrado no video. "
+                    "Se diferente, redesenhe o retangulo azul.")
+        except Exception as exc:
+            messagebox.showerror("OCR saldo", str(exc))
 
     def verify_nick_frame(self):
         if self.frame is None:
