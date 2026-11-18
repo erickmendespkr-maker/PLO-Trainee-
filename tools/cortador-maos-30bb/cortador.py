@@ -227,18 +227,25 @@ def file_at(videos: list[Video], t: float) -> tuple[Video, float]:
     raise ValueError("Tempo fora da gravação")
 
 
-def crop_filter(v: Video, table: int) -> str:
+def crop_filter(v: Video, table: int, layout: str = "grid2x2") -> str:
     if table not in (1, 2, 3, 4):
         raise ValueError("Selecione a mesa 1, 2, 3 ou 4.")
-    w = (v.width // 4) * 2
-    h = (v.height // 4) * 2
-    x = (table - 1) % 2 * w
-    y = (table - 1) // 2 * h
-    # Resolução/FPS normalizados permitem concatenação de partes diferentes.
-    return f"crop={w}:{h}:{x}:{y},scale=960:540:flags=lanczos,fps=25,format=yuv420p"
+    if layout == "horizontal4":
+        # Gravacoes do usuario: quatro janelas de poker verticais lado a lado.
+        w, h = v.width // 4, v.height
+        x, y = (table - 1) * w, 0
+        scale = "720:1080"
+    elif layout == "grid2x2":
+        w, h = v.width // 2, v.height // 2
+        x, y = (table - 1) % 2 * w, (table - 1) // 2 * h
+        scale = "960:540"
+    else:
+        raise ValueError("Layout de mesas desconhecido.")
+    # Escalamos mantendo a proporcao da mesa (horizontal ou vertical).
+    return f"crop={w}:{h}:{x}:{y},scale={scale}:flags=lanczos,fps=25,format=yuv420p"
 
 
-def export_clip(videos: list[Video], clip: Clip, dest: Path, ffmpeg: str) -> None:
+def export_clip(videos: list[Video], clip: Clip, dest: Path, ffmpeg: str, layout: str = "grid2x2") -> None:
     if clip.table not in (1, 2, 3, 4):
         raise ValueError("Mesa inválida")
     total = sum(v.duration for v in videos)
@@ -259,7 +266,7 @@ def export_clip(videos: list[Video], clip: Clip, dest: Path, ffmpeg: str) -> Non
                 command += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
             command += ["-t", f"{length:.3f}", "-map", "0:v:0"]
             command += ["-map", ("0:a:0" if v.has_audio else "1:a:0"),
-                        "-vf", crop_filter(v, clip.table),
+                        "-vf", crop_filter(v, clip.table, layout),
                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                         "-c:a", "aac", "-b:a", "96k", "-ac", "2", "-ar", "44100",
                         "-movflags", "+faststart", "-shortest", str(part)]
