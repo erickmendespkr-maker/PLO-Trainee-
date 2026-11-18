@@ -580,6 +580,7 @@ class Candidate:
     auto_verified: bool = False
     reliability: str = ""
     source: str = "OCR"
+    gemini_checked: bool = False
 
 
 def eligible_losses(candidates, threshold, automatic_only=False):
@@ -1069,7 +1070,7 @@ def recheck_candidates_with_gemini(videos, config, candidates, threshold,
     checked = 0
     positives = 0
     for c in copies:
-        if c.excluded or c.confirmed or c.auto_verified:
+        if c.excluded or c.confirmed or c.auto_verified or c.gemini_checked:
             continue
         if ("INCONCLUSIVO - SALDO" not in c.status and
                 "POSSIVEL PERDA" not in c.status and
@@ -1099,6 +1100,7 @@ def recheck_candidates_with_gemini(videos, config, candidates, threshold,
             values = client.read_pair(before, after, bb=bb,
                                       max_stack_bb=MAX_STACK_BB)
             checked += 1
+            c.gemini_checked = True
             if values is None:
                 c.reliability = "Gemini tentou mas nao confirmou quatro saldos."
                 continue
@@ -2064,6 +2066,7 @@ class GUI(tk.Tk):
                 raise ValueError("Modelo Gemini nao permitido.")
             pending = sum(
                 not c.excluded and not c.confirmed and not c.auto_verified and
+                not c.gemini_checked and
                 ("INCONCLUSIVO - SALDO" in c.status or
                  "POSSIVEL PERDA" in c.status or
                  "INCONCLUSIVO - OCR" in c.status)
@@ -2103,9 +2106,16 @@ class GUI(tk.Tk):
                     self.candidates = revised
                     self.busy = False
                     self.refresh()
-                    self.tell(f"Reanalise: {inspected} chamadas com resposta; "
-                              f"{recovered} perdas de pelo menos {threshold:g} BB. "
-                              f"Total de chamadas: {client.used}.")
+                    remaining = sum(
+                        not c.excluded and not c.confirmed and
+                        not c.auto_verified and not c.gemini_checked and
+                        ("INCONCLUSIVO - SALDO" in c.status or
+                         "POSSIVEL PERDA" in c.status or
+                         "INCONCLUSIVO - OCR" in c.status)
+                        for c in revised)
+                    self.tell(f"Reanalise: {inspected} ocorrencias verificadas, "
+                              f"{recovered} perdas >= {threshold:g} BB; "
+                              f"{remaining} pendentes; Gemini {client.used}/{client.limit}.")
                     if folder and recovered:
                         self.export(folder=folder, automatic_only=True)
                     else:
