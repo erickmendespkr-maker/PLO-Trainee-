@@ -13,8 +13,8 @@ from analise_video import (parse_stack, changed_fraction, HandState, bright_frac
                            replicate_horizontal_rect, stack_median, MAX_STACK_BB,
                            Candidate, eligible_losses,
                            native_stack_crop, read_stack_diagnostics,
-                           default_markings_path, save_markings_file, load_markings_file,
-                           validated_markings,
+                           default_markings_path, latest_review_path,
+                           save_markings_file, load_markings_file, validated_markings,
                            net_loss_bb, loss_reaches_threshold, layout_key, mode_at,
                            layout_count, layout_bounds, layout_rect,
                            unmap_layout_rect, table_visible,
@@ -156,6 +156,12 @@ class VisualTests(unittest.TestCase):
             self.assertEqual(
                 load_markings_file(filename)["tables"]["1"]["stack"],
                 [100, 485, 140, 505])
+
+    def test_ultima_revisao_fica_em_appdata_fora_do_zip(self):
+        with patch.dict("os.environ", {"LOCALAPPDATA": "C:/Users/Test/AppData/Local"}):
+            path = latest_review_path()
+        self.assertEqual(path.name, "ultima_revisao.json")
+        self.assertEqual(path.parent.name, "CortadorPLO")
 
     def test_caminho_persistente_do_windows_fica_fora_do_zip(self):
         with patch.dict("os.environ", {"LOCALAPPDATA": "C:/Users/Test/AppData/Local"}):
