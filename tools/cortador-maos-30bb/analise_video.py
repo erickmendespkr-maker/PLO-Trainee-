@@ -597,8 +597,8 @@ class GUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("PLO - Analise visual de videos (sem DriveHUD)")
-        self.geometry("1090x745")
-        self.minsize(950, 700)
+        self.geometry("1120x800")
+        self.minsize(990, 740)
         self.videos = []
         self.total = 0.
         self.frame = None
@@ -606,13 +606,15 @@ class GUI(tk.Tk):
         self.selection_origin = None
         self.candidates = []
         self.busy = False
-        self.layout = tk.StringVar(value="4 lado a lado")
+        self.layout = tk.StringVar(value=LAYOUT_LABELS[0])
+        self.change_to = tk.StringVar(value="3 lado a lado")
+        self.timeline = []
         self.nick = tk.StringVar(value="~Pulgar~")
         self.quick = tk.BooleanVar(value=True)
         self.cfg = screenshot_profile()
         self._ui()
         self.draw()
-        self.tell("Quatro areas do print pre-configuradas: confira os retangulos na previa.")
+        self.tell("Aceita 1-4 mesas. Use eventos para quando janelas mudarem de posicao.")
 
     def _ui(self):
         top = ttk.Frame(self)
@@ -623,7 +625,7 @@ class GUI(tk.Tk):
         self.info.pack(side="left", padx=8)
         ttk.Label(top, text="Disposicao:").pack(side="left", padx=(12, 3))
         layout_box = ttk.Combobox(top, textvariable=self.layout,
-                                  values=["4 lado a lado", "2 por 2"],
+                                  values=LAYOUT_LABELS,
                                   state="readonly", width=16)
         layout_box.pack(side="left")
         layout_box.bind("<<ComboboxSelected>>", lambda event: self.on_layout_change())
@@ -657,6 +659,17 @@ class GUI(tk.Tk):
             side="left", padx=7)
         ttk.Checkbutton(row2, text="OCR rapido", variable=self.quick).pack(side="left", padx=4)
         self.table.trace_add("write", lambda *_: self.on_table_change())
+
+        changes = ttk.Frame(self)
+        changes.pack(fill="x", padx=8, pady=(0, 3))
+        ttk.Label(changes, text="Mudanca de mesas no tempo acima:").pack(side="left")
+        ttk.Combobox(changes, textvariable=self.change_to, values=LAYOUT_LABELS[1:],
+                     state="readonly", width=16).pack(side="left", padx=5)
+        ttk.Button(changes, text="Registrar mudanca", command=self.add_layout_change).pack(side="left")
+        ttk.Button(changes, text="Remover ultima", command=self.remove_layout_change).pack(
+            side="left", padx=5)
+        self.events_info = ttk.Label(changes, text="Sem mudancas registradas")
+        self.events_info.pack(side="left", padx=8)
 
         self.canvas = tk.Canvas(self, width=VIEW_W, height=VIEW_H, background="#181818",
                                 highlightthickness=0)
@@ -712,43 +725,88 @@ class GUI(tk.Tk):
                   foreground="#9b571a").pack(padx=8, pady=2)
 
     def layout_id(self):
-        return "horizontal4" if self.layout.get() == "4 lado a lado" else "grid2x2"
+        try:
+            when = parse_time(self.seek.get())
+        except (ValueError, TypeError):
+            when = 0
+        return mode_at(when, self.layout.get(), self.timeline)
 
     def infer_table(self, x, y):
-        if self.layout_id() == "horizontal4":
-            return min(4, 1 + int(x // (W / 4)))
-        return 1 + int(x >= W / 2) + 2 * int(y >= H / 2)
+        mode = self.layout_id()
+        for table in range(1, layout_count(mode) + 1):
+            x1, y1, x2, y2 = layout_bounds(mode, table)
+            if x1 <= x < x2 and y1 <= y < y2:
+                return table
+        return None
 
     def table_bounds(self, table):
-        if self.layout_id() == "horizontal4":
-            w = W // 4
-            return (w * (table - 1), 0, w * table, H)
-        w, h = W // 2, H // 2
-        return ((table - 1) % 2 * w, (table - 1) // 2 * h,
-                ((table - 1) % 2 + 1) * w, ((table - 1) // 2 + 1) * h)
+        return layout_bounds(self.layout_id(), table)
+
+    def refresh_changes(self):
+        if not self.timeline:
+            self.events_info.configure(text="Sem mudancas registradas")
+        else:
+            label = "; ".join(
+                f"{fmt(entry['start'])} = {entry['layout']}"
+                for entry in self.timeline[-2:])
+            suffix = f" (+{len(self.timeline)-2})" if len(self.timeline) > 2 else ""
+            self.events_info.configure(text=label + suffix)
+
+    def add_layout_change(self):
+        if not self.videos:
+            messagebox.showwarning("Video", "Carregue o video antes de registrar mudancas.")
+            return
+        try:
+            at = parse_time(self.seek.get())
+            if not (0 < at < self.total):
+                raise ValueError("O tempo precisa estar dentro do video e ser maior que zero.")
+            target = self.change_to.get()
+            layout_key(target)
+            if target == "2 por 2":
+                messagebox.showwarning(
+                    "Mudanca para 2x2", "Uma reorganizacao 2x2 exige calibracao nova das caixas. "
+                    "Use primeiro os modos de 1-4 mesas lado a lado ou confira as caixas manualmente.")
+                return
+            self.timeline = [x for x in self.timeline if abs(float(x["start"])-at) > .5]
+            self.timeline.append({"start": at, "layout": target})
+            self.timeline.sort(key=lambda x: float(x["start"]))
+            self.refresh_changes()
+            self.draw()
+            self.tell(f"Mudanca registrada em {fmt(at)}: {target}.")
+        except Exception as exc:
+            messagebox.showerror("Mudanca de mesas", str(exc))
+
+    def remove_layout_change(self):
+        if self.timeline:
+            item = self.timeline.pop()
+            self.refresh_changes()
+            self.draw()
+            self.tell(f"Removida mudanca de {fmt(item['start'])}.")
 
     def on_layout_change(self):
-        if any(self.cfg[str(t)].get("hole") or self.cfg[str(t)].get("stack") for t in TABLES):
-            # Referencias coletadas em outro layout nao podem ser reutilizadas.
-            if not messagebox.askyesno("Trocar disposicao",
-                                       "Trocar a disposicao apaga as areas configuradas. Continuar?"):
-                self.layout.set("2 por 2" if self.layout_id() == "horizontal4" else "4 lado a lado")
+        # Perfis de 1-4 janelas lado a lado compartilham a mesma calibracao.
+        mode = layout_key(self.layout.get())
+        if mode == "grid2x2":
+            if not messagebox.askyesno(
+                    "Disposicao", "O layout 2x2 precisa recalibrar as caixas. Continuar?"):
+                self.layout.set(LAYOUT_LABELS[0])
                 return
-        self.cfg = screenshot_profile() if self.layout_id() == "horizontal4" else {
-            str(t): {"bb": "1", "detector": "bright",
-                     "bright_cutoff": 165, "min_bright": .18} for t in TABLES}
+            self.cfg = {str(t): {"bb": "1", "detector": "bright",
+                                "bright_cutoff": 165, "min_bright": .18} for t in TABLES}
+        elif not all(self.cfg[str(t)].get("hole") for t in TABLES):
+            self.cfg = screenshot_profile()
         self.on_table_change()
         self.draw()
-        self.tell("Disposicao atualizada. Calibre as regioes de cada mesa.")
+        self.tell("Layout inicial atualizado. Confira as regioes das mesas ativas.")
 
     def apply_profile(self):
-        if self.layout_id() != "horizontal4":
-            messagebox.showwarning("Disposicao", "Selecione primeiro '4 lado a lado'.")
+        if self.layout_id() == "grid2x2":
+            messagebox.showwarning("Disposicao", "Use um layout lado a lado para o perfil do print.")
             return
         self.cfg = screenshot_profile()
         self.on_table_change()
         self.draw()
-        self.tell("Regioes pre-calibradas para 4 mesas. Nao precisa registrar imagem sem cartas.")
+        self.tell("Regioes do print restauradas. Confira o saldo e o nick.")
 
     def tell(self, msg):
         self.status.configure(text=msg)
@@ -809,20 +867,23 @@ class GUI(tk.Tk):
         shown = self.frame.convert("RGB").resize((VIEW_W, VIEW_H))
         self.photo = ImageTk.PhotoImage(shown)
         self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
-        if self.layout_id() == "horizontal4":
-            for idx in (1, 2, 3):
-                x = VIEW_W * idx // 4
-                self.canvas.create_line(x, 0, x, VIEW_H, fill="#f7cd46", width=2)
+        mode = self.layout_id()
+        if mode == "grid2x2":
+            self.canvas.create_line(VIEW_W // 2, 0, VIEW_W // 2, VIEW_H,
+                                    fill="#f7cd46", width=2)
+            self.canvas.create_line(0, VIEW_H // 2, VIEW_W, VIEW_H // 2,
+                                    fill="#f7cd46", width=2)
         else:
-            self.canvas.create_line(VIEW_W//2, 0, VIEW_W//2, VIEW_H, fill="#f7cd46", width=2)
-            self.canvas.create_line(0, VIEW_H//2, VIEW_W, VIEW_H//2, fill="#f7cd46", width=2)
+            for idx in range(1, layout_count(mode)):
+                x = round(VIEW_W * idx / layout_count(mode))
+                self.canvas.create_line(x, 0, x, VIEW_H, fill="#f7cd46", width=2)
         colors = {"hole": "#00ff91", "stack": "#00cfff", "nick": "#ec8fff"}
-        for table in TABLES:
+        for table in range(1, layout_count(mode) + 1):
             data = self.cfg[str(table)]
             for key in ("hole", "stack", "nick"):
                 rect = data.get(key)
                 if rect:
-                    x1, y1, x2, y2 = rect
+                    x1, y1, x2, y2 = layout_rect(rect, table, mode)
                     sx, sy = VIEW_W / W, VIEW_H / H
                     self.canvas.create_rectangle(x1*sx, y1*sy, x2*sx, y2*sy, outline=colors[key], width=2)
                     self.canvas.create_text(x1*sx, y1*sy, anchor="sw", text=f"M{table}: {key}", fill=colors[key])
@@ -858,14 +919,14 @@ class GUI(tk.Tk):
             self.draw()
             return
         key = {"cartas": "hole", "saldo": "stack", "nick": "nick"}[self.field.get()]
-        self.cfg[str(table)][key] = rect
+        stored_rect = unmap_layout_rect(rect, table, self.layout_id())
+        self.cfg[str(table)][key] = stored_rect
         if key == "hole":
             self.cfg[str(table)].pop("reference", None)
         self.cfg[str(table)]["detector"] = "bright"
-        if key == "stack" and self.layout_id() == "horizontal4":
-            # O saldo do hero ocupa a mesma posicao relativa nas quatro mesas.
-            # Replicar o retangulo impede que o preset errado das outras mesas persista.
-            for destination, area in replicate_horizontal_rect(rect, table).items():
+        if key == "stack" and self.layout_id() != "grid2x2":
+            # Mesmo posicionamento relativo em janelas 1-4, sem presumir 4 ativas.
+            for destination, area in replicate_horizontal_rect(stored_rect, table).items():
                 self.cfg[str(destination)]["stack"] = area
             self.tell("Saldo corrigido nas quatro mesas. Clique Testar saldo e salve a configuracao.")
         else:
@@ -884,7 +945,8 @@ class GUI(tk.Tk):
             messagebox.showwarning("Saldo", "Marque a regiao do saldo e confira o Tesseract.")
             return
         try:
-            reading = ocr_stack(self.frame.crop(roi_tuple(rect)), tesseract)
+            reading = ocr_stack(
+                self.frame.crop(layout_rect(rect, table, self.layout_id())), tesseract)
             if reading is None:
                 messagebox.showwarning(
                     "Saldo nao reconhecido",
@@ -917,7 +979,8 @@ class GUI(tk.Tk):
             messagebox.showwarning("OCR", "Tesseract nao encontrado.")
             return
         try:
-            values = read_nickname(self.frame.crop(roi_tuple(name_rect)), tesseract)
+            values = read_nickname(
+                self.frame.crop(layout_rect(name_rect, table, self.layout_id())), tesseract)
             verified = any(nickname_matches(value, nick) for value in values)
             displayed = " / ".join(values) or "(nao legivel)"
             if verified:
@@ -942,7 +1005,8 @@ class GUI(tk.Tk):
         if not messagebox.askyesno("Confirmar referencia",
                                    f"Na mesa {table}, a regiao marcada das cartas do jogador esta VAZIA neste frame?"):
             return
-        data["reference"] = image_png(self.frame.crop(roi_tuple(data["hole"])).convert("L"))
+        data["reference"] = image_png(
+            self.frame.crop(layout_rect(data["hole"], table, self.layout_id())).convert("L"))
         data["detector"] = "reference"
         self.tell(f"Mesa {table}: referencia SEM cartas registrada.")
         self.draw()
