@@ -1419,6 +1419,26 @@ def validated_markings(data):
                 clone[key] = list(roi_tuple(clone[key]))
             elif key in ("hole", "stack"):
                 raise ValueError(f"Regiao {key} ausente na mesa {table}.")
+        # Migrar automaticamente a marcacao VERDE GRANDE desenhada na versao
+        # anterior como "cartas": se cobre o HUD inteiro (altura >= 80px),
+        # ja e a unica marcacao que o usuario quer guardar.
+        layouts = json.loads(json.dumps(source.get("layout_rois", {})))
+        sources = json.loads(json.dumps(source.get("layout_roi_sources", {})))
+        for mode, entries in layouts.items():
+            if not isinstance(entries, dict):
+                raise ValueError("Perfil de layout invalido.")
+            hud = entries.get("hero_hud")
+            legacy_large = entries.get("hole")
+            if hud is None and legacy_large:
+                rect = roi_tuple(legacy_large)
+                if rect[3] - rect[1] >= 80 and rect[2] - rect[0] >= 90:
+                    hud = list(rect)
+                    entries["hero_hud"] = hud
+                    sources.setdefault(mode, {})["hero_hud"] = "manual"
+            if hud is not None:
+                entries["hero_hud"] = list(roi_tuple(hud))
+        clone["layout_rois"] = layouts
+        clone["layout_roi_sources"] = sources
         bb = float(str(clone.get("bb", "1")).replace(",", "."))
         if not (0 < bb < 1000000):
             raise ValueError(f"BB invalido na mesa {table}.")
