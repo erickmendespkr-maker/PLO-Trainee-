@@ -1365,7 +1365,8 @@ def recheck_candidates_with_gemini(videos, config, candidates, threshold,
             after = [native_stack_crop(videos, at, roi, ffmpeg)
                      for at in after_times]
             values = client.read_pair(before, after, bb=bb,
-                                      max_stack_bb=MAX_STACK_BB)
+                                      max_stack_bb=MAX_STACK_BB,
+                                      expected_nick=c.nick.strip() or None)
             checked += 1
             c.gemini_checked = True
             if values is None:
