@@ -204,6 +204,7 @@ class GeminiClient:
         self.used = 0
         self.disabled_reason = None
         self._transport = transport or urllib.request.urlopen
+        self.last_pair_nick_verified = False
 
     def _request(self, parts, max_output=256):
         if self.disabled_reason is not None:
@@ -244,6 +245,7 @@ class GeminiClient:
 
     def read_pair(self, before_images, after_images, bb=1.0,
                   max_stack_bb=5000.0, expected_nick=None):
+        self.last_pair_nick_verified = False
         if len(before_images) != 2 or len(after_images) != 2:
             return None
         parts = [{
@@ -262,7 +264,9 @@ class GeminiClient:
                 "Se houver mais de um saldo, use null. "
                 "Preserve numeros e decimais, separador decimal como ponto. "
                 "Responda SOMENTE JSON neste formato exato: "
-                '{"before":[114.0,114.0],"after":[74.0,74.0]}. '
+                '{"before":[114.0,114.0],"after":[74.0,74.0],'
+                '"nicks":["~Pulgar~","~Pulgar~","~Pulgar~","~Pulgar~"]}. '
+                "Em nicks escreva o nick visto em cada imagem ou null. "
                 "Use null para valores nao confiaveis."
             )
         }]
@@ -272,6 +276,15 @@ class GeminiClient:
             parts.append({"inline_data": {
                 "mime_type": "image/png", "data": _image_png(image)}})
         payload = self._request(parts)
+        if isinstance(payload, dict) and expected_nick:
+            names = payload.get("nicks")
+            def norm(value):
+                return re.sub(r"[^a-z0-9]", "", str(value).casefold())
+            target = norm(expected_nick)
+            self.last_pair_nick_verified = bool(
+                target and isinstance(names, list) and len(names) == 4 and
+                all(isinstance(name, str) and norm(name) == target
+                    for name in names))
         return interpret_stack_response(payload, bb, max_stack_bb)
 
     def read_hud_fields(self, image, bb=1.0, max_stack_bb=5000.0,
