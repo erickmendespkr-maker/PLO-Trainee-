@@ -19,7 +19,11 @@ def audit_local_evidence(hand, source_video, frame_directory):
     if not isinstance(hand, dict):
         return {"status": "INSUFFICIENT_DATA", "reasons": ["invalid_hand"],
                 "verified_file_count": 0, "proves_frame_origin": False}
-    root = Path(frame_directory).resolve()
+    root_input = Path(frame_directory)
+    root = root_input.resolve()
+    if root_input.is_symlink() or not root.is_dir():
+        return {"status": "INSUFFICIENT_DATA", "reasons": ["frame_directory_invalid"],
+                "verified_file_count": 0, "proves_frame_origin": False}
     source_input = Path(source_video)
     source = source_input.resolve()
     declared = hand.get("source_video_sha256")
@@ -41,11 +45,17 @@ def audit_local_evidence(hand, source_video, frame_directory):
                 continue
             name = frame.get("frame_file")
             expected = frame.get("frame_sha256")
-            if not isinstance(name, str) or not name or Path(name).is_absolute() or ".." in Path(name).parts:
+            if not isinstance(name, str) or not name or Path(name).is_absolute() or "\\" in name or ".." in Path(name).parts:
                 reasons.append(prefix + "unsafe_path")
                 continue
-            target = (root / name).resolve()
-            if not target.is_relative_to(root) or target == root or target.is_symlink() or not target.is_file():
+            candidate = root / name
+            # resolve() hides symlink components; inspect the original path first.
+            if any(part.is_symlink() for part in (candidate, *candidate.parents)
+                   if part != root and root in part.parents):
+                reasons.append(prefix + "file_missing_or_unsafe")
+                continue
+            target = candidate.resolve()
+            if not target.is_relative_to(root) or target == root or not target.is_file():
                 reasons.append(prefix + "file_missing_or_unsafe")
                 continue
             if not isinstance(expected, str) or not _SHA.fullmatch(expected):
