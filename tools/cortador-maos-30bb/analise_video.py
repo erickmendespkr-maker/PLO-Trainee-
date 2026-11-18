@@ -964,6 +964,71 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
     return sorted(collected, key=lambda item: (item.start, item.table))
 
 
+DEFAULT_MARKINGS_FILE = "marcacoes_padrao.json"
+
+
+def default_markings_path():
+    """Persiste fora da pasta ZIP, para nao perder calibracao ao atualizar."""
+    base = os.environ.get("LOCALAPPDATA")
+    root = Path(base) if base else Path.home() / ".local" / "share"
+    return root / "CortadorPLO" / DEFAULT_MARKINGS_FILE
+
+
+def validated_markings(data):
+    """Valida o arquivo salvo antes de usar coordenadas no OCR."""
+    if not isinstance(data, dict):
+        raise ValueError("Marcacoes invalidas.")
+    tables = data.get("tables")
+    if not isinstance(tables, dict):
+        raise ValueError("Configuracao sem tabelas.")
+    prepared = {}
+    for table in TABLES:
+        source = tables.get(str(table))
+        if not isinstance(source, dict):
+            raise ValueError(f"Mesa {table} ausente nas marcacoes.")
+        clone = dict(source)
+        for key in ("hole", "stack", "nick"):
+            if clone.get(key):
+                clone[key] = list(roi_tuple(clone[key]))
+            elif key in ("hole", "stack"):
+                raise ValueError(f"Regiao {key} ausente na mesa {table}.")
+        bb = float(str(clone.get("bb", "1")).replace(",", "."))
+        if not (0 < bb < 1000000):
+            raise ValueError(f"BB invalido na mesa {table}.")
+        clone["bb"] = str(bb)
+        prepared[str(table)] = clone
+    layout = data.get("layout", LAYOUT_LABELS[0])
+    layout_key(layout)
+    return {"version": 1, "layout": layout,
+            "nick": str(data.get("nick", "~Pulgar~")),
+            "tables": prepared}
+
+
+def save_markings_file(path, tables, nick, layout):
+    """Gravacao atomica evita perder o ultimo padrao se o PC desligar."""
+    payload = validated_markings({
+        "tables": tables, "nick": nick, "layout": layout})
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp = target.with_name(target.name + ".tmp")
+    try:
+        temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+        os.replace(temp, target)
+    finally:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return target
+
+
+def load_markings_file(path):
+    return validated_markings(
+        json.loads(Path(path).read_text(encoding="utf-8")))
+
+
+
 class GUI(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -990,9 +1055,21 @@ class GUI(tk.Tk):
         self.show_inconclusive = tk.BooleanVar(value=False)
         self.auto_export_folder = None
         self.cfg = screenshot_profile()
+        self.markings_source = "Pre-calibracao do print"
+        preset = default_markings_path()
+        if preset.is_file():
+            try:
+                saved = load_markings_file(preset)
+                self.cfg = saved["tables"]
+                self.nick.set(saved["nick"])
+                self.layout.set(saved["layout"])
+                self.markings_source = "Marcacoes salvas no computador"
+            except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+                self.markings_source = "Pre-calibracao do print (padrao salvo invalido)"
         self._ui()
+        self.on_table_change()
         self.draw()
-        self.tell("Modo Automatico: detecta 1-4 mesas e mudanças durante o video.")
+        self.tell(self.markings_source + " — use Salvar como padrao apos ajustes.")
 
     def _ui(self):
         top = ttk.Frame(self)
@@ -1022,7 +1099,11 @@ class GUI(tk.Tk):
         self.field = tk.StringVar(value="cartas")
         ttk.Combobox(row, textvariable=self.field, values=["cartas", "saldo", "nick"],
                      state="readonly", width=8).pack(side="left")
-        ttk.Button(row, text="Usar regioes do print", command=self.apply_profile).pack(side="left", padx=7)
+        ttk.Button(row, text="Usar regioes do print", command=self.apply_profile).pack(side="left", padx=5)
+        ttk.Button(row, text="Salvar como padrao",
+                   command=self.save_default_markings).pack(side="left", padx=4)
+        ttk.Button(row, text="Usar padrao salvo",
+                   command=self.load_default_markings).pack(side="left", padx=4)
         ttk.Button(row, text="Testar saldo", command=self.test_stack_frame).pack(side="left", padx=4)
 
         row2 = ttk.Frame(self)
@@ -1242,7 +1323,45 @@ class GUI(tk.Tk):
         self.cfg = screenshot_profile()
         self.on_table_change()
         self.draw()
-        self.tell("Regioes do print restauradas. Confira o saldo e o nick.")
+        self.tell("Pre-calibracao do print restaurada. "
+                  "Clique Salvar como padrao para manter esta escolha.")
+
+    def save_default_markings(self):
+        """Captura TODAS as marcas atuais, incluindo ajustes manuais do nick."""
+        try:
+            target = save_markings_file(
+                default_markings_path(), self.cfg, self.nick.get(),
+                self.layout.get())
+            self.markings_source = "Marcacoes salvas no computador"
+            self.tell("Marcacoes de cartas, saldo, nick e BB salvas como padrao.")
+            messagebox.showinfo(
+                "Padrao salvo",
+                "As marcacoes atuais das 4 posicoes foram salvas.\n\n"
+                "Elas serao carregadas automaticamente toda vez que abrir "
+                "o programa, inclusive apos atualizar o ZIP.\n\n"
+                f"Arquivo: {target}")
+        except (OSError, ValueError, TypeError) as exc:
+            messagebox.showerror("Salvar padrao", str(exc))
+
+    def load_default_markings(self):
+        path = default_markings_path()
+        if not path.is_file():
+            messagebox.showwarning(
+                "Sem padrao salvo",
+                "Ainda nao existe padrao salvo. Posicione as regioes "
+                "e clique Salvar como padrao.")
+            return
+        try:
+            saved = load_markings_file(path)
+            self.cfg = saved["tables"]
+            self.nick.set(saved["nick"])
+            self.layout.set(saved["layout"])
+            self.markings_source = "Marcacoes salvas no computador"
+            self.on_table_change()
+            self.draw()
+            self.tell("Padrao salvo carregado: cartas, saldo, nick e BB.")
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            messagebox.showerror("Abrir padrao", str(exc))
 
     def tell(self, msg):
         self.status.configure(text=msg)
