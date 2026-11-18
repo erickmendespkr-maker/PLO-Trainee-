@@ -95,10 +95,48 @@ def layout_rect(base_rect, table, mode):
             round(new_x + (rect[2] - orig_x) * ratio), rect[3])
 
 
-def layout_roi(data, table, mode, key):
-    """Usa uma ROI especifica por disposicao quando existe."""
+def default_hero_hud(mode, table):
+    """Uma caixa grande inferior por mesa, como no print de 3 mesas."""
     mode = layout_key(mode)
-    specific = data.get("layout_rois", {}).get(mode, {}).get(key)
+    left, top, right, bottom = layout_bounds(mode, table)
+    if mode == "grid2x2":
+        # O perfil 2x2 possui geometria diferente, exigir ajuste manual.
+        return None
+    width = right - left
+    return (round(left + width * .31), 405,
+            round(left + width * .90), 528)
+
+
+def hero_hud_parts(hud):
+    """Subareas internas. Usuario desenha UM HUD; OCR/cartas recebem recortes."""
+    x1, y1, x2, y2 = roi_tuple(hud)
+    width, height = x2 - x1, y2 - y1
+    if width < 65 or height < 50:
+        raise ValueError("HUD unico pequeno demais: inclua cartas, nick e saldo.")
+    parts = {
+        "hole": (round(x1 + width * .40), round(y1 + height * .20),
+                 round(x1 + width * .94), round(y1 + height * .64)),
+        "nick": (round(x1 + width * .11), round(y1 + height * .47),
+                 round(x1 + width * .58), round(y1 + height * .65)),
+        "stack": (round(x1 + width * .11), round(y1 + height * .67),
+                  round(x1 + width * .58), round(y1 + height * .80)),
+    }
+    return {name: roi_tuple(rect) for name, rect in parts.items()}
+
+
+def layout_roi(data, table, mode, key):
+    """Uma unica marcacao HUD prevalece para cartas, nick e saldo."""
+    mode = layout_key(mode)
+    selections = data.get("layout_rois", {}).get(mode, {})
+    hud = selections.get("hero_hud")
+    if hud is None and mode != "grid2x2":
+        hud = default_hero_hud(mode, table)
+    if key == "hero_hud":
+        return roi_tuple(hud) if hud is not None else None
+    if hud is not None and key in ("hole", "nick", "stack"):
+        return hero_hud_parts(hud)[key]
+    # Compatibilidade com antigos layouts 2x2 e JSON anteriores.
+    specific = selections.get(key)
     if specific is not None:
         return roi_tuple(specific)
     return layout_rect(data[key], table, mode) if data.get(key) else None
