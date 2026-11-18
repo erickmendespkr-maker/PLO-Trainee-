@@ -1666,7 +1666,10 @@ class GUI(tk.Tk):
                 position += v.duration
             self.total = position
             self.info.configure(text=f"{len(self.videos)} arquivo(s) | {fmt(self.total)}")
+            # Nao carregar a inferencia visual do arquivo anterior ao trocar video.
             self.detected_timeline = []
+            self.preview_auto_mode = None
+            self.preview_when = None
             self.show_frame()
         except Exception as exc:
             messagebox.showerror("Video", str(exc))
@@ -1674,6 +1677,7 @@ class GUI(tk.Tk):
     def clear_videos(self):
         self.videos = []
         self.total = 0
+        self.seek.set("00:00:00")
         self.frame = None
         self.candidates = []
         self.info.configure(text="Nenhum video carregado")
@@ -1690,6 +1694,8 @@ class GUI(tk.Tk):
             return
         try:
             when = min(parse_time(self.seek.get()), max(0, self.total - .1))
+            if parse_time(self.seek.get()) > when + .01:
+                self.seek.set(fmt(when))
             video, local = file_at(self.videos, when)
             cmd = [resource("ffmpeg"), "-hide_banner", "-loglevel", "error",
                    "-ss", str(local), "-i", video.path, "-frames:v", "1",
