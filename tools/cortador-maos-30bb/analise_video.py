@@ -698,10 +698,13 @@ class HandState:
                             subprocess.SubprocessError):
                         pass
                 original_samples[name] = images
+            # O fallback usa ate duas amostras e evita dezenas de OCR
+            # detalhados por mao. O usuario pode diagnosticar a ROI
+            # com todos os filtros no botao Testar saldo.
             n_before, c_before = stack_median(
-                original_samples["before"], tesseract, quick=False, bb=bb)
+                original_samples["before"], tesseract, quick=True, bb=bb)
             n_after, c_after = stack_median(
-                original_samples["after"], tesseract, quick=False, bb=bb)
+                original_samples["after"], tesseract, quick=True, bb=bb)
             if n_before is not None and n_after is not None:
                 pre, post = n_before, n_after
                 n_pre, n_post = c_before, c_after
@@ -1656,7 +1659,9 @@ class GUI(tk.Tk):
                 continue
             try:
                 bb = float(self.cfg[str(table)].get("bb", 1))
-                image = self.frame.crop(layout_rect(rect, table, mode))
+                image = native_stack_crop(
+                    self.videos, parse_time(self.seek.get()),
+                    layout_rect(rect, table, mode), resource("ffmpeg"))
                 value = ocr_stack(image, resource("tesseract"), quick=True)
                 if value is not None and 0 <= value / bb <= MAX_STACK_BB:
                     successes.append(f"Mesa {table}: {value / bb:g} BB")
@@ -1667,10 +1672,10 @@ class GUI(tk.Tk):
         if failures and not successes:
             return messagebox.askyesno(
                 "OCR dos saldos nao funciona nesta previa",
-                "Nenhuma caixa azul apresentou um saldo valido no frame atual.\n"
-                "Isso explica uma lista cheia de 'INCONCLUSIVO - OCR' e zero MP4.\n\n"
-                "Confira se as caixas azuis estao sobre o numero do saldo e "
-                "clique 'Testar saldo' antes de iniciar as horas de analise.\n\n"
+                "Nenhuma caixa azul apresentou saldo valido no frame original.\n"
+                "Isso pode gerar zero cortes.\n\n"
+                "Clique 'Testar saldo' para ver o recorte ORIGINAL ampliado "
+                "e as leituras brutas antes de iniciar horas de analise.\n\n"
                 "Deseja analisar mesmo assim?")
         if failures:
             self.tell("OCR do frame: " + "; ".join(successes) +
