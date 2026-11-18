@@ -82,3 +82,17 @@ Executa localmente e não realiza interação em tempo real com a sala. É uma f
 ## Testes
 
 A implementação foi salva no GitHub, mas as ferramentas de execução local desta conversa estão com erro: **não foi possível executar testes Python nem validar a detecção e a exportação contra os seis vídeos fornecidos**. Execute \`py -3 testes_visuais.py\` após instalar Pillow e Tesseract. Esses testes unitários não substituem a validação com vídeos da sua interface.
+
+## Ajustar o quadro azul (saldo do jogador) e acelerar a análise
+
+Se o retângulo **azul** não estiver exatamente sobre o **número do saldo em BB** do herói, o OCR pode ler o nick, cartas ou valores de outro jogador e gerar perdas erradas. Com o vídeo carregado:
+
+1. Selecione **Mesa 1** e **Marcar região → saldo**.
+2. Desenhe um novo retângulo azul bem justo sobre o **valor do saldo**, incluindo os algarismos e a vírgula decimal (e BB, se fizer parte do mesmo texto). Não inclua nickname nem fichas/apostas.
+3. Ao soltar o mouse, a mesma posição relativa será **automaticamente replicada nas outras três mesas** quando estiver em `4 lado a lado`.
+4. Clique **Testar saldo**; o número retornado pelo OCR deve corresponder ao saldo visível no vídeo. Ajuste novamente se for diferente.
+5. Salve a configuração e só então inicie a análise. As regiões do print são aproximações e precisam ser validadas no seu vídeo.
+
+A opção **OCR rápido** vem marcada por padrão. Ela conserva 1 quadro por segundo para detectar início/fim da mão, mas reduz os testes OCR de saldo de até três imagens por lado com duas passagens de leitura para até duas imagens por lado com uma passagem quando legível. Em caso de leitura totalmente falha, tenta outra imagem com o método detalhado. Desmarque **OCR rápido** para usar mais leituras nas mãos difíceis.
+
+O OCR rápido pode perder precisão; antes de exportar os MP4, confira as mãos encontradas e seus saldos. O desempenho real depende do tamanho/resolução da gravação e do PC; não há promessa de ganho percentual específico. Não é necessário reinstalar as dependências, apenas atualizar os scripts do ZIP.
