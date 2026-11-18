@@ -37,16 +37,33 @@ def finite_amount(value, max_value=5000):
     return value
 
 
-def table_context_timestamps(hand_start, hand_end, duration):
-    """Tempos dentro da mao, depois e antes do inicio; nao confundir com rebuy."""
-    if not (0 <= hand_start < hand_end < duration + 0.1):
+def table_context_timestamps(hand_start, hand_end, duration, after_times=None):
+    """Oito quadros DURANTE a mao + dois apos o fim para ver o pote entregue.
+
+    Quadros apos o fim podem mostrar recarga. Isso nao e ganho, e apenas
+    um marcador que a sessao prosseguiu depois do resultado.
+    """
+    if not (0 <= hand_start < hand_end < duration - .4):
         return None
     span = hand_end - hand_start
     if span < 2.5:
         return None
-    # Foco nos instantes em que apostas/pote mudam e perto do showdown.
     ratios = (.02, .15, .29, .43, .57, .71, .85, .98)
-    return [min(duration - .04, hand_start + span * p) for p in ratios]
+    during = [hand_start + span * p for p in ratios]
+    extras = []
+    for t in sorted(set(after_times or [])):
+        if hand_end + .01 < t < duration:
+            extras.append(float(t))
+    if len(extras) >= 2:
+        aftermath = [extras[0], extras[min(len(extras)-1, 2)]]
+    else:
+        aftermath = [
+            min(duration - .05, hand_end + .5),
+            min(duration - .03, hand_end + 2.0),
+        ]
+    if aftermath[1] <= aftermath[0]:
+        return None
+    return during + aftermath
 
 
 def validate_pot_result(payload, expected_nick, threshold=30):
