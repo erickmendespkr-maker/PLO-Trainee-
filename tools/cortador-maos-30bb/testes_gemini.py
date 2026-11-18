@@ -17,7 +17,9 @@ from gemini_backend import (
     read_key,
     save_key,
 )
-from analise_video import HandState
+from analise_video import (HandState, Candidate, screenshot_profile,
+                            recheck_sample_times, recheck_candidates_with_gemini)
+from cortador import Video
 
 
 class FakeResponse:
@@ -42,6 +44,73 @@ def fake_api_payload(before=None, after=None):
 
 
 class GeminiTests(unittest.TestCase):
+    def test_recuperar_maos_de_revisao_anterior_sem_revarrer_mp4(self):
+        import types
+        video = Video("gravacao.mp4", 180.0, 1920, 1080, True)
+        candidate = Candidate(
+            5, 45, 1, None, None, None,
+            "INCONCLUSIVO - SALDO NAO LIDO",
+            layout="horizontal4", before_times=[3, 5],
+            after_times=[40, 42])
+        class StubGemini:
+            disabled_reason = None
+            limit = 1
+            used = 0
+            def read_pair(self, before, after, bb, max_stack_bb):
+                self.used += 1
+                assert len(before) == len(after) == 2
+                return 150.0, 120.0
+        client = StubGemini()
+        image = Image.new("RGB", (112, 44), "black")
+        with patch("analise_video.resource", return_value="ffmpeg"), \
+             patch("analise_video.native_stack_crop", return_value=image) as crop:
+            result, inspected, positives = recheck_candidates_with_gemini(
+                [video], screenshot_profile(), [candidate], 30, client)
+        self.assertEqual(inspected, 1)
+        self.assertEqual(positives, 1)
+        self.assertTrue(result[0].auto_verified)
+        self.assertTrue(result[0].gemini_checked)
+        self.assertEqual(result[0].loss_bb, 30.0)
+        self.assertEqual(result[0].source, "Gemini")
+        self.assertEqual(crop.call_count, 4)
+        # A segunda reanalise nao cobra a mesma pendencia novamente.
+        with patch("analise_video.native_stack_crop") as again:
+            result2, inspected2, positives2 = recheck_candidates_with_gemini(
+                [video], screenshot_profile(), result, 30, client)
+        self.assertEqual((inspected2, positives2), (0, 0))
+        again.assert_not_called()
+
+    def test_recuperacao_pode_usar_tempos_da_revisao_antiga(self):
+        item = Candidate(20, 80, 1, None, None, None,
+                         "INCONCLUSIVO - SALDO NAO LIDO")
+        times = recheck_sample_times(item, 180)
+        self.assertEqual(times, ([21, 23], [76, 78]))
+        item.before_times = [16, 18, 19]
+        item.after_times = [82, 83, 84]
+        self.assertEqual(recheck_sample_times(item, 180),
+                         ([18, 19], [83, 84]))
+
+    def test_reanalise_nao_exporta_aposta_recuperada(self):
+        video = Video("gravacao.mp4", 100.0, 1920, 1080, True)
+        candidate = Candidate(
+            5, 45, 1, None, None, None,
+            "INCONCLUSIVO - SALDO NAO LIDO",
+            layout="horizontal4", before_times=[3, 5],
+            after_times=[40, 42])
+        client = Mock()
+        client.disabled_reason = None
+        client.used = 0
+        client.limit = 2
+        client.read_pair.return_value = (100.0, 110.0)
+        image = Image.new("RGB", (112, 44), "black")
+        with patch("analise_video.resource", return_value="ffmpeg"), \
+             patch("analise_video.native_stack_crop", return_value=image):
+            revised, checked, positives = recheck_candidates_with_gemini(
+                [video], screenshot_profile(), [candidate], 30, client)
+        self.assertEqual((checked, positives), (1, 0))
+        self.assertTrue(revised[0].excluded)
+        self.assertFalse(revised[0].auto_verified)
+
     def test_numeros_sem_inventar_decimais(self):
         self.assertEqual(normalize_amount("114,0"), 114)
         self.assertIsNone(normalize_amount("114 BB"))
