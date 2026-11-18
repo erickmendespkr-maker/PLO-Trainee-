@@ -1472,7 +1472,9 @@ def recheck_candidates_with_poker_context(videos, config, candidates, threshold,
             hand_end = (
                 c.hand_end if c.hand_end is not None
                 else min(duration - .05, c.end - 5))
-            moments = table_context_timestamps(hand_start, hand_end, duration)
+            moments = table_context_timestamps(
+                hand_start, hand_end, duration,
+                after_times=c.after_times)
             if moments is None:
                 c.reliability = "Mao curta ou limite de inicio/fim inseguro."
                 continue
