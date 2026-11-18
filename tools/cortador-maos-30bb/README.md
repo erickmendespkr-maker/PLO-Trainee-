@@ -9,7 +9,7 @@ Existe uma **primeira implementação de detecção visual + OCR**, ainda **não
 ### Fluxo implementado
 
 1. Selecionar **um vídeo completo** ou múltiplos MP4 consecutivos.
-2. Identificar os **quatro quadrantes** (mesa 1: superior esquerda; 2: superior direita; 3: inferior esquerda; 4: inferior direita).
+2. Escolher a disposição das **quatro mesas**: `4 lado a lado` (padrão no vídeo do usuário; mesa 1 mais à esquerda, mesa 4 mais à direita) ou `2 por 2` (mesa 1 superior esquerda, 2 superior direita, 3 inferior esquerda, 4 inferior direita).
 3. Configurar **uma única vez, por mesa**, a área pequena das **cartas do próprio jogador** e a área numérica do **saldo de fichas** (sem nome nem símbolos adicionais).
 4. Em um quadro **sem cartas**, registrar a referência visual daquela área e informar o valor de **1 big blind em fichas**.
 5. O analisador passa pelo **vídeo inteiro** em ordem, amostrando 1 quadro por segundo por meio de FFmpeg, e tenta reconhecer transições **sem cartas → cartas visíveis → sem cartas** em cada mesa separadamente.
@@ -49,6 +49,8 @@ Não precisa ter Git.
 5. Execute **INICIAR_ANALISE_VIDEO.bat**. O iniciador instala somente a dependência Python **Pillow** se faltar.
 
 ## Calibrar com as quatro mesas
+
+**Seu vídeo é horizontal, com quatro janelas verticais lado a lado.** Confirme no topo **Disposição: 4 lado a lado** antes de calibrar. As linhas amarelas devem dividir a prévia em quatro colunas. Na versão antiga as linhas formavam quatro quadrantes e os MP4 saíam incorretos; esta atualização corrige o preview, o mapeamento e o recorte.
 
 - Abra o vídeo e escolha uma **mesa** de 1 a 4.
 - Use **Ir ao tempo global** para chegar a uma mão ou momento adequado.
