@@ -1790,7 +1790,7 @@ class GUI(tk.Tk):
         ttk.Button(controls, text="Salvar revisao", command=self.save_scan).pack(side="left")
         ttk.Button(controls, text="Abrir revisao", command=self.load_scan).pack(side="left", padx=4)
         ttk.Button(controls, text="Adicionar mao", command=self.add_manual).pack(side="left")
-        ttk.Checkbutton(controls, text="Mostrar OCR inconclusivo",
+        ttk.Checkbutton(controls, text="Mostrar maos inconclusivas",
                         variable=self.show_inconclusive,
                         command=self.refresh).pack(side="left", padx=8)
         review_ai = ttk.Frame(self)
@@ -2950,7 +2950,7 @@ class GUI(tk.Tk):
                         videos, cfg, results, threshold, client,
                         lambda msg: self.after(0, lambda m=msg: self.tell(m)))
                 summary = (f"Gemini: {client.used}/{client.limit} chamadas; "
-                           f"{sum(c.source == 'Gemini' for c in results)} perdas com IA"
+                           f"{sum(c.auto_verified and c.source.startswith('Gemini') for c in results)} perdas com IA"
                            if client else "Gemini desligado")
                 self.after(0, lambda: self.finished(results, detections, summary))
             except Exception as exc:
@@ -2963,7 +2963,9 @@ class GUI(tk.Tk):
         self.busy = False
         self.refresh()
         saved_review = self.autosave_review()
-        verified = sum(c.auto_verified and not c.excluded for c in results)
+        verified = sum(c.auto_verified and not c.excluded and
+                       (not self.auto_rebuy.get() or c.pot_verified)
+                       for c in results)
         unresolved = sum(c.loss_bb is None for c in results)
         weak = len(results) - verified - unresolved
         self.tell(f"Analise: {verified} perdas consistentes; "
@@ -3101,16 +3103,29 @@ class GUI(tk.Tk):
 
         if not eligible:
             self.auto_export_folder = None
-            self.tell("0 perdas com leitura consistente para exportar. "
-                      "Confira saldo e, se ativado, limite/chave Gemini.")
-            messagebox.showwarning(
-                "Nenhuma perda exportavel",
-                "O programa nao confirmou leituras suficientes para perdas de pelo menos "
-                f"{threshold:g} BB com leituras suficientes.\n\n"
-                "Nao foram gerados cortes possivelmente errados.\n"
-                f"Relatorio: {report}\n\n"
-                "Verifique se o HUD verde cobre cartas, nick e saldo; use Testar saldo. "
-                "Se ativou Gemini, confira conexao e limite de chamadas.")
+            if self.auto_rebuy.get():
+                pending = sum(not c.excluded and not c.pot_verified and
+                              not c.gemini_checked for c in self.candidates)
+                self.tell(f"Nenhum pote perdido >= {threshold:g} BB confirmado. "
+                          f"{pending} maos ainda pendentes de verificacao.")
+                messagebox.showwarning(
+                    "Nenhum pote confirmado para exportar",
+                    "Nenhuma mao foi confirmada como perda de pelo menos "
+                    f"{threshold:g} BB com aporte do heroi e pote ao adversario.\n\n"
+                    "O saldo voltar para 100 BB com rebuy nao prova perda.\n"
+                    "Nao foram exportados cortes incertos.\n\n"
+                    f"Relatorio: {report}\n"
+                    "Para revisar mais maos, use REANALISAR POTES COM GEMINI "
+                    "e confira o limite de chamadas. A ultima revisao "
+                    "permanece salva.")
+            else:
+                self.tell("0 perdas com leitura de saldo suficiente. "
+                          "Confira as marcacoes e o OCR.")
+                messagebox.showwarning(
+                    "Nenhuma perda exportavel",
+                    "Nenhuma perda foi confirmada pelo OCR do saldo.\n\n"
+                    f"Relatorio: {report}\n"
+                    "Confira a regiao do HUD verde e use Testar saldo.")
             return
 
         self.busy = True
