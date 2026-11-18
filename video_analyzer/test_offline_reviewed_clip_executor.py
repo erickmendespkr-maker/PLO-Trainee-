@@ -37,6 +37,7 @@ class ClipTests(unittest.TestCase):
         self.assertTrue(out.is_file())
         self.assertEqual(meta['clip_sha256'], hashlib.sha256(out.read_bytes()).hexdigest())
         self.assertEqual(json.loads(Path(str(out)+'.json').read_text()), meta)
+        self.assertEqual(meta['reviewed_explanation'], p['explanation'])
         self.assertAlmostEqual(meta['clip_duration_seconds'], 1, delta=.15)
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'ffmpeg unavailable')
