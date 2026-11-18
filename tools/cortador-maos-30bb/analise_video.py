@@ -30,14 +30,15 @@ from cortador import Clip, export_clip, file_at, fmt, parse_time, probe, resourc
 W, H = 960, 540
 VIEW_W, VIEW_H = 720, 405
 TABLES = (1, 2, 3, 4)
-LAYOUT_LABELS = ("Auto (ate 4, slots fixos)", "1 mesa", "2 lado a lado",
+LAYOUT_LABELS = ("Automatico (1 a 4 mesas)", "1 mesa", "2 lado a lado",
                  "3 lado a lado", "4 lado a lado", "2 por 2")
 
 
 def layout_key(label):
     """Converte selecao visual para layout tecnico."""
     lookups = {
-        "Auto (ate 4, slots fixos)": "auto4", "1 mesa": "horizontal1",
+        "Auto (ate 4, slots fixos)": "auto4",
+        "Automatico (1 a 4 mesas)": "auto4", "1 mesa": "horizontal1",
         "2 lado a lado": "horizontal2", "3 lado a lado": "horizontal3",
         "4 lado a lado": "horizontal4", "2 por 2": "grid2x2"
     }
@@ -518,7 +519,7 @@ class HandState:
 
 
 def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
-                quick=True, initial_layout="Auto (ate 4, slots fixos)", events=None,
+                quick=True, initial_layout="Automatico (1 a 4 mesas)", events=None,
                 detected_events=None):
     """Varre uma unica gravacao ou varios videos, com ate 4 mesas e eventos de layout."""
     tesseract = resource("tesseract")
@@ -737,12 +738,16 @@ class GUI(tk.Tk):
         self.layout = tk.StringVar(value=LAYOUT_LABELS[0])
         self.change_to = tk.StringVar(value="3 lado a lado")
         self.timeline = []
+        self.detected_timeline = []
+        self.preview_when = None
+        self.preview_auto_mode = None
+        self.preview_confidence = 0.
         self.nick = tk.StringVar(value="~Pulgar~")
         self.quick = tk.BooleanVar(value=True)
         self.cfg = screenshot_profile()
         self._ui()
         self.draw()
-        self.tell("Aceita 1-4 mesas. Use eventos para quando janelas mudarem de posicao.")
+        self.tell("Modo Automatico: detecta 1-4 mesas e mudanças durante o video.")
 
     def _ui(self):
         top = ttk.Frame(self)
@@ -854,12 +859,25 @@ class GUI(tk.Tk):
         ttk.Label(self, text="Uso offline. Leituras de saldo por OCR sao estimativas; revise cada mao, rebuys e limites dos cortes.",
                   foreground="#9b571a").pack(padx=8, pady=2)
 
+    def effective_layout_at(self, when):
+        """Layout manual tem prioridade, senao usa historico detectado ou previa."""
+        current = mode_at(when, self.layout.get(), self.timeline)
+        if current != "auto4":
+            return current
+        if (self.preview_when is not None and
+                abs(self.preview_when - when) < 1.2 and self.preview_auto_mode):
+            return self.preview_auto_mode
+        known = [e for e in self.detected_timeline if e["start"] <= when]
+        if known:
+            return known[-1]["layout"]
+        return "horizontal4"  # Apenas grade da previa; scanner nao assume 4.
+
     def layout_id(self):
         try:
             when = parse_time(self.seek.get())
         except (ValueError, TypeError):
             when = 0
-        return mode_at(when, self.layout.get(), self.timeline)
+        return self.effective_layout_at(when)
 
     def infer_table(self, x, y):
         mode = self.layout_id()
@@ -989,6 +1007,9 @@ class GUI(tk.Tk):
         self.candidates = []
         self.info.configure(text="Nenhum video carregado")
         self.timeline = []
+        self.detected_timeline = []
+        self.preview_when = None
+        self.preview_auto_mode = None
         self.refresh_changes()
         self.refresh()
         self.draw()
@@ -1009,6 +1030,15 @@ class GUI(tk.Tk):
             if result.returncode:
                 raise RuntimeError(result.stderr.decode("utf-8", "replace")[-500:])
             self.frame = Image.open(io.BytesIO(result.stdout)).convert("RGB")
+            self.preview_when = when
+            if mode_at(when, self.layout.get(), self.timeline) == "auto4":
+                auto, confidence, _ = infer_horizontal_layout(
+                    self.frame, self.preview_auto_mode)
+                self.preview_auto_mode = auto
+                self.preview_confidence = confidence
+            else:
+                self.preview_auto_mode = None
+                self.preview_confidence = 0.
             self.draw()
         except Exception as exc:
             messagebox.showerror("Previa", str(exc))
@@ -1199,6 +1229,7 @@ class GUI(tk.Tk):
                 self.quick.set(bool(data.get("quick", True)))
                 self.layout.set(data.get("layout", "2 por 2" if "tables" not in data else "4 lado a lado"))
                 self.timeline = sorted(data.get("timeline", []), key=lambda x: float(x["start"]))
+                self.detected_timeline = []
                 self.refresh_changes()
                 self.on_table_change()
                 self.draw()
@@ -1214,7 +1245,7 @@ class GUI(tk.Tk):
             start = parse_time(self.seek.get())
         except ValueError:
             start = 0
-        mode = mode_at(start, self.layout.get(), self.timeline)
+        mode = self.effective_layout_at(start)
         table = int(self.table.get())
         if table > layout_count(mode):
             messagebox.showwarning("Mesa", "A mesa selecionada nao existe nesse instante.")
@@ -1242,10 +1273,11 @@ class GUI(tk.Tk):
                                             filetypes=[("Revisao visual", "*.json")])
         if not path:
             return
-        payload = {"version": 3, "videos": [asdict(v) for v in self.videos],
+        payload = {"version": 4, "videos": [asdict(v) for v in self.videos],
                    "layout": self.layout.get(), "config": self.cfg, "threshold": self.threshold.get(),
                    "nick": self.nick.get().strip(), "quick": self.quick.get(),
                    "timeline": self.timeline,
+                   "detected_timeline": self.detected_timeline,
                    "candidates": [asdict(c) for c in self.candidates]}
         try:
             Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1277,6 +1309,8 @@ class GUI(tk.Tk):
             self.cfg = data.get("config", self.cfg)
             self.layout.set(data.get("layout", "2 por 2"))
             self.timeline = sorted(data.get("timeline", []), key=lambda x: float(x["start"]))
+            self.detected_timeline = sorted(
+                data.get("detected_timeline", []), key=lambda x: float(x["start"]))
             self.refresh_changes()
             self.nick.set(data.get("nick", "~Pulgar~"))
             self.quick.set(bool(data.get("quick", True)))
@@ -1330,19 +1364,22 @@ class GUI(tk.Tk):
         quick = self.quick.get()
         initial_layout = self.layout.get()
         events = [entry.copy() for entry in self.timeline]
+        detections = []
         def worker():
             try:
                 results = scan_videos(videos, cfg, threshold,
                                       lambda msg: self.after(0, lambda m=msg: self.tell(m)),
                                       hero_nick=hero_nick, quick=quick,
-                                      initial_layout=initial_layout, events=events)
-                self.after(0, lambda: self.finished(results))
+                                      initial_layout=initial_layout, events=events,
+                                      detected_events=detections)
+                self.after(0, lambda: self.finished(results, detections))
             except Exception as exc:
                 self.after(0, lambda e=str(exc): self.failed(e))
         threading.Thread(target=worker, daemon=True).start()
 
-    def finished(self, results):
+    def finished(self, results, detections=None):
         self.candidates = results
+        self.detected_timeline = sorted(detections or [], key=lambda e: e["start"])
         self.busy = False
         self.refresh()
         self.tell(f"Analise concluida: {len(results)} candidatas / inconclusivas. Salve revisao e confira.")
@@ -1399,8 +1436,8 @@ class GUI(tk.Tk):
             loss = float(self.loss_edit.get().replace(",", "."))
             if not (0 <= st < en <= self.total) or loss <= 0:
                 raise ValueError("Confira inicio, fim e perda.")
-            mode_start = mode_at(st + 0.01, self.layout.get(), self.timeline)
-            mode_end = mode_at(max(st + 0.01, en - 0.01), self.layout.get(), self.timeline)
+            mode_start = self.effective_layout_at(st + 0.01)
+            mode_end = self.effective_layout_at(max(st + 0.01, en - 0.01))
             if mode_start != mode_end:
                 raise ValueError(
                     "A mao atravessa uma mudanca de disposicao. "
