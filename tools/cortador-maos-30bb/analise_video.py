@@ -15,7 +15,7 @@ import tempfile
 import threading
 import unicodedata
 from collections import deque
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -609,6 +609,8 @@ class Candidate:
     reliability: str = ""
     source: str = "OCR"
     gemini_checked: bool = False
+    before_times: list[float] = field(default_factory=list)
+    after_times: list[float] = field(default_factory=list)
 
 
 def eligible_losses(candidates, threshold, automatic_only=False):
@@ -764,7 +766,9 @@ class HandState:
             self.results.append(Candidate(
                 max(0, data["start"] - 5), data["end"] + 5, table,
                 None, pre, post, "INCONCLUSIVO - SALDO NAO LIDO",
-                layout=self.layout, reliability="OCR ausente"))
+                layout=self.layout, reliability="OCR ausente",
+                before_times=data.get("before_times", [])[:],
+                after_times=data.get("after_times", [])[:]))
             return
 
         if not loss_reaches_threshold(loss, threshold):
@@ -787,7 +791,9 @@ class HandState:
             layout=self.layout, auto_verified=strong,
             reliability=(f"Gemini: 2 quadros antes / 2 depois" if used_gemini else
                          f"OCR: antes {n_pre} / depois {n_post} leituras"),
-            source="Gemini" if used_gemini else "OCR"))
+            source="Gemini" if used_gemini else "OCR",
+            before_times=data.get("before_times", [])[:],
+            after_times=data.get("after_times", [])[:]))
 
 
 def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
@@ -1066,11 +1072,14 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
 
 
 def recheck_sample_times(candidate, duration):
-    """Recupera instantes fora da mao marcada; nao usa apostas intra-mao.
-
-    Candidate criada por HandState tem padding de 5 segundos de cada lado.
-    Isso permite ler o saldo antes da distribuicao e apos a mao.
-    """
+    """Lê tempos reais salvos da mão; aceita estimativa para revisões antigas."""
+    if candidate.before_times and candidate.after_times:
+        pre = sorted(set(candidate.before_times))[-2:]
+        post = sorted(set(candidate.after_times))[-2:]
+        if len(pre) == len(post) == 2 and pre[-1] < post[0] and (
+                0 <= pre[0] and post[-1] < duration):
+            return pre, post
+    # Revisões anteriores não armazenavam os instantes exatos.
     if (candidate.end - candidate.start < 10 or
             candidate.start < 0 or candidate.end > duration + 0.02):
         return None
