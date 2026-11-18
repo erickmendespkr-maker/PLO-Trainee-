@@ -16,6 +16,20 @@ Conforme o exemplo enviado do video com **tres mesas lado a lado**, a interface 
 
 **Aviso:** esta e uma implementacao por heuristicas visuais. A deteccao de maos e de perdas liquidas >= 30 BB continua sujeita a erros quando as mesas mudam de posicao, as cartas sao encobertas ou os saldos ficam ilegiveis. Confirme os MP4 antes de enviar ao instrutor. Os testes de regressao foram adicionados, mas ainda precisam ser executados no PC com a gravacao real.
 
+## Correção: saldo e nick buscados DENTRO do HUD verde inteiro
+
+No teste da mesa 2, a janela de diagnóstico mostrava um recorte de **68 × 18 pixels** com o número cortado, apesar de haver um retângulo verde grande contendo cartas, nick e saldo. O motivo era uma subárea calculada em percentuais fixos. Isso também prejudicava a verificação do nick.
+
+Nesta versão, **saldo e nick recebem o HUD completo**, exatamente como o usuário marcou. A partir desse recorte original, um novo módulo `hud_recognition.py` faz OCR procurando texto em diferentes regiões internas da própria caixa. Para o saldo, dá preferência ao número com a unidade **BB**, reduzindo confusão com números das cartas, pote e botões. Para o nick, examina várias linhas no HUD e procura o nome esperado.
+
+O botão **Testar saldo** deve agora mostrar uma imagem grande contendo **cartas, nick e saldo simultaneamente**, em vez de apenas uma tira com um número parcialmente visível. As leituras brutas ficam abaixo para diagnosticar erros. O botão **Verificar nick no frame** usa a imagem original do HUD. Se o OCR local falhar e o Gemini estiver ativado, pode solicitar a leitura de nick e saldo em uma chamada. **Testar Gemini no frame** também envia o HUD completo e apresenta os dois campos identificados.
+
+Durante a varredura de mãos, as amostras locais de saldo, o fallback do vídeo em resolução original e os recortes enviados ao Gemini passam a usar a **mesma caixa verde grande**. A área interna das cartas permanece separada para detectar início e fim da mão; você continua fazendo apenas uma marcação manual por mesa.
+
+**Como validar:** baixe o ZIP atualizado, execute `VERIFICAR_PROGRAMA.bat` (inclui testes de leitura de HUD sem API), abra o vídeo de 13 minutos, selecione mesa 2 e clique `Testar saldo`. Confirme que a imagem do diagnóstico contém o HUD inteiro. Em seguida, clique `Verificar nick no frame` e, se necessário, `Testar Gemini no frame`. Nenhuma posição antiga deve ser utilizada para o OCR de saldo/nick nos layouts lado a lado.
+
+O resultado ainda é **experimental**: Tesseract e Gemini podem falhar ou ler números incorretos. Perdas iguais ou maiores que 30 BB devem ser confirmadas em múltiplos quadros antes da exportação automática. A mudança de leitura não equivale a comprovar a precisão com sua gravação real.
+
 ## Estado atual
 
 Existe uma **primeira implementação de detecção visual + OCR**, ainda **não validada em gravações reais**. O novo aplicativo se chama **analise_video.py**; a interface legada **cortador.py** permanece no repositório somente como editor/cortador auxiliar. Ela ainda tem os recursos antigos de importação, mas **não são utilizados** pelo novo analisador.
