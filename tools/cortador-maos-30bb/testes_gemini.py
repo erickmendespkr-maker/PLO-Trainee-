@@ -135,6 +135,22 @@ class GeminiTests(unittest.TestCase):
             "before": [150], "after": [110, 110]
         }))
 
+    def test_gemini_le_nome_e_saldo_no_mesmo_hud(self):
+        requests = []
+        def response(request, timeout):
+            requests.append(json.loads(request.data.decode("utf-8")))
+            body = {"nick": "~Pulgar~", "value": "125,7"}
+            return FakeResponse({"candidates": [{"content": {
+                "parts": [{"text": json.dumps(body)}]}}]})
+        client = GeminiClient(
+            "EXAMPLE_NOT_REAL_KEY", max_requests=1, transport=response)
+        fields = client.read_hud_fields(
+            Image.new("RGB", (210, 130), "black"), expected_nick="~Pulgar~")
+        self.assertEqual(fields["nick"], "~Pulgar~")
+        self.assertEqual(fields["value"], 125.7)
+        self.assertEqual(client.used, 1)
+        self.assertIn("NICK", requests[0]["contents"][0]["parts"][0]["text"].upper())
+
     def test_enviar_quatro_recortes_e_respeitar_limite(self):
         requests = []
         def transport(request, timeout):
