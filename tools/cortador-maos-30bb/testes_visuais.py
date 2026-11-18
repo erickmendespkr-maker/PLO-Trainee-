@@ -22,6 +22,16 @@ class VisualTests(unittest.TestCase):
         self.assertLess(changed_fraction(blank, reference, rect), .01)
         self.assertGreater(changed_fraction(filled, reference, rect), .08)
 
+
+    def test_layout_de_quatro_colunas(self):
+        from analise_video import GUI
+        # Mapeamento independente da interface Tk (evita abrir janela no teste).
+        dummy = type("Dummy", (), {"layout_id": lambda _self: "horizontal4"})()
+        self.assertEqual(GUI.infer_table(dummy, 0, 0), 1)
+        self.assertEqual(GUI.infer_table(dummy, 239, 200), 1)
+        self.assertEqual(GUI.infer_table(dummy, 240, 200), 2)
+        self.assertEqual(GUI.infer_table(dummy, 959, 539), 4)
+
     def test_estado_da_mao(self):
         # Este teste verifica limites sem necessidade de OCR real.
         state = HandState()
