@@ -37,7 +37,7 @@ pause
 exit /b 1
 
 :check
-"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "gemini_backend.py" "hud_recognition.py" "pasta_saida.py" "poker_contexto.py" "testes_contexto.py" "testes_gemini.py" "testes_hud.py" "testes_pasta_saida.py"
+"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "analise_local.py" "hud_recognition.py" "pasta_saida.py" "testes_contexto.py" "testes_hud.py" "testes_pasta_saida.py"
 if errorlevel 1 (
   echo.
   echo ERRO: a verificacao de sintaxe falhou.
@@ -72,7 +72,7 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
-echo Testando perdas PLO com rebuy e premiacao do pote:
+echo Testando aporte intra-mao e rebuy sem API:
 "%PYEXE%" %PYARGS% "testes_contexto.py"
 if errorlevel 1 (
   echo.
@@ -81,17 +81,8 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
-echo Verificando integracao Gemini sem acessar a API:
-"%PYEXE%" %PYARGS% "testes_gemini.py"
-if errorlevel 1 (
-  echo.
-  echo Testes Gemini falharam. Copie o erro acima e envie no chat.
-  pause
-  exit /b 1
-)
-echo.
 echo Verificacoes sinteticas passaram.
-echo Nao foi enviada nenhuma imagem ou credencial nos testes.
+echo Todos os testes foram locais e nao fizeram chamadas de rede.
 echo Isto nao garante reconhecer corretamente o seu video.
 pause
 endlocal
