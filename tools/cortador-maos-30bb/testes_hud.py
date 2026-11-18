@@ -27,8 +27,58 @@ class HUDRecognitionTests(unittest.TestCase):
             amount, details = read_hud_stack(
                 full, "unused", parse_stack, quick=True)
         self.assertEqual(amount, 125.7)
-        self.assertEqual(details[0][0], "hud_inteiro")
+        self.assertEqual(details[0][0], "hud_centro_inferior")
         self.assertEqual(mock.call_count, 1)
+
+    def test_bug_real_nick_confirmado_saldo_990_vs_99_0(self):
+        """Diagnostico enviado: a imagem tem 99,0 BB, nao 990 BB."""
+        picture = Image.new("RGB", (216, 152), "black")
+        # Na ordem nova: centro 99.0, esquerdo 990, HUD inteiro sem valor,
+        # ultima linha vazia.
+        raw = [
+            "4 EF ~Pulgar~ 99.0 BB Carta alta",
+            "K UG)/ a áEce Sa J/ ~Pulgar~ / 990BB Carta alta",
+            "Carta alta",
+            "",
+        ]
+        with patch("hud_recognition._ocr", side_effect=raw):
+            value, diagnostics = read_hud_stack(
+                picture, "tesseract", parse_stack, quick=False)
+        self.assertEqual(value, 99.0)
+        self.assertEqual([row[3] for row in diagnostics],
+                         [99.0, 990.0, None, None])
+
+    def test_ocr_rapido_prioriza_regiao_com_decimal(self):
+        picture = Image.new("RGB", (216, 152), "black")
+        with patch("hud_recognition._ocr",
+                   return_value="~Pulgar~ 99.0 BB") as ocr:
+            value, diagnostics = read_hud_stack(
+                picture, "tesseract", parse_stack, quick=True)
+        self.assertEqual(value, 99.0)
+        self.assertEqual(diagnostics[0][0], "hud_centro_inferior")
+        self.assertEqual(ocr.call_count, 1)
+
+    def test_990_bb_sem_evidencia_decimal_nao_vira_99(self):
+        picture = Image.new("RGB", (216, 152), "black")
+        with patch("hud_recognition._ocr",
+                   side_effect=["", "990BB", "", ""]):
+            value, _ = read_hud_stack(
+                picture, "tesseract", parse_stack, quick=False)
+        self.assertIsNone(value)
+        # Confirma 990 verdadeiro se dois OCR independentes concordarem.
+        with patch("hud_recognition._ocr",
+                   side_effect=["990BB", "990 BB", "", ""]):
+            value, _ = read_hud_stack(
+                picture, "tesseract", parse_stack, quick=False)
+        self.assertEqual(value, 990.0)
+
+    def test_numeros_conflitantes_nao_geram_perda_falsa(self):
+        picture = Image.new("RGB", (216, 152), "black")
+        with patch("hud_recognition._ocr",
+                   side_effect=["99.0 BB", "125.0 BB", "", ""]):
+            value, _ = read_hud_stack(
+                picture, "tesseract", parse_stack, quick=False)
+        self.assertIsNone(value)
 
     def test_regioes_internas_sao_buscas_na_caixa_grande(self):
         full = Image.new("RGB", (210, 125), "black")
