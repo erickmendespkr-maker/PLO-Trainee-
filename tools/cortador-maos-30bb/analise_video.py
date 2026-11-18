@@ -846,7 +846,10 @@ def eligible_losses(candidates, threshold, automatic_only=False,
             continue
         trusted_auto = c.auto_verified and (
             not require_pot_evidence or c.pot_verified)
-        if trusted_auto if automatic_only else (trusted_auto or c.confirmed):
+        if automatic_only:
+            if trusted_auto:
+                chosen.append(c)
+        elif trusted_auto or c.confirmed:
             chosen.append(c)
     return chosen
 
