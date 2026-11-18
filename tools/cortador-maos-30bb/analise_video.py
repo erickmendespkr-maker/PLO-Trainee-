@@ -1439,6 +1439,12 @@ def validated_markings(data):
                 entries["hero_hud"] = list(roi_tuple(hud))
         clone["layout_rois"] = layouts
         clone["layout_roi_sources"] = sources
+        # Uma referencia visual antiga de cartas tem dimensoes diferentes
+        # das subareas calculadas a partir do novo HUD; nao reutiliza-la.
+        if any(isinstance(entry, dict) and entry.get("hero_hud")
+               for entry in layouts.values()):
+            clone.pop("reference", None)
+            clone["detector"] = "bright"
         bb = float(str(clone.get("bb", "1")).replace(",", "."))
         if not (0 < bb < 1000000):
             raise ValueError(f"BB invalido na mesa {table}.")
