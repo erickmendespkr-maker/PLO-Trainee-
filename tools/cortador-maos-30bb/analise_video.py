@@ -133,8 +133,12 @@ def layout_roi(data, table, mode, key):
         hud = default_hero_hud(mode, table)
     if key == "hero_hud":
         return roi_tuple(hud) if hud is not None else None
-    if hud is not None and key in ("hole", "nick", "stack"):
-        return hero_hud_parts(hud)[key]
+    # Saldo e nick sao pesquisados DENTRO do HUD completo; nao usar mais
+    # percentuais estreitos que cortavam "125,7 BB" e "~Pulgar~".
+    if hud is not None and key in ("nick", "stack"):
+        return roi_tuple(hud)
+    if hud is not None and key == "hole":
+        return hero_hud_parts(hud)["hole"]
     # Compatibilidade com antigos layouts 2x2 e JSON anteriores.
     specific = selections.get(key)
     if specific is not None:
