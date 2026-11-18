@@ -2468,17 +2468,18 @@ class GUI(tk.Tk):
         return True
 
     def analyze(self):
+        """Duas fases offline: localizar maos e estimar aportes durante a mao."""
         if self.busy:
             return
         if not self.videos:
-            messagebox.showwarning("Videos", "Adicione o video original ou as partes MP4.")
+            messagebox.showwarning("Videos", "Adicione o video original ou partes MP4.")
             return
         try:
             threshold = float(self.threshold.get().replace(",", "."))
             if threshold <= 0:
-                raise ValueError("Limite BB precisa ser positivo.")
+                raise ValueError("Perda minima deve ser positiva.")
             if not self.nick.get().strip():
-                raise ValueError("Preencha o nick do jogador principal.")
+                raise ValueError("Preencha o nick do jogador.")
             modes = {layout_key(self.layout.get())}
             modes.update(layout_key(e["layout"]) for e in self.timeline)
             required = set()
@@ -2486,106 +2487,78 @@ class GUI(tk.Tk):
                 required.update(range(1, layout_count(mode) + 1))
             for table in sorted(required):
                 data = self.cfg[str(table)]
-                for key in ("hole", "stack"):
-                    if not data.get(key):
-                        raise ValueError(f"Falta regiao de {key} na mesa {table}.")
-                if data.get("detector") == "reference" and not data.get("reference"):
-                    raise ValueError(f"Mesa {table}: falta referencia manual.")
-                roi_tuple(data["hole"])
-                roi_tuple(data["stack"])
                 if not data.get("bb"):
-                    raise ValueError(f"Informe BB da mesa {table}.")
-            if self.use_gemini.get():
-                if not read_key():
-                    raise ValueError(
-                        "Chave Gemini ausente. Clique Configurar chave e digite "
-                        "a sua NOVA chave local.")
-                if self.gemini_model.get() not in ALLOWED_MODELS:
-                    raise ValueError("Modelo Gemini invalido.")
-                limit = int(self.gemini_limit.get())
-                if not 1 <= limit <= 300:
-                    raise ValueError("Maximo de chamadas Gemini: 1 a 300.")
-            if not resource("tesseract"):
-                raise ValueError("Instale Tesseract OCR e coloque tesseract.exe no PATH.")
-        except Exception as exc:
+                    raise ValueError(f"Informe o BB da mesa {table}.")
+                if data.get("detector") == "reference" and not data.get("reference"):
+                    raise ValueError(f"Mesa {table}: referencia vazia.")
+                if data.get("hole"):
+                    roi_tuple(data["hole"])
+            if not resource("tesseract") or not resource("ffmpeg"):
+                raise ValueError("Instale Tesseract e FFmpeg antes da analise offline.")
+            if self.auto_export.get():
+                self.current_output_folder(create=True)
+        except (ValueError, OSError, KeyError) as exc:
             messagebox.showerror("Configuracao", str(exc))
             return
-        # Com recomposicao automatica, o saldo inicial e final nao prova
-        # perda; nao bloquear a leitura da mesa por erro de OCR do HUD.
-        if not self.auto_rebuy.get() and not self.check_stacks_before_analysis():
-            return
-        destination = None
-        if self.auto_export.get():
-            try:
-                destination = str(self.current_output_folder(create=True))
-            except (OSError, ValueError) as exc:
-                messagebox.showerror("Pasta dos MP4", str(exc))
-                return
-        self.auto_export_folder = destination
+
         self.busy = True
-        self.tell("Identificando maos e verificando aporte no pote e vencedor "
-                  "(rebuy automatico ativado)." if self.auto_rebuy.get() else
-                  "Analisando saldos para selecionar perdas >= limite...")
+        self.tell("Fase 1/2: localizando maos do heroi (sem acesso a internet)...")
         cfg = json.loads(json.dumps(self.cfg))
         videos = self.videos[:]
         hero_nick = self.nick.get().strip()
         quick = self.quick.get()
         rebuy_mode = self.auto_rebuy.get()
-        initial_layout = self.layout.get()
-        events = [entry.copy() for entry in self.timeline]
+        layout = self.layout.get()
+        events = [e.copy() for e in self.timeline]
         detections = []
-        selected_model = self.gemini_model.get()
-        max_calls = int(self.gemini_limit.get()) if self.use_gemini.get() else 0
-        # O segredo so permanece na memoria deste processo local.
-        api_key = read_key() if self.use_gemini.get() else None
         def worker():
             try:
-                client = (GeminiClient(api_key, model=selected_model,
-                                       max_requests=max_calls)
-                          if api_key else None)
-                results = scan_videos(videos, cfg, threshold,
-                                      lambda msg: self.after(0, lambda m=msg: self.tell(m)),
-                                      hero_nick=hero_nick, quick=quick,
-                                      initial_layout=initial_layout, events=events,
-                                      detected_events=detections, gemini_client=client,
-                                      auto_rebuy=rebuy_mode)
-                if rebuy_mode and client is not None:
-                    results, reviewed, approved = recheck_candidates_with_poker_context(
-                        videos, cfg, results, threshold, client,
-                        lambda msg: self.after(0, lambda m=msg: self.tell(m)))
-                summary = (f"Gemini: {client.used}/{client.limit} chamadas; "
-                           f"{sum(c.auto_verified and c.source.startswith('Gemini') for c in results)} perdas com IA"
-                           if client else "Gemini desligado")
-                self.after(0, lambda: self.finished(results, detections, summary))
+                results = scan_videos(
+                    videos, cfg, threshold,
+                    lambda msg: self.after(0, lambda m=msg: self.tell(m)),
+                    hero_nick=hero_nick, quick=quick,
+                    initial_layout=layout, events=events,
+                    detected_events=detections, auto_rebuy=rebuy_mode)
+                self.after(0, lambda: self.tell(
+                    f"Fase 2/2: {len(results)} maos candidatas; "
+                    "OCR do stack durante cada mao..."))
+                estimates, analyzed, priority = estimate_candidates_offline(
+                    videos, cfg, results, threshold,
+                    lambda msg: self.after(0, lambda m=msg: self.tell(m)))
+                summary = (f"{analyzed} maos com triagem de aporte; "
+                           f"{priority} prioritarias (AINDA NAO confirmadas)")
+                self.after(0, lambda: self.finished(
+                    estimates, detections, summary, export_review=True))
             except Exception as exc:
                 self.after(0, lambda e=str(exc): self.failed(e))
         threading.Thread(target=worker, daemon=True).start()
 
-    def finished(self, results, detections=None, ai_summary=""):
+    def finished(self, results, detections=None, summary="", export_review=False):
         self.candidates = results
-        self.detected_timeline = sorted(detections or [], key=lambda e: e["start"])
+        self.detected_timeline = sorted(detections or [],
+                                        key=lambda e: e["start"])
         self.busy = False
         self.refresh()
-        saved_review = self.autosave_review()
-        verified = sum(c.auto_verified and not c.excluded and
-                       (not self.auto_rebuy.get() or c.pot_verified)
-                       for c in results)
-        unresolved = sum(c.loss_bb is None for c in results)
-        weak = len(results) - verified - unresolved
-        self.tell(f"Analise: {verified} perdas consistentes; "
-                  f"{weak} perdas fracas; {unresolved} leituras inconclusivas. "
-                  f"{ai_summary}. "
-                  + ("Revisao automatica salva." if saved_review else
-                     "ATENCAO: revisao automatica nao foi salva."))
-        if self.auto_export_folder:
-            # Gera apenas os MP4 com leitura repetida confiavel, sem clique manual.
-            self.export(folder=self.auto_export_folder, automatic_only=True)
+        saved = self.autosave_review()
+        priorities = sum(
+            c.hero_invested_bb is not None and
+            c.hero_invested_bb >= float(self.threshold.get().replace(",", "."))
+            for c in results)
+        self.tell(f"Analise offline: {len(results)} maos; {priorities} com "
+                  "aporte potencial acima do limite. "
+                  + ("Revisao salva." if saved else
+                     "AVISO: nao foi possivel salvar revisao.") + " " + summary)
+        if export_review and self.auto_export.get() and results:
+            # So cria MP4 de REVISAO, nunca os chama de perdas confirmadas.
+            self.export_review_candidates(confirm=False)
         else:
             messagebox.showinfo(
-                "Analise concluida",
-                f"Perdas detectadas com OCR consistente: {verified}\n"
-                f"Perdas incertas: {weak}\nLeituras inconclusivas: {unresolved}\n\n"
-                f"{ai_summary}\n\nAs leituras devem ser conferidas nos videos.")
+                "Triagem offline concluida",
+                f"{len(results)} maos encontradas.\n"
+                f"{priorities} com possivel aporte >= limite.\n\n"
+                "Nenhuma queda de stack e considerada prova de derrota. "
+                "Confirme o destino do pote e a perda liquida antes de "
+                "exportar PERDAS confirmadas.")
 
     def failed(self, error):
         self.busy = False
