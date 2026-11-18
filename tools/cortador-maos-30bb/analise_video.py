@@ -1341,6 +1341,12 @@ class GUI(tk.Tk):
         ttk.Checkbutton(controls, text="Mostrar OCR inconclusivo",
                         variable=self.show_inconclusive,
                         command=self.refresh).pack(side="left", padx=8)
+        review_ai = ttk.Frame(self)
+        review_ai.pack(fill="x", padx=8)
+        ttk.Button(review_ai, text="REANALISAR MAOS INCONCLUSIVAS COM GEMINI",
+                   command=self.recheck_inconclusive).pack(side="left", pady=3)
+        ttk.Label(review_ai, text="Usa os horarios da revisao salva, sem ler o video inteiro.",
+                  foreground="#696969").pack(side="left", padx=8)
         self.status = ttk.Label(self, text="Aguardando videos e calibracao de cada mesa.")
         self.status.pack(fill="x", padx=8)
 
@@ -2032,6 +2038,89 @@ class GUI(tk.Tk):
             self.tell(f"Revisao aberta: {len(self.candidates)} candidatas. Confira e exporte.")
         except Exception as exc:
             messagebox.showerror("Abrir revisao", str(exc))
+
+    def recheck_inconclusive(self):
+        """Recupera resultado de uma execucao anterior usando a revisao JSON."""
+        if self.busy:
+            return
+        if not self.videos or not self.candidates:
+            messagebox.showwarning(
+                "Reanalise", "Abra uma revisao JSON anterior (Abrir revisao) "
+                "ou execute uma analise antes da reanalise.")
+            return
+        key = read_key()
+        if not key:
+            messagebox.showwarning(
+                "Gemini", "A chave Gemini nao esta configurada neste Windows. "
+                "Clique Configurar chave e informe uma nova chave.")
+            return
+        try:
+            limit = int(self.gemini_limit.get())
+            threshold = float(self.threshold.get().replace(",", "."))
+            if not 1 <= limit <= 300 or threshold <= 0:
+                raise ValueError("Defina limite de 1 a 300 chamadas e perda minima >0.")
+            model = self.gemini_model.get()
+            if model not in ALLOWED_MODELS:
+                raise ValueError("Modelo Gemini nao permitido.")
+            pending = sum(
+                not c.excluded and not c.confirmed and not c.auto_verified and
+                ("INCONCLUSIVO - SALDO" in c.status or
+                 "POSSIVEL PERDA" in c.status or
+                 "INCONCLUSIVO - OCR" in c.status)
+                for c in self.candidates)
+            if pending == 0:
+                messagebox.showinfo("Reanalise", "Nenhuma mao com OCR pendente.")
+                return
+        except ValueError as exc:
+            messagebox.showerror("Reanalise", str(exc))
+            return
+        if not messagebox.askyesno(
+                "Confirmar reanalise Gemini",
+                f"Reavaliar ate {min(pending, limit)} ocorrencias com Gemini?\\n"
+                "Sera enviada uma imagem com 4 recortes de saldo por consulta.\\n"
+                "O Google pode cobrar no plano pago.\\n"
+                "Nenhum video completo sera enviado.\\n\\n"
+                "Deseja continuar?"):
+            return
+        folder = None
+        if self.auto_export.get():
+            folder = filedialog.askdirectory(
+                title="Salvar MP4 das perdas recuperadas com IA")
+            if not folder:
+                return
+        current = [Candidate(**asdict(c)) for c in self.candidates]
+        config = json.loads(json.dumps(self.cfg))
+        video_copy = self.videos[:]
+        self.busy = True
+        self.tell(f"Reanalisando ocorrencias OCR pendentes com {model}...")
+        def worker():
+            try:
+                client = GeminiClient(key, model=model, max_requests=limit)
+                revised, inspected, recovered = recheck_candidates_with_gemini(
+                    video_copy, config, current, threshold, client,
+                    lambda info: self.after(0, lambda m=info: self.tell(m)))
+                def done():
+                    self.candidates = revised
+                    self.busy = False
+                    self.refresh()
+                    self.tell(f"Reanalise: {inspected} chamadas com resposta; "
+                              f"{recovered} perdas de pelo menos {threshold:g} BB. "
+                              f"Total de chamadas: {client.used}.")
+                    if folder and recovered:
+                        self.export(folder=folder, automatic_only=True)
+                    else:
+                        messagebox.showinfo(
+                            "Reanalise concluida",
+                            f"{recovered} novas perdas detectadas com IA.\\n"
+                            f"{client.used} chamadas utilizadas, "
+                            f"limite local {client.limit}.\\n\\n"
+                            "Salve a revisao JSON. Mesmo com IA, confira saldos "
+                            "e cortes antes de enviar ao instrutor.")
+                self.after(0, done)
+            except Exception as exc:
+                self.after(0, lambda e=str(exc): self.failed(
+                    "Nao foi possivel reanalisar: " + e))
+        threading.Thread(target=worker, daemon=True).start()
 
     def check_stacks_before_analysis(self):
         """Alerta se o video nao produz nenhum saldo legivel nas ROIs atuais."""
