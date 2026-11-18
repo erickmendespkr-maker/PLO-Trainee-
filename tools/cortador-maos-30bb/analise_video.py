@@ -104,7 +104,7 @@ def layout_roi(data, table, mode, key):
     return layout_rect(data[key], table, mode) if data.get(key) else None
 
 
-def store_layout_roi(config, table, mode, key, absolute_rect):
+def store_layout_roi(config, table, mode, key, absolute_rect, source="manual"):
     """Preserva calibracoes de outros layouts ao redesenhar uma regiao."""
     mode = layout_key(mode)
     if mode == "auto4":
@@ -121,6 +121,8 @@ def store_layout_roi(config, table, mode, key, absolute_rect):
             raise ValueError("Retangulo nao cabe em todas as janelas deste layout.")
         config[str(destination)].setdefault("layout_rois", {}).setdefault(
             mode, {})[key] = new_rect
+        config[str(destination)].setdefault("layout_roi_sources", {}).setdefault(
+            mode, {})[key] = source
         if mode == "horizontal4":
             config[str(destination)][key] = new_rect[:]
 
@@ -450,8 +452,8 @@ def screenshot_profile():
         dx = (table - 1) * 240
         out[str(table)] = {
             "hole": [dx + 128, 434, dx + 206, 484],
-            "stack": [dx + 97, 488, dx + 153, 510],
-            "nick": [dx + 91, 472, dx + 155, 496],
+            "stack": [dx + 97, 487, dx + 153, 500],
+            "nick": [dx + 91, 470, dx + 155, 486],
             "bb": "1", "detector": "bright",
             "bright_cutoff": 165, "min_bright": .18,
             "profile": "4_colunas_heroi_inferior_v1"
