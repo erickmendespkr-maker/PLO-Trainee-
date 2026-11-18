@@ -30,6 +30,96 @@ from cortador import Clip, export_clip, file_at, fmt, parse_time, probe, resourc
 W, H = 960, 540
 VIEW_W, VIEW_H = 720, 405
 TABLES = (1, 2, 3, 4)
+LAYOUT_LABELS = ("Auto (ate 4, slots fixos)", "1 mesa", "2 lado a lado",
+                 "3 lado a lado", "4 lado a lado", "2 por 2")
+
+
+def layout_key(label):
+    """Converte selecao visual para layout tecnico."""
+    lookups = {
+        "Auto (ate 4, slots fixos)": "auto4", "1 mesa": "horizontal1",
+        "2 lado a lado": "horizontal2", "3 lado a lado": "horizontal3",
+        "4 lado a lado": "horizontal4", "2 por 2": "grid2x2"
+    }
+    if label in lookups:
+        return lookups[label]
+    if label in (*lookups.values(),):
+        return label
+    raise ValueError("Disposicao desconhecida: " + str(label))
+
+
+def mode_at(t, initial, events):
+    current = layout_key(initial)
+    for event in sorted(events, key=lambda e: float(e["start"])):
+        if t + 1e-7 < float(event["start"]):
+            break
+        current = layout_key(event["layout"])
+    return current
+
+
+def layout_count(mode):
+    key = layout_key(mode)
+    if key in ("auto4", "grid2x2"):
+        return 4
+    return int(key.removeprefix("horizontal"))
+
+
+def layout_bounds(mode, table):
+    count = layout_count(mode)
+    if table not in TABLES or table > count:
+        raise ValueError("Mesa inexistente na disposicao atual.")
+    if layout_key(mode) == "grid2x2":
+        col = (table - 1) % 2
+        row = (table - 1) // 2
+        return (col * W // 2, row * H // 2,
+                (col + 1) * W // 2, (row + 1) * H // 2)
+    return (round((table - 1) * W / count), 0,
+            round(table * W / count), H)
+
+
+def layout_rect(base_rect, table, mode):
+    """Adapta uma ROI cadastrada no perfil de quatro colunas para 1, 2 ou 3."""
+    rect = roi_tuple(base_rect)
+    if layout_key(mode) == "grid2x2":
+        return rect
+    count = layout_count(mode)
+    orig_x = (table - 1) * W // 4
+    new_x = round((table - 1) * W / count)
+    ratio = 4 / count
+    return (round(new_x + (rect[0] - orig_x) * ratio), rect[1],
+            round(new_x + (rect[2] - orig_x) * ratio), rect[3])
+
+
+def unmap_layout_rect(rect, table, mode):
+    """Transformacao inversa usada ao desenhar uma ROI na previa."""
+    rect = roi_tuple(rect)
+    if layout_key(mode) == "grid2x2":
+        return list(rect)
+    count = layout_count(mode)
+    new_x = round((table - 1) * W / count)
+    old_x = (table - 1) * W // 4
+    return [round(old_x + (rect[0] - new_x) * count / 4), rect[1],
+            round(old_x + (rect[2] - new_x) * count / 4), rect[3]]
+
+
+def table_visible(frame, bounds):
+    """Detecta mesas presentes em slots fixos por assinatura visual do felt.
+
+    Conservador: discrimina espacos vazios uniformes de uma mesa, mas uma
+    tela desktop complexa ainda pode gerar falso positivo. Use eventos de
+    disposicao para layouts que se reorganizam durante a sessao.
+    """
+    x1, y1, x2, y2 = bounds
+    if x2 <= x1 or y2 <= y1:
+        return False
+    patch = frame.crop(bounds).convert("L").resize((40, 60))
+    all_stats = ImageStat.Stat(patch)
+    if all_stats.stddev[0] < 10:
+        return False
+    upper = ImageStat.Stat(patch.crop((5, 1, 35, 9))).mean[0]
+    felt = ImageStat.Stat(patch.crop((10, 22, 30, 37))).mean[0]
+    return 16 <= felt <= 236 and abs(felt - upper) >= 10
+
 
 def screenshot_profile():
     """Regioes estimadas do print enviado: quatro mesas verticais lado a lado.
@@ -249,6 +339,7 @@ class Candidate:
     excluded: bool = False
     nick: str = ""
     nick_verified: bool = False
+    layout: str = "horizontal4"
 
 
 def net_loss_bb(stack_before, stack_after, bb_value):
@@ -267,6 +358,7 @@ def loss_reaches_threshold(loss_bb, threshold):
 class HandState:
     """Deteccao de cartas do heroi por diferenca com quadro vazio de referencia."""
     def __init__(self):
+        self.layout = "horizontal4"
         self.active = False
         self.on_count = 0
         self.off_count = 0
@@ -333,47 +425,84 @@ class HandState:
             return
         self.results.append(Candidate(
             max(0, data["start"] - 5), data["end"] + 5, table,
-            round(loss, 2) if loss is not None else None, pre, post, status))
+            round(loss, 2) if loss is not None else None, pre, post, status,
+            layout=self.layout))
 
 
-def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~", quick=True):
+def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
+                quick=True, initial_layout="Auto (ate 4, slots fixos)", events=None):
+    """Varre uma unica gravacao ou varios videos, com ate 4 mesas e eventos de layout."""
     tesseract = resource("tesseract")
     ffmpeg = resource("ffmpeg")
     if not tesseract:
-        raise RuntimeError("Tesseract OCR nao encontrado. Instale e inclua no PATH ou copie tesseract.exe com seus dados de idioma.")
+        raise RuntimeError("Tesseract OCR nao encontrado.")
     if not ffmpeg:
         raise RuntimeError("FFmpeg nao encontrado.")
-    # Regioes em 960x540. O modo 'bright' nao exige imagem sem cartas.
+
+    events = sorted(events or [], key=lambda e: float(e["start"]))
+    all_modes = {layout_key(initial_layout)}
+    all_modes.update(layout_key(item["layout"]) for item in events)
     table_cfg = {}
-    for table in TABLES:
-        data = config[str(table)]
-        detector = data.get("detector", "reference" if data.get("reference") else "bright")
-        if detector not in ("bright", "reference"):
-            raise ValueError(f"Modo de deteccao invalido na mesa {table}.")
-        if detector == "reference" and not data.get("reference"):
-            raise ValueError(f"Mesa {table}: referencia manual nao registrada.")
-        table_cfg[table] = {
-            "hole": roi_tuple(data["hole"]), "stack": roi_tuple(data["stack"]),
-            "nick": roi_tuple(data["nick"]) if data.get("nick") else None,
-            "detector": detector,
-            "empty": png_image(data["reference"]) if detector == "reference" else None,
-            "bb": float(data["bb"]),
-            "bright_cutoff": int(data.get("bright_cutoff", 165)),
-            "min_bright": float(data.get("min_bright", .18)),
-            "min_change": float(data.get("min_change", .08))}
-        if table_cfg[table]["bb"] <= 0:
-            raise ValueError(f"BB da mesa {table} deve ser positivo")
-    states = {table: HandState() for table in TABLES}
-    nick_verified = {table: False for table in TABLES}
-    nick_attempts = {table: 0 for table in TABLES}
-    # Tentativas limitadas para nao tornar o OCR do nome caro num video longo.
-    nick_sample_times = (0, 15, 45, 90, 180, 360)
+    for mode in all_modes:
+        for table in range(1, layout_count(mode) + 1):
+            data = config[str(table)]
+            detection = data.get("detector", "reference" if data.get("reference") else "bright")
+            if detection not in ("bright", "reference"):
+                raise ValueError(f"Detector invalido na mesa {table}.")
+            if detection == "reference" and not data.get("reference"):
+                raise ValueError(f"Mesa {table}: referencia manual ausente.")
+            cfg = {
+                "hole": layout_rect(data["hole"], table, mode),
+                "stack": layout_rect(data["stack"], table, mode),
+                "nick": layout_rect(data["nick"], table, mode) if data.get("nick") else None,
+                "detector": detection,
+                "empty": png_image(data["reference"]) if detection == "reference" else None,
+                "bb": float(data["bb"]),
+                "bright_cutoff": int(data.get("bright_cutoff", 165)),
+                "min_bright": float(data.get("min_bright", .18)),
+                "min_change": float(data.get("min_change", .08)),
+            }
+            if cfg["bb"] <= 0:
+                raise ValueError(f"Valor de 1 BB deve ser positivo na mesa {table}.")
+            table_cfg[(mode, table)] = cfg
+
+    active_mode = None
+    states = {}
+    missing_counts = {table: 0 for table in TABLES}
+    collected = []
+    nick_verified = {}
+    nick_attempts = {}
+    sample_times = {0, 15, 45, 90, 180, 360}
+    segment_start = 0.0
+
+    def close_state(table, end_time, reason):
+        state = states.pop(table, None)
+        if state is None:
+            return
+        key = (state.layout, table)
+        cfg = table_cfg.get(key)
+        if state.pending and cfg is not None:
+            state.finish(table, cfg["bb"], threshold, tesseract, quick=quick)
+        for candidate in state.results:
+            candidate.start = max(candidate.start, segment_start)
+            candidate.end = min(candidate.end, end_time)
+            if candidate.end > candidate.start:
+                collected.append(candidate)
+        if state.active:
+            # Nao considerar desaparecimento/rearranjo uma perda confirmada.
+            start_time = max(segment_start, state.start_at - 5)
+            if end_time > start_time:
+                collected.append(Candidate(
+                    start_time, end_time, table, None, None, None,
+                    reason, layout=state.layout))
+
     for file_index, v in enumerate(videos):
-        progress(f"Lendo {file_index+1}/{len(videos)}: {Path(v.path).name}")
+        progress(f"Lendo {file_index + 1}/{len(videos)}: {Path(v.path).name}")
         command = [ffmpeg, "-hide_banner", "-loglevel", "error",
                    "-i", v.path, "-an", "-vf", f"fps=1,scale={W}:{H},format=gray",
                    "-f", "rawvideo", "pipe:1"]
-        proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL,
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         try:
             n = 0
@@ -383,28 +512,64 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~", quick
                     break
                 frame = Image.frombytes("L", (W, H), packet)
                 t = v.start + n
-                for table in TABLES:
-                    cfg = table_cfg[table]
-                    if (hero_nick.strip() and cfg["nick"] and not nick_verified[table] and
-                            nick_attempts[table] < len(nick_sample_times) and
-                            file_index == 0 and n in nick_sample_times):
-                        nick_attempts[table] += 1
+                mode = mode_at(t, initial_layout, events)
+                if mode != active_mode:
+                    if active_mode is not None:
+                        previous_start = segment_start
+                        for table in list(states):
+                            close_state(table, t, "INCONCLUSIVO - MESA MUDOU DE LUGAR")
+                        segment_start = t
+                    else:
+                        segment_start = t
+                    active_mode = mode
+                    states = {}
+                    missing_counts = {table: 0 for table in TABLES}
+                    progress(f"{fmt(t)}: disposicao {mode}; {layout_count(mode)} posicoes possiveis")
+
+                seen = 0
+                for table in range(1, layout_count(mode) + 1):
+                    cfg = table_cfg[(mode, table)]
+                    # Detecta janelas removidas mesmo quando o modo e "Auto".
+                    # Tres quadros ausentes consecutivos evitam reset por animacao.
+                    if not table_visible(frame, layout_bounds(mode, table)):
+                        missing_counts[table] += 1
+                        if missing_counts[table] == 3:
+                            close_state(table, t, "INCONCLUSIVO - MESA FECHADA OU OCULTA")
+                        continue
+                    seen += 1
+                    if missing_counts[table] >= 3 or table not in states:
+                        states[table] = HandState()
+                        states[table].layout = (
+                            "horizontal4" if mode == "auto4" else mode)
+                    missing_counts[table] = 0
+
+                    key = (mode, table)
+                    if (hero_nick.strip() and cfg["nick"] and
+                            not nick_verified.get(key, False) and
+                            nick_attempts.get(key, 0) < len(sample_times) and
+                            (n in sample_times or
+                             (segment_start > 0 and round(t - segment_start) in sample_times))):
+                        nick_attempts[key] = nick_attempts.get(key, 0) + 1
                         try:
                             texts = read_nickname(frame.crop(cfg["nick"]), tesseract)
                             if any(nickname_matches(value, hero_nick) for value in texts):
-                                nick_verified[table] = True
-                                progress(f"Mesa {table}: nick {hero_nick} identificado visualmente.")
+                                nick_verified[key] = True
+                                progress(f"Mesa {table}: nick {hero_nick} confirmado.")
                         except (OSError, subprocess.SubprocessError):
                             pass
+
                     if cfg["detector"] == "bright":
-                        occupied = bright_fraction(frame, cfg["hole"], cfg["bright_cutoff"]) >= cfg["min_bright"]
+                        occupied = bright_fraction(frame, cfg["hole"],
+                                                   cfg["bright_cutoff"]) >= cfg["min_bright"]
                     else:
-                        occupied = changed_fraction(frame, cfg["empty"], cfg["hole"]) >= cfg["min_change"]
+                        occupied = changed_fraction(frame, cfg["empty"],
+                                                    cfg["hole"]) >= cfg["min_change"]
                     states[table].feed(t, occupied, frame.crop(cfg["stack"]), table,
                                        cfg["bb"], threshold, tesseract, quick=quick)
                 n += 1
                 if n % 60 == 0:
-                    progress(f"{Path(v.path).name}: {fmt(n)} / {fmt(v.duration)} analisados")
+                    progress(f"{Path(v.path).name}: {fmt(n)} / {fmt(v.duration)} "
+                             f"| mesas visiveis: {seen} | {mode}")
             if proc.wait(timeout=15) != 0:
                 raise RuntimeError("FFmpeg falhou lendo " + v.path)
         finally:
@@ -413,25 +578,19 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~", quick
                 proc.wait()
             if proc.stdout:
                 proc.stdout.close()
+
     total = sum(v.duration for v in videos)
-    candidates = []
-    for table, state in states.items():
-        if state.pending:
-            state.finish(table, table_cfg[table]["bb"], threshold, tesseract, quick=quick)
-        candidates.extend(state.results)
-        if state.active:
-            candidates.append(Candidate(max(0, state.start_at - 5), total, table,
-                                        None, None, None, "INCONCLUSIVO - MAO INCOMPLETA"))
-    for candidate in candidates:
+    for table in list(states):
+        close_state(table, total, "INCONCLUSIVO - MAO INTERROMPIDA NO FIM")
+    for candidate in collected:
         candidate.end = min(total, candidate.end)
         candidate.nick = hero_nick.strip()
-        candidate.nick_verified = nick_verified[candidate.table]
+        candidate.nick_verified = nick_verified.get((candidate.layout, candidate.table), False)
         if hero_nick.strip() and not candidate.nick_verified:
             candidate.status += " | NICK NAO CONFIRMADO"
-    if hero_nick.strip():
-        ok = ", ".join(str(t) for t in TABLES if nick_verified[t]) or "nenhuma"
-        progress(f"Nick {hero_nick}: mesas com OCR confirmado: {ok}; demais exigem conferencia visual.")
-    return sorted(candidates, key=lambda c: (c.start, c.table))
+    progress(f"Video completo: {len(collected)} candidatas/pendencias. "
+             "Fechamentos e mudancas de layout exigem revisao.")
+    return sorted(collected, key=lambda item: (item.start, item.table))
 
 
 class GUI(tk.Tk):
