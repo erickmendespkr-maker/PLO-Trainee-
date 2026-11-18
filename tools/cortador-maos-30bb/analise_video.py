@@ -2173,28 +2173,28 @@ class GUI(tk.Tk):
                 writer = csv.writer(fh, delimiter=";")
                 writer.writerow(["inicio", "fim", "mesa", "layout", "nick",
                                  "saldo_antes", "saldo_depois", "perda_bb",
-                                 "ocr_consistente", "status", "confiabilidade"])
+                                 "leitura_consistente", "origem", "status", "confiabilidade"])
                 for c in self.candidates:
                     writer.writerow([fmt(c.start), fmt(c.end), c.table, c.layout,
                                      c.nick, c.stack_before, c.stack_after,
                                      c.loss_bb, "SIM" if c.auto_verified else "NAO",
-                                     c.status, c.reliability])
+                                     c.source, c.status, c.reliability])
         except OSError as exc:
             messagebox.showerror("Relatorio", str(exc))
             return
 
         if not eligible:
             self.auto_export_folder = None
-            self.tell("0 perdas com OCR consistente para exportar. "
-                      "Verifique o retangulo azul e clique Testar saldo.")
+            self.tell("0 perdas com leitura consistente para exportar. "
+                      "Confira saldo e, se ativado, limite/chave Gemini.")
             messagebox.showwarning(
                 "Nenhuma perda exportavel",
-                "O programa nao confirmou perdas de pelo menos "
+                "O programa nao confirmou leituras suficientes para perdas de pelo menos "
                 f"{threshold:g} BB com leituras suficientes.\n\n"
                 "Nao foram gerados cortes possivelmente errados.\n"
                 f"Relatorio: {report}\n\n"
-                "Verifique o quadro azul sobre o numero do saldo e use "
-                "'Testar saldo'.")
+                "Verifique o quadro azul e use Testar saldo. "
+                "Se ativou Gemini, confira conexao e limite de chamadas.")
             return
 
         self.busy = True
@@ -2208,7 +2208,7 @@ class GUI(tk.Tk):
                 destination = dest / filename
                 status = "OK"
                 try:
-                    clip = Clip(c.start, c.end, c.table, c.loss_bb, "Video OCR",
+                    clip = Clip(c.start, c.end, c.table, c.loss_bb, "Video OCR/IA",
                                 "Video", "", True)
                     export_clip(videos, clip, destination,
                                 resource("ffmpeg"), layout=c.layout)
@@ -2220,8 +2220,11 @@ class GUI(tk.Tk):
                         pass
                 logs.append({"arquivo": filename, "nick": c.nick or hero_nick,
                              "nick_ocr_confirmado": c.nick_verified,
-                             "classificacao": "OCR consistente" if c.auto_verified
-                                             else "Confirmado manualmente",
+                             "classificacao": (
+                                 "Gemini - conferir visualmente" if c.source == "Gemini"
+                                 else ("OCR consistente" if c.auto_verified
+                                       else "Confirmado manualmente")),
+                             "origem": c.source,
                              "mesa": c.table, "disposicao": c.layout,
                              "inicio": fmt(c.start), "fim": fmt(c.end),
                              "saldo_antes": c.stack_before,
@@ -2250,7 +2253,7 @@ class GUI(tk.Tk):
                     f"Pasta: {dest}\n"
                     "Indice: indice_das_maos.csv\n"
                     "Diagnostico: relatorio_analise.csv\n\n"
-                    "As leituras por OCR sao estimativas; confira os cortes antes "
+                    "As leituras por OCR/IA sao estimativas; confira os cortes antes "
                     "de enviar ao instrutor.")
             self.after(0, done)
         threading.Thread(target=worker, daemon=True).start()
