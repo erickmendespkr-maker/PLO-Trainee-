@@ -518,7 +518,8 @@ class HandState:
 
 
 def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
-                quick=True, initial_layout="Auto (ate 4, slots fixos)", events=None):
+                quick=True, initial_layout="Auto (ate 4, slots fixos)", events=None,
+                detected_events=None):
     """Varre uma unica gravacao ou varios videos, com ate 4 mesas e eventos de layout."""
     tesseract = resource("tesseract")
     ffmpeg = resource("ffmpeg")
@@ -530,6 +531,9 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
     events = sorted(events or [], key=lambda e: float(e["start"]))
     all_modes = {layout_key(initial_layout)}
     all_modes.update(layout_key(item["layout"]) for item in events)
+    # O modo Auto pode assumir qualquer uma das 4 quantidades em qualquer trecho.
+    if "auto4" in all_modes:
+        all_modes.update(f"horizontal{i}" for i in TABLES)
     table_cfg = {}
     for mode in all_modes:
         for table in range(1, layout_count(mode) + 1):
@@ -563,6 +567,8 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
     sample_times = {0, 15, 45, 90, 180, 360}
     segment_start = 0.0
     detected_frames = 0
+    auto_detector = AutoLayoutTracker()
+    no_detection_reported = False
 
     def close_state(table, end_time, reason):
         state = states.pop(table, None)
@@ -601,7 +607,27 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                     break
                 frame = Image.frombytes("L", (W, H), packet)
                 t = v.start + n
-                mode = mode_at(t, initial_layout, events)
+                requested_mode = mode_at(t, initial_layout, events)
+                if requested_mode == "auto4":
+                    mode, safe_to_scan, situation = auto_detector.observe(frame)
+                    if not safe_to_scan:
+                        # Nao ler saldo na transicao/ambiguidade: pode gerar falsa
+                        # perda ao fechar ou redimensionar uma janela.
+                        if states:
+                            for table in list(states):
+                                close_state(table, t,
+                                            "INCONCLUSIVO - DETECCAO DE MESAS EM TRANSICAO")
+                            states = {}
+                            segment_start = t
+                        if situation == "indefinido" and not no_detection_reported and n >= 10:
+                            progress(f"{fmt(t)}: layout indefinido; "
+                                     "aguardando frames estaveis.")
+                            no_detection_reported = True
+                        n += 1
+                        continue
+                else:
+                    mode = requested_mode
+                    auto_detector = AutoLayoutTracker()
                 if mode != active_mode:
                     if active_mode is not None:
                         for table in list(states):
@@ -612,7 +638,10 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                     active_mode = mode
                     states = {}
                     missing_counts = {table: 0 for table in TABLES}
-                    progress(f"{fmt(t)}: disposicao {mode}; {layout_count(mode)} posicoes possiveis")
+                    if detected_events is not None:
+                        detected_events.append({"start": round(t, 2), "layout": mode})
+                    progress(f"{fmt(t)}: disposicao detectada {mode}; "
+                             f"{layout_count(mode)} posicoes possiveis")
 
                 seen = 0
                 for table in range(1, layout_count(mode) + 1):
@@ -683,9 +712,8 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
     for candidate in collected:
         candidate.end = min(total, candidate.end)
         candidate.nick = hero_nick.strip()
-        key = ("auto4" if candidate.layout == "horizontal4" and
-               "auto4" in all_modes else candidate.layout, candidate.table)
-        candidate.nick_verified = nick_verified.get(key, False)
+        candidate.nick_verified = nick_verified.get(
+            (candidate.layout, candidate.table), False)
         if hero_nick.strip() and not candidate.nick_verified:
             candidate.status += " | NICK NAO CONFIRMADO"
     progress(f"Video completo: {len(collected)} candidatas/pendencias. "
