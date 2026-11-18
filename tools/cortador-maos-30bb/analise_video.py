@@ -849,6 +849,9 @@ class GUI(tk.Tk):
         self.preview_confidence = 0.
         self.nick = tk.StringVar(value="~Pulgar~")
         self.quick = tk.BooleanVar(value=True)
+        self.auto_export = tk.BooleanVar(value=True)
+        self.show_inconclusive = tk.BooleanVar(value=False)
+        self.auto_export_folder = None
         self.cfg = screenshot_profile()
         self._ui()
         self.draw()
@@ -896,6 +899,8 @@ class GUI(tk.Tk):
         ttk.Button(row2, text="Verificar nick no frame", command=self.verify_nick_frame).pack(
             side="left", padx=7)
         ttk.Checkbutton(row2, text="OCR rapido", variable=self.quick).pack(side="left", padx=4)
+        ttk.Checkbutton(row2, text="Gerar MP4 automaticos",
+                        variable=self.auto_export).pack(side="left", padx=6)
         self.table.trace_add("write", lambda *_: self.on_table_change())
 
         changes = ttk.Frame(self)
@@ -929,6 +934,9 @@ class GUI(tk.Tk):
         ttk.Button(controls, text="Salvar revisao", command=self.save_scan).pack(side="left")
         ttk.Button(controls, text="Abrir revisao", command=self.load_scan).pack(side="left", padx=4)
         ttk.Button(controls, text="Adicionar mao", command=self.add_manual).pack(side="left")
+        ttk.Checkbutton(controls, text="Mostrar OCR inconclusivo",
+                        variable=self.show_inconclusive,
+                        command=self.refresh).pack(side="left", padx=8)
         self.status = ttk.Label(self, text="Aguardando videos e calibracao de cada mesa.")
         self.status.pack(fill="x", padx=8)
 
@@ -1335,7 +1343,8 @@ class GUI(tk.Tk):
         if path:
             Path(path).write_text(json.dumps(
                 {"layout": self.layout.get(), "nick": self.nick.get().strip(),
-                 "quick": self.quick.get(), "timeline": self.timeline, "tables": self.cfg},
+                 "quick": self.quick.get(), "auto_export": self.auto_export.get(),
+                 "timeline": self.timeline, "tables": self.cfg},
                 indent=2), encoding="utf-8")
             self.tell("Configuracao salva.")
 
@@ -1348,6 +1357,7 @@ class GUI(tk.Tk):
                 self.cfg = {str(i): settings[str(i)] for i in TABLES}
                 self.nick.set(data.get("nick", "~Pulgar~"))
                 self.quick.set(bool(data.get("quick", True)))
+                self.auto_export.set(bool(data.get("auto_export", True)))
                 self.layout.set(data.get("layout", "2 por 2" if "tables" not in data else "4 lado a lado"))
                 self.timeline = sorted(data.get("timeline", []), key=lambda x: float(x["start"]))
                 self.detected_timeline = []
@@ -1397,6 +1407,7 @@ class GUI(tk.Tk):
         payload = {"version": 4, "videos": [asdict(v) for v in self.videos],
                    "layout": self.layout.get(), "config": self.cfg, "threshold": self.threshold.get(),
                    "nick": self.nick.get().strip(), "quick": self.quick.get(),
+                   "auto_export": self.auto_export.get(),
                    "timeline": self.timeline,
                    "detected_timeline": self.detected_timeline,
                    "candidates": [asdict(c) for c in self.candidates]}
@@ -1435,6 +1446,7 @@ class GUI(tk.Tk):
             self.refresh_changes()
             self.nick.set(data.get("nick", "~Pulgar~"))
             self.quick.set(bool(data.get("quick", True)))
+            self.auto_export.set(bool(data.get("auto_export", True)))
             self.threshold.set(str(data.get("threshold", 30)))
             self.info.configure(text=f"{len(videos)} arquivo(s) | {fmt(self.total)}")
             self.on_table_change()
@@ -1477,8 +1489,15 @@ class GUI(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Configuracao", str(exc))
             return
+        destination = None
+        if self.auto_export.get():
+            destination = filedialog.askdirectory(
+                title="Escolha a pasta para os MP4 das perdas detectadas")
+            if not destination:
+                return
+        self.auto_export_folder = destination
         self.busy = True
-        self.tell("Iniciando analise visual offline...")
+        self.tell("Analisando saldos para selecionar perdas >= limite...")
         cfg = json.loads(json.dumps(self.cfg))
         videos = self.videos[:]
         hero_nick = self.nick.get().strip()
@@ -1503,10 +1522,20 @@ class GUI(tk.Tk):
         self.detected_timeline = sorted(detections or [], key=lambda e: e["start"])
         self.busy = False
         self.refresh()
-        self.tell(f"Analise concluida: {len(results)} candidatas / inconclusivas. Salve revisao e confira.")
-        messagebox.showinfo("Concluido",
-                            f"{len(results)} ocorrencias encontradas. "
-                            "As perdas sao ESTIMADAS por OCR; confirme as fichas e os limites.")
+        verified = sum(c.auto_verified and not c.excluded for c in results)
+        unresolved = sum(c.loss_bb is None for c in results)
+        weak = len(results) - verified - unresolved
+        self.tell(f"Analise: {verified} perdas OCR consistentes; "
+                  f"{weak} perdas fracas; {unresolved} leituras inconclusivas.")
+        if self.auto_export_folder:
+            # Gera apenas os MP4 com leitura repetida confiavel, sem clique manual.
+            self.export(folder=self.auto_export_folder, automatic_only=True)
+        else:
+            messagebox.showinfo(
+                "Analise concluida",
+                f"Perdas detectadas com OCR consistente: {verified}\n"
+                f"Perdas incertas: {weak}\nLeituras inconclusivas: {unresolved}\n\n"
+                "As leituras devem ser conferidas nos videos.")
 
     def failed(self, error):
         self.busy = False
@@ -1517,13 +1546,14 @@ class GUI(tk.Tk):
         for item in self.grid.get_children():
             self.grid.delete(item)
         for i, c in enumerate(self.candidates):
-            if c.excluded:
+            if c.excluded or (c.loss_bb is None and not self.show_inconclusive.get()):
                 continue
             self.grid.insert("", "end", iid=str(i), values=(
                 fmt(c.start), fmt(c.end), c.table,
                 f"{c.loss_bb:.2f}" if c.loss_bb is not None else "?",
                 "OK" if c.nick_verified else "Revisar",
-                c.status, "SIM" if c.confirmed else "NAO"))
+                c.status,
+                "MANUAL" if c.confirmed else ("AUTO" if c.auto_verified else "Revisar")))
 
     def selected(self):
         item = self.grid.selection()
