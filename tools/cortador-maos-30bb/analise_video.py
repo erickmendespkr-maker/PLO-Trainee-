@@ -822,7 +822,6 @@ class Candidate:
     auto_verified: bool = False
     reliability: str = ""
     source: str = "OCR"
-    gemini_checked: bool = False
     before_times: list[float] = field(default_factory=list)
     after_times: list[float] = field(default_factory=list)
     hand_start: float | None = None
@@ -2134,41 +2133,13 @@ class GUI(tk.Tk):
                 "Nick reconhecido", f"Mesa {table}: {nick} confirmado.\nOCR: {shown}")
             return
 
-        if not self.use_gemini.get() or not read_key():
-            self.tell("Nick nao identificado no HUD completo pelo OCR.")
-            messagebox.showwarning(
-                "Nick ainda nao confirmado",
-                f"O OCR pesquisou o HUD verde inteiro e nao confirmou {nick}.\n"
-                f"Texto: {shown}\n\n"
-                "Com Gemini ativado, o botao pode tentar ler nick e saldo "
-                "no mesmo HUD. Verifique tambem se o nome esta visivel no video.")
-            return
-
-        self.tell(f"OCR nao reconheceu {nick}; consultando Gemini no HUD inteiro...")
-        key = read_key()
-        model = self.gemini_model.get()
-        bb = float(self.cfg[str(table)].get("bb", 1))
-        def worker():
-            try:
-                client = GeminiClient(key, model=model, max_requests=1)
-                fields = client.read_hud_fields(
-                    full_hud, bb=bb, max_stack_bb=MAX_STACK_BB,
-                    expected_nick=nick)
-                recognized = fields["nick"]
-                confirmed = bool(recognized and nickname_matches(recognized, nick))
-                message = (
-                    f"Nick esperado: {nick}\n"
-                    f"Gemini reconheceu: {recognized or '(nao legivel)'}\n"
-                    f"Saldo: {fields['value'] if fields['value'] is not None else '(nao legivel)'}\n\n"
-                    + ("Nick confirmado na imagem." if confirmed else
-                       "Nick inconclusivo; confira a imagem.")
-                )
-                self.after(0, lambda msg=message:
-                           messagebox.showinfo("Nick e saldo no HUD", msg))
-            except GeminiError as exc:
-                self.after(0, lambda msg=str(exc):
-                           messagebox.showwarning("Gemini", msg))
-        threading.Thread(target=worker, daemon=True).start()
+        self.tell("Nick nao identificado no HUD pelo OCR local.")
+        messagebox.showwarning(
+            "Nick inconclusivo",
+            f"O OCR buscou {nick} no HUD completo e nao confirmou.\n"
+            f"Leituras: {shown}\n\n"
+            "Selecione outro frame em que seu nick esteja visivel. "
+            "A deteccao das suas cartas continua funcionando offline.")
 
 
     def set_empty(self):
@@ -2335,6 +2306,13 @@ class GUI(tk.Tk):
                 entry = dict(entry)
                 if "layout" not in entry:
                     entry["layout"] = "horizontal4" if old_layout == "auto4" else old_layout
+                # Revisoes de versoes com API continuam acessiveis, mas
+                # nao sao aceitas como perdas confirmadas automaticamente.
+                entry.pop("gemini_checked", None)
+                if not entry.get("confirmed", False):
+                    entry["auto_verified"] = False
+                    entry["pot_verified"] = False
+                    entry["loss_bb"] = None
                 candidates.append(Candidate(**entry))
             self.candidates = candidates
             self.cfg = data.get("config", self.cfg)
@@ -2458,7 +2436,7 @@ class GUI(tk.Tk):
             return messagebox.askyesno(
                 "OCR dos saldos nao funciona nesta previa",
                 "Nenhuma faixa de saldo do HUD unico foi reconhecida no frame original.\n"
-                "O Gemini opcional pode tentar ler quando OCR falhar.\n\n"
+                "A triagem das maos pode continuar mesmo com OCR parcial.\n\n"
                 "Clique 'Testar saldo' para ver o recorte ORIGINAL ampliado "
                 "e as leituras brutas antes de iniciar horas de analise.\n\n"
                 "Deseja analisar mesmo assim?")
@@ -2801,8 +2779,8 @@ class GUI(tk.Tk):
         if not eligible:
             self.auto_export_folder = None
             if self.auto_rebuy.get():
-                pending = sum(not c.excluded and not c.pot_verified and
-                              not c.gemini_checked for c in self.candidates)
+                pending = sum(not c.excluded and not c.confirmed
+                              for c in self.candidates)
                 self.tell(f"Nenhum pote perdido >= {threshold:g} BB confirmado. "
                           f"{pending} maos ainda pendentes de verificacao.")
                 messagebox.showwarning(
@@ -2812,9 +2790,9 @@ class GUI(tk.Tk):
                     "O saldo voltar para 100 BB com rebuy nao prova perda.\n"
                     "Nao foram exportados cortes incertos.\n\n"
                     f"Relatorio: {report}\n"
-                    "Para revisar mais maos, use REANALISAR POTES COM GEMINI "
-                    "e confira o limite de chamadas. A ultima revisao "
-                    "permanece salva.")
+                    "Para revisar as jogadas, use EXPORTAR PARA REVISAO "
+                    "ou selecione uma mao e confirme o pote e a perda liquida. "
+                    "A ultima revisao permanece salva.")
             else:
                 self.tell("0 perdas com leitura de saldo suficiente. "
                           "Confira as marcacoes e o OCR.")
@@ -2849,9 +2827,8 @@ class GUI(tk.Tk):
                 logs.append({"arquivo": filename, "nick": c.nick or hero_nick,
                              "nick_ocr_confirmado": c.nick_verified,
                              "classificacao": (
-                                 "Gemini - conferir visualmente" if c.source == "Gemini"
-                                 else ("OCR consistente" if c.auto_verified
-                                       else "Confirmado manualmente")),
+                                 "Perda liquida confirmada manualmente" if c.confirmed
+                                 else "Revisar"),
                              "origem": c.source,
                              "mesa": c.table, "disposicao": c.layout,
                              "inicio": fmt(c.start), "fim": fmt(c.end),
