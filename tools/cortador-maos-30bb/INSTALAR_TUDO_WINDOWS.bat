@@ -42,25 +42,27 @@ if errorlevel 1 echo AVISO: Tesseract pode nao ter sido instalado. Consulte o te
 echo.
 echo [4/4] Verificando Python e instalando Pillow...
 set "PYEXE="
-if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYEXE=\"%LOCALAPPDATA%\Programs\Python\Python312\python.exe\""
-if not defined PYEXE if exist "%ProgramFiles%\Python312\python.exe" set "PYEXE=\"%ProgramFiles%\Python312\python.exe\""
+set "PYARGS="
+if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYEXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+if not defined PYEXE if exist "%ProgramFiles%\Python312\python.exe" set "PYEXE=%ProgramFiles%\Python312\python.exe"
 if not defined PYEXE (
     py -3.12 -c "import sys" >nul 2>&1
-    if not errorlevel 1 set "PYEXE=py -3.12"
+    if not errorlevel 1 set "PYEXE=py"
+    if not errorlevel 1 set "PYARGS=-3.12"
 )
 if not defined PYEXE (
     python -c "import sys" >nul 2>&1
     if not errorlevel 1 set "PYEXE=python"
 )
 if not defined PYEXE goto sem_python
-%PYEXE% -m pip install --user "Pillow>=10,<13"
+"%PYEXE%" %PYARGS% -m pip install --user "Pillow>=10,<13"
 if errorlevel 1 goto sem_pillow
 
 echo.
 echo ============================================================
 echo INSTALACAO TENTADA - confirme os componentes:
 echo ============================================================
-%PYEXE% -c "import tkinter, PIL; print('OK: Python, Tkinter e Pillow')"
+"%PYEXE%" %PYARGS% -c "import tkinter, PIL; print('OK: Python, Tkinter e Pillow')"
 if errorlevel 1 echo AVISO: Python/Tkinter/Pillow nao foram validados.
 echo.
 echo Python instalado. A existencia de FFmpeg e Tesseract
