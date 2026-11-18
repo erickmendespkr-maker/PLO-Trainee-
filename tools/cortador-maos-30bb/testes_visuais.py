@@ -374,9 +374,21 @@ class VisualTests(unittest.TestCase):
                 rect = segments[key]
                 self.assertTrue(hud[0] <= rect[0] < rect[2] <= hud[2])
                 self.assertTrue(hud[1] <= rect[1] < rect[3] <= hud[3])
+                # Apenas a deteccao das CARTAS utiliza subarea geometrica.
+                # Nick e saldo pesquisam o HUD completo.
+                expected = rect if key == "hole" else hud
                 self.assertEqual(
-                    layout_roi(config[str(table)], table, "horizontal3", key), rect)
+                    layout_roi(config[str(table)], table, "horizontal3", key), expected)
             self.assertLessEqual(segments["nick"][3], segments["stack"][1])
+
+    def test_nick_e_saldo_recebem_HUD_INTEIRO(self):
+        config = screenshot_profile()
+        for count in (1, 2, 3, 4):
+            for table in range(1, count+1):
+                mode = f"horizontal{count}"
+                hud = layout_roi(config[str(table)], table, mode, "hero_hud")
+                self.assertEqual(layout_roi(config[str(table)], table, mode, "nick"), hud)
+                self.assertEqual(layout_roi(config[str(table)], table, mode, "stack"), hud)
 
     def test_um_hud_manual_na_mesa_1_replica_nas_outras(self):
         config = screenshot_profile()
