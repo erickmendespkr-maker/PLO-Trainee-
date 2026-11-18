@@ -179,6 +179,34 @@ def infer_horizontal_layout(frame, previous=None):
         seams = [vertical_seam_strength(gray, x) for x in (240, 480, 720)]
         if uniform_blanks and max(seams) >= .35:
             return "horizontal4", .85, {"horizontal4": .85}
+    # Detectar primeiro as bordas verticais que atravessam quase a
+    # altura das janelas. Mesas diferentes podem ter cartas e saldos
+    # bastante distintos, apesar de manter a mesma geometria. O metodo
+    # anterior priorizava similaridade de conteudo e podia reconhecer
+    # quatro mesas como uma unica.
+    structural = []
+    for count in (4, 3, 2):
+        positions = [round(W * i / count) for i in range(1, count)]
+        boundary_evidence = [vertical_seam_strength(gray, x)
+                             for x in positions]
+        if not boundary_evidence or min(boundary_evidence) < .36:
+            continue
+        textured = sum(
+            table_visible(gray, layout_bounds(f"horizontal{count}", table),
+                          strict=False)
+            for table in range(1, count + 1))
+        if textured < count:
+            continue
+        structural.append((min(boundary_evidence), count))
+    if structural:
+        best_seam, detected_count = max(
+            structural, key=lambda item: (item[0], item[1] / 10))
+        if previous and layout_key(previous) == f"horizontal{detected_count}":
+            return previous, .96, {previous: round(best_seam, 3)}
+        if best_seam >= .48:
+            mode = f"horizontal{detected_count}"
+            return mode, .87, {mode: round(best_seam, 3)}
+
     for count in (2, 3, 4):
         mode = f"horizontal{count}"
         slots = []
