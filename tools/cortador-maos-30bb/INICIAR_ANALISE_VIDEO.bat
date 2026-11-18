@@ -33,18 +33,21 @@ if errorlevel 1 if not exist "%~dp0tesseract.exe" (
   exit /b 1
 )
 
+set "PYTHONEXE="
+set "PYTHONARGS="
 if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
-  set "PYTHONCMD=\"%LOCALAPPDATA%\Programs\Python\Python312\python.exe\""
+  set "PYTHONEXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
   goto ready
 )
 py -3 -c "import tkinter" >nul 2>&1
 if not errorlevel 1 (
-  set "PYTHONCMD=py -3"
+  set "PYTHONEXE=py"
+  set "PYTHONARGS=-3"
   goto ready
 )
 python -c "import tkinter" >nul 2>&1
 if not errorlevel 1 (
-  set "PYTHONCMD=python"
+  set "PYTHONEXE=python"
   goto ready
 )
 
@@ -54,16 +57,16 @@ pause
 exit /b 1
 
 :ready
-%PYTHONCMD% -c "import PIL, PIL.ImageTk" >nul 2>&1
+"%PYTHONEXE%" %PYTHONARGS% -c "import PIL, PIL.ImageTk" >nul 2>&1
 if errorlevel 1 (
   echo Instalando dependencia Pillow na sua conta...
-  %PYTHONCMD% -m pip install --user "Pillow>=10,<13"
+  "%PYTHONEXE%" %PYTHONARGS% -m pip install --user "Pillow>=10,<13"
   if errorlevel 1 (
     echo Falha instalando Pillow. Confira sua conexao.
     pause
     exit /b 1
   )
 )
-%PYTHONCMD% "%~dp0analise_video.py"
+"%PYTHONEXE%" %PYTHONARGS% "%~dp0analise_video.py"
 if errorlevel 1 pause
 endlocal
