@@ -1464,10 +1464,8 @@ class GUI(tk.Tk):
         self.quick = tk.BooleanVar(value=True)
         self.auto_export = tk.BooleanVar(value=True)
         self.auto_rebuy = tk.BooleanVar(value=True)
-        self.use_gemini = tk.BooleanVar(value=bool(read_key()))
-        self.gemini_model = tk.StringVar(value=DEFAULT_MODEL)
-        self.gemini_limit = tk.StringVar(value="40")
-        self.show_inconclusive = tk.BooleanVar(value=False)
+        self.show_inconclusive = tk.BooleanVar(value=True)
+        self.pot_choice = tk.StringVar(value="Nao sei")
         self.auto_export_folder = None
         self.output_dir = tk.StringVar(value=str(load_export_folder()))
         self.cfg = screenshot_profile()
@@ -1532,7 +1530,7 @@ class GUI(tk.Tk):
         ttk.Button(row2, text="Verificar nick no frame", command=self.verify_nick_frame).pack(
             side="left", padx=7)
         ttk.Checkbutton(row2, text="OCR rapido", variable=self.quick).pack(side="left", padx=4)
-        ttk.Checkbutton(row2, text="Gerar MP4 automaticos",
+        ttk.Checkbutton(row2, text="Gerar MP4 para revisao",
                         variable=self.auto_export).pack(side="left", padx=6)
         self.table.trace_add("write", lambda *_: self.on_table_change())
 
@@ -1557,28 +1555,6 @@ class GUI(tk.Tk):
         self.events_info = ttk.Label(changes, text="Sem mudancas registradas")
         self.events_info.pack(side="left", padx=8)
 
-        airow = ttk.Frame(self)
-        airow.pack(fill="x", padx=8, pady=(0, 3))
-        ttk.Checkbutton(airow, text="Gemini quando OCR falhar",
-                        variable=self.use_gemini).pack(side="left")
-        ttk.Label(airow, text="Modelo:").pack(side="left", padx=(12, 3))
-        ttk.Combobox(airow, textvariable=self.gemini_model,
-                     values=list(ALLOWED_MODELS), state="readonly",
-                     width=23).pack(side="left")
-        ttk.Label(airow, text="Max. chamadas/análise:").pack(side="left", padx=(12, 3))
-        ttk.Entry(airow, textvariable=self.gemini_limit,
-                  width=5).pack(side="left")
-        ttk.Button(airow, text="Configurar chave",
-                   command=self.configure_gemini).pack(side="left", padx=5)
-        ttk.Button(airow, text="Ativar chave copiada",
-                   command=self.import_copied_gemini_key).pack(side="left", padx=3)
-        ttk.Button(airow, text="Testar Gemini no frame",
-                   command=self.test_gemini_frame).pack(side="left", padx=4)
-        self.ai_status = ttk.Label(
-            airow, text="Chave local: configurada" if read_key()
-            else "Chave local: ausente")
-        self.ai_status.pack(side="left", padx=4)
-
         self.canvas = tk.Canvas(self, width=VIEW_W, height=VIEW_H, background="#181818",
                                 highlightthickness=0)
         self.canvas.pack(pady=2)
@@ -1602,13 +1578,13 @@ class GUI(tk.Tk):
                         command=self.refresh).pack(side="left", padx=8)
         review_ai = ttk.Frame(self)
         review_ai.pack(fill="x", padx=8)
-        ttk.Button(review_ai, text="REANALISAR POTES COM GEMINI",
+        ttk.Button(review_ai, text="ESTIMAR APORTES (OFFLINE)",
                    command=self.recheck_inconclusive).pack(side="left", pady=3)
         ttk.Button(review_ai, text="Abrir ultima revisao",
                    command=self.load_latest_review).pack(side="left", padx=8)
         ttk.Button(review_ai, text="AUTOAJUSTAR MARCACOES NESTE VIDEO",
                    command=self.force_auto_align).pack(side="left", padx=4)
-        ttk.Label(review_ai, text="Usa os horarios da revisao salva, sem ler o video inteiro.",
+        ttk.Label(review_ai, text="Reutiliza horarios da revisao; sem IA, sem rede.",
                   foreground="#696969").pack(side="left", padx=8)
         output_row = ttk.Frame(self)
         output_row.pack(fill="x", padx=8, pady=(2, 4))
@@ -1646,14 +1622,19 @@ class GUI(tk.Tk):
         ttk.Label(edit, text="Perda (BB):").pack(side="left")
         self.loss_edit = tk.StringVar()
         ttk.Entry(edit, textvariable=self.loss_edit, width=9).pack(side="left", padx=3)
+        ttk.Label(edit, text="Pote:").pack(side="left", padx=4)
+        ttk.Combobox(edit, textvariable=self.pot_choice,
+                     values=["Nao sei", "Adversario levou tudo",
+                             "Heroi ganhou parte", "Heroi ganhou"],
+                     state="readonly", width=22).pack(side="left")
         ttk.Button(edit, text="Conferir/Salvar", command=self.confirm).pack(side="left", padx=6)
         ttk.Button(edit, text="Descartar", command=self.exclude).pack(side="left")
         ttk.Button(edit, text="Ver inicio", command=lambda: self.preview_edge("start")).pack(side="left", padx=5)
         ttk.Button(edit, text="Ver fim", command=lambda: self.preview_edge("end")).pack(side="left")
         ttk.Button(edit, text="EXPORTAR PERDAS", command=self.export).pack(side="right")
-        ttk.Button(edit, text="EXPORTAR MAOS PARA REVISAO (SEM IA)",
+        ttk.Button(edit, text="EXPORTAR PARA REVISAO",
                    command=self.export_review_candidates).pack(side="right", padx=5)
-        ttk.Label(self, text="Uso offline. Leituras de saldo por OCR sao estimativas; revise cada mao, rebuys e limites dos cortes.",
+        ttk.Label(self, text="100% offline. Aporte estimado nao prova derrota: confirme destino do pote para classificar perdas.",
                   foreground="#9b571a").pack(padx=8, pady=2)
 
     def effective_layout_at(self, when):
@@ -2214,116 +2195,6 @@ class GUI(tk.Tk):
             self.tell(f"Mesa {self.table.get()}: 1 BB = {value:g} fichas.")
         except ValueError:
             messagebox.showerror("BB", "Informe quanto vale 1 BB em fichas na tela.")
-
-    def import_copied_gemini_key(self):
-        """Importacao em um clique do clipboard, mediante clique explicito."""
-        if not messagebox.askokcancel(
-                "Ativar Gemini no Windows",
-                "Cole primeiro uma CHAVE NOVA no clipboard (Ctrl+C) e clique OK. "
-                "A chave enviada no chat deve ser revogada.\n\n"
-                "A chave ficara protegida pelo Windows e sera reutilizada "
-                "nas proximas execucoes, sem configurar outra vez. "
-                "Somente recortes de saldos serao enviados ao Google "
-                "quando voce ativar o Gemini."):
-            return
-        try:
-            value = self.clipboard_get()
-            save_key(value)
-            # A chave nao deve continuar no clipboard apos armazenamento DPAPI.
-            try:
-                if self.clipboard_get() == value:
-                    self.clipboard_clear()
-            except tk.TclError:
-                pass
-            self.use_gemini.set(True)
-            self.ai_status.configure(text="Chave local: configurada")
-            self.tell("Gemini ativado. Chave salva no Windows; nao sera "
-                      "solicitada nas proximas analises.")
-        except (tk.TclError, OSError, GeminiError) as exc:
-            messagebox.showerror("Ativar Gemini", 
-                                 "Nao foi possivel importar a chave copiada. "
-                                 "Copie uma chave nova do AI Studio e tente novamente.")
-
-    def configure_gemini(self):
-        """Solicita a chave no computador, nunca a coloca no GitHub ou JSON."""
-        if not messagebox.askokcancel(
-                "Privacidade do Gemini",
-                "Somente recortes de saldo serao enviados ao Google quando "
-                "o OCR local falhar. O uso pode consumir cota e gerar custos "
-                "se a conta estiver no nivel pago.\n\n"
-                "Digite uma chave NOVA do Google AI Studio. Nao reutilize a "
-                "credencial compartilhada no chat."):
-            return
-        candidate = simpledialog.askstring(
-            "Configurar chave Gemini",
-            "Cole a NOVA chave do Gemini (sera armazenada protegida pelo Windows):",
-            show="*", parent=self)
-        if candidate is None:
-            return
-        try:
-            save_key(candidate)
-            self.use_gemini.set(True)
-            self.ai_status.configure(text="Chave local: configurada")
-            self.tell("Chave Gemini salva com protecao do Windows. "
-                      "A chave nao fica no repositorio.")
-        except (GeminiError, OSError) as exc:
-            messagebox.showerror("Credencial Gemini", str(exc))
-
-    def test_gemini_frame(self):
-        if not self.videos or self.frame is None:
-            messagebox.showwarning("Gemini", "Carregue o video e clique Mostrar frame.")
-            return
-        key = read_key()
-        if not key:
-            messagebox.showwarning("Gemini", "Clique Configurar chave primeiro.")
-            return
-        try:
-            model = self.gemini_model.get()
-            table = int(self.table.get())
-            when = parse_time(self.seek.get())
-            mode = self.layout_id()
-            if table > layout_count(mode):
-                raise ValueError("Mesa indisponivel neste instante.")
-            rect = layout_roi(self.cfg[str(table)], table, mode, "hero_hud")
-            if rect is None:
-                raise ValueError("Este layout nao tem HUD marcado.")
-            bb = float(self.cfg[str(table)].get("bb", 1))
-            expected_nick = self.nick.get().strip()
-            videos = self.videos[:]
-        except (ValueError, KeyError) as exc:
-            messagebox.showerror("Gemini", str(exc))
-            return
-
-        self.tell("Gemini: lendo nick e saldo no HUD VERDE COMPLETO...")
-        def worker():
-            try:
-                crop = native_stack_crop(videos, when, rect, resource("ffmpeg"))
-                client = GeminiClient(key, model=model, max_requests=1)
-                fields = client.read_hud_fields(
-                    crop, bb=bb, max_stack_bb=MAX_STACK_BB,
-                    expected_nick=expected_nick)
-                value = fields["value"]
-                found_nick = fields["nick"]
-                result = (
-                    f"HUD completo da mesa {table}\n"
-                    f"Nick lido: {found_nick or '(nao legivel)'}\n"
-                    f"Nick esperado: {expected_nick}\n"
-                    f"Saldo: {value / bb:g} BB" if value is not None else
-                    f"HUD completo da mesa {table}\n"
-                    f"Nick lido: {found_nick or '(nao legivel)'}\n"
-                    f"Nick esperado: {expected_nick}\n"
-                    "Saldo nao legivel."
-                )
-                self.after(0, lambda msg=result:
-                           messagebox.showinfo("Teste Gemini — HUD completo", msg))
-            except GeminiError as exc:
-                self.after(0, lambda msg=str(exc):
-                           messagebox.showwarning("Teste Gemini", msg))
-            except (OSError, ValueError, RuntimeError):
-                self.after(0, lambda:
-                           messagebox.showwarning(
-                               "Teste Gemini", "Falhou a leitura do HUD ou a conexao."))
-        threading.Thread(target=worker, daemon=True).start()
 
     def on_table_change(self):
         self.bb.set(str(self.cfg[self.table.get()].get("bb", 1)))
