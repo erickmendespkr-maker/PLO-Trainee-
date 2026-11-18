@@ -83,5 +83,22 @@ class VerifiedReviewTests(unittest.TestCase):
         self.assertEqual(self.gate()["status"], "INSUFFICIENT_DATA")
 
 
+    def test_symlinked_parent_directory_rejected(self):
+        actual = self.frames / "actual"
+        actual.mkdir()
+        (actual / "frame.png").write_bytes(b"frame-fixture")
+        (self.frames / "alias").symlink_to(actual, target_is_directory=True)
+        self.hand["evidence"][0]["frame_file"] = "alias/frame.png"
+        result = self.gate()
+        self.assertEqual(result["status"], "INSUFFICIENT_DATA")
+        self.assertIn("frame_0_file_missing_or_unsafe", result["reasons"])
+
+    def test_symlinked_frame_directory_rejected(self):
+        alias = Path(self.tmp.name) / "frame_alias"
+        alias.symlink_to(self.frames, target_is_directory=True)
+        result = verified_review_gate(self.hand, self.video, alias)
+        self.assertEqual(result["status"], "INSUFFICIENT_DATA")
+        self.assertIn("frame_directory_invalid", result["reasons"])
+
 if __name__ == "__main__":
     unittest.main()
