@@ -2,6 +2,20 @@
 
 **Entrada principal: um único MP4 com a sessão completa** (ou, alternativamente, 2, 6 ou mais partes **consecutivas**, sem lacunas). O programa não usa DriveHUD, histórico TXT, banco de dados do poker nem conexão com a sala. Trabalha **offline**, após a sessão.
 
+## NOVO: 1 RETANGULO VERDE POR MESA (HUD UNICO)
+
+Conforme o exemplo enviado do video com **tres mesas lado a lado**, a interface agora mostra **somente uma caixa verde grande por mesa**, da parte inferior da area das cartas ate o final da barra de saldo. Ela inclui **cartas, nick e stack**. Nao se marcam mais tres retangulos separados.
+
+- No video de 3 mesas, o perfil inicial e aproximadamente `[100,405,288,528]` na mesa 1, usando a imagem interna 960x540. Os retangulos equivalentes aparecem automaticamente nas mesas 2 e 3.
+- Se quiser ajustar, selecione a mesa 1 e **arraste uma unica caixa verde** que cubra suas cartas, o nick e o saldo. O programa replica **a mesma posicao relativa** nas outras mesas daquele layout e salva o ajuste automaticamente no Windows.
+- A deteccao de cartas e a leitura OCR do nick e do saldo usam **subareas internas calculadas pela geometria do HUD**. As subareas nao aparecem como retangulos extras. O Gemini continua sendo acionado apenas quando o OCR nao le saldos de forma suficiente.
+- Perfis de **1, 2, 3 e 4 mesas** sao independentes. Uma caixa marcada em 3 mesas nao move as caixas do layout de 4.
+- As caixas verdes grandes desenhadas na versao anterior usando o campo `cartas` (altura de 80 pixels ou mais na imagem interna) sao **migradas para HUD unico** ao carregar o arquivo `marcacoes_padrao.json`. Caixas antigas menores de cartas nao serao confundidas com o HUD inteiro.
+- Para recarregar o desenho do exemplo, use **Usar regioes do print**. Para ajustar por cartas visiveis, use **AUTOAJUSTAR MARCACOES NESTE VIDEO**. Ajustes manuais permanecem prioritarios.
+- Antes da analise de horas, selecione um frame no qual o saldo esteja visivel e clique **Testar saldo** para validar a faixa interna. A marca grande por si so nao garante que o OCR leia todos os numeros.
+
+**Aviso:** esta e uma implementacao por heuristicas visuais. A deteccao de maos e de perdas liquidas >= 30 BB continua sujeita a erros quando as mesas mudam de posicao, as cartas sao encobertas ou os saldos ficam ilegiveis. Confirme os MP4 antes de enviar ao instrutor. Os testes de regressao foram adicionados, mas ainda precisam ser executados no PC com a gravacao real.
+
 ## Estado atual
 
 Existe uma **primeira implementação de detecção visual + OCR**, ainda **não validada em gravações reais**. O novo aplicativo se chama **analise_video.py**; a interface legada **cortador.py** permanece no repositório somente como editor/cortador auxiliar. Ela ainda tem os recursos antigos de importação, mas **não são utilizados** pelo novo analisador.
