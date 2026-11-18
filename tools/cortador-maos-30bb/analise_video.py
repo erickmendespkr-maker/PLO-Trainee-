@@ -2053,23 +2053,6 @@ class GUI(tk.Tk):
             self.tell("HUD ajustado, mas nao foi salvo no Windows. "
                       "Use Salvar configuracao.")
         self.draw()
-            return
-        if key == "hole":
-            for destination in range(1, layout_count(self.layout_id()) + 1):
-                self.cfg[str(destination)].pop("reference", None)
-        self.cfg[str(table)]["detector"] = "bright"
-        self.tell(f"Regiao {key} ajustada somente para esta disposicao. "
-                  "Outros layouts foram preservados.")
-        try:
-            save_markings_file(
-                default_markings_path(), self.cfg, self.nick.get(), self.layout.get())
-            self.markings_source = "Marcacoes salvas automaticamente"
-            self.tell(f"Regiao {key} salva automaticamente para {self.layout_id()}. "
-                      "Outros layouts preservados.")
-        except (OSError, ValueError, TypeError):
-            self.tell("AVISO: nao foi possivel salvar esta marcacao no Windows. "
-                      "Use Salvar configuracao para manter seus ajustes.")
-        self.draw()
 
     def test_stack_frame(self):
         """Usa o MP4 na resolucao original e mostra o que o Tesseract enxergou."""
