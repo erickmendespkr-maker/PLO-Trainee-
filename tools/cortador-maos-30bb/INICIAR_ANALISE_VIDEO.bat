@@ -67,6 +67,15 @@ if errorlevel 1 (
     exit /b 1
   )
 )
+echo Verificando sintaxe do analisador...
+"%PYTHONEXE%" %PYTHONARGS% -m py_compile "%~dp0analise_video.py" "%~dp0gemini_backend.py" "%~dp0cortador.py"
+if errorlevel 1 (
+  echo.
+  echo ERRO DE SINTAXE: atualize os arquivos desta pasta.
+  echo A janela sera mantida aberta para voce copiar o erro.
+  pause
+  exit /b 1
+)
 "%PYTHONEXE%" %PYTHONARGS% "%~dp0analise_video.py"
 if errorlevel 1 pause
 endlocal
