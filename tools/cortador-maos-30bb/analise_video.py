@@ -1250,7 +1250,7 @@ class GUI(tk.Tk):
         for col, label, width in [
             ("inicio", "Inicio", 92), ("fim", "Fim", 92), ("mesa", "Mesa", 55),
             ("perda", "Perda BB estimada", 130), ("nick_status", "Nick OCR", 105),
-            ("status", "Resultado OCR", 300), ("conferido", "Conferido", 90)]:
+            ("status", "Resultado OCR / IA", 300), ("conferido", "Conferido", 90)]:
             self.grid.heading(col, text=label)
             self.grid.column(col, width=width)
         self.grid.pack(fill="both", expand=True)
@@ -1803,6 +1803,9 @@ class GUI(tk.Tk):
             Path(path).write_text(json.dumps(
                 {"layout": self.layout.get(), "nick": self.nick.get().strip(),
                  "quick": self.quick.get(), "auto_export": self.auto_export.get(),
+                 "use_gemini": self.use_gemini.get(),
+                 "gemini_model": self.gemini_model.get(),
+                 "gemini_limit": self.gemini_limit.get(),
                  "timeline": self.timeline, "tables": self.cfg},
                 indent=2), encoding="utf-8")
             self.tell("Configuracao salva.")
@@ -1817,6 +1820,11 @@ class GUI(tk.Tk):
                 self.nick.set(data.get("nick", "~Pulgar~"))
                 self.quick.set(bool(data.get("quick", True)))
                 self.auto_export.set(bool(data.get("auto_export", True)))
+                self.use_gemini.set(bool(data.get("use_gemini", False)))
+                saved_model = data.get("gemini_model", DEFAULT_MODEL)
+                self.gemini_model.set(
+                    saved_model if saved_model in ALLOWED_MODELS else DEFAULT_MODEL)
+                self.gemini_limit.set(str(data.get("gemini_limit", 40)))
                 self.layout.set(data.get("layout", "2 por 2" if "tables" not in data else "4 lado a lado"))
                 self.timeline = sorted(data.get("timeline", []), key=lambda x: float(x["start"]))
                 self.detected_timeline = []
@@ -1867,6 +1875,9 @@ class GUI(tk.Tk):
                    "layout": self.layout.get(), "config": self.cfg, "threshold": self.threshold.get(),
                    "nick": self.nick.get().strip(), "quick": self.quick.get(),
                    "auto_export": self.auto_export.get(),
+                   "use_gemini": self.use_gemini.get(),
+                   "gemini_model": self.gemini_model.get(),
+                   "gemini_limit": self.gemini_limit.get(),
                    "timeline": self.timeline,
                    "detected_timeline": self.detected_timeline,
                    "candidates": [asdict(c) for c in self.candidates]}
@@ -1906,6 +1917,11 @@ class GUI(tk.Tk):
             self.nick.set(data.get("nick", "~Pulgar~"))
             self.quick.set(bool(data.get("quick", True)))
             self.auto_export.set(bool(data.get("auto_export", True)))
+            self.use_gemini.set(bool(data.get("use_gemini", False)))
+            saved_model = data.get("gemini_model", DEFAULT_MODEL)
+            self.gemini_model.set(
+                saved_model if saved_model in ALLOWED_MODELS else DEFAULT_MODEL)
+            self.gemini_limit.set(str(data.get("gemini_limit", 40)))
             self.threshold.set(str(data.get("threshold", 30)))
             self.info.configure(text=f"{len(videos)} arquivo(s) | {fmt(self.total)}")
             self.on_table_change()
@@ -1944,7 +1960,7 @@ class GUI(tk.Tk):
             return messagebox.askyesno(
                 "OCR dos saldos nao funciona nesta previa",
                 "Nenhuma caixa azul apresentou saldo valido no frame original.\n"
-                "Isso pode gerar zero cortes.\n\n"
+                "O Gemini opcional pode tentar ler quando OCR falhar.\n\n"
                 "Clique 'Testar saldo' para ver o recorte ORIGINAL ampliado "
                 "e as leituras brutas antes de iniciar horas de analise.\n\n"
                 "Deseja analisar mesmo assim?")
@@ -1981,6 +1997,16 @@ class GUI(tk.Tk):
                 roi_tuple(data["stack"])
                 if not data.get("bb"):
                     raise ValueError(f"Informe BB da mesa {table}.")
+            if self.use_gemini.get():
+                if not read_key():
+                    raise ValueError(
+                        "Chave Gemini ausente. Clique Configurar chave e digite "
+                        "a sua NOVA chave local.")
+                if self.gemini_model.get() not in ALLOWED_MODELS:
+                    raise ValueError("Modelo Gemini invalido.")
+                limit = int(self.gemini_limit.get())
+                if not 1 <= limit <= 300:
+                    raise ValueError("Maximo de chamadas Gemini: 1 a 300.")
             if not resource("tesseract"):
                 raise ValueError("Instale Tesseract OCR e coloque tesseract.exe no PATH.")
         except Exception as exc:
@@ -2004,19 +2030,29 @@ class GUI(tk.Tk):
         initial_layout = self.layout.get()
         events = [entry.copy() for entry in self.timeline]
         detections = []
+        selected_model = self.gemini_model.get()
+        max_calls = int(self.gemini_limit.get()) if self.use_gemini.get() else 0
+        # O segredo so permanece na memoria deste processo local.
+        api_key = read_key() if self.use_gemini.get() else None
         def worker():
             try:
+                client = (GeminiClient(api_key, model=selected_model,
+                                       max_requests=max_calls)
+                          if api_key else None)
                 results = scan_videos(videos, cfg, threshold,
                                       lambda msg: self.after(0, lambda m=msg: self.tell(m)),
                                       hero_nick=hero_nick, quick=quick,
                                       initial_layout=initial_layout, events=events,
-                                      detected_events=detections)
-                self.after(0, lambda: self.finished(results, detections))
+                                      detected_events=detections, gemini_client=client)
+                summary = (f"Gemini: {client.used}/{client.limit} chamadas; "
+                           f"{sum(c.source == 'Gemini' for c in results)} perdas com IA"
+                           if client else "Gemini desligado")
+                self.after(0, lambda: self.finished(results, detections, summary))
             except Exception as exc:
                 self.after(0, lambda e=str(exc): self.failed(e))
         threading.Thread(target=worker, daemon=True).start()
 
-    def finished(self, results, detections=None):
+    def finished(self, results, detections=None, ai_summary=""):
         self.candidates = results
         self.detected_timeline = sorted(detections or [], key=lambda e: e["start"])
         self.busy = False
@@ -2024,8 +2060,9 @@ class GUI(tk.Tk):
         verified = sum(c.auto_verified and not c.excluded for c in results)
         unresolved = sum(c.loss_bb is None for c in results)
         weak = len(results) - verified - unresolved
-        self.tell(f"Analise: {verified} perdas OCR consistentes; "
-                  f"{weak} perdas fracas; {unresolved} leituras inconclusivas.")
+        self.tell(f"Analise: {verified} perdas consistentes; "
+                  f"{weak} perdas fracas; {unresolved} leituras inconclusivas. "
+                  f"{ai_summary}")
         if self.auto_export_folder:
             # Gera apenas os MP4 com leitura repetida confiavel, sem clique manual.
             self.export(folder=self.auto_export_folder, automatic_only=True)
@@ -2034,7 +2071,7 @@ class GUI(tk.Tk):
                 "Analise concluida",
                 f"Perdas detectadas com OCR consistente: {verified}\n"
                 f"Perdas incertas: {weak}\nLeituras inconclusivas: {unresolved}\n\n"
-                "As leituras devem ser conferidas nos videos.")
+                f"{ai_summary}\n\nAs leituras devem ser conferidas nos videos.")
 
     def failed(self, error):
         self.busy = False
