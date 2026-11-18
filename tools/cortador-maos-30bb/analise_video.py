@@ -125,6 +125,90 @@ def table_visible(frame, bounds, strict=True):
     return 16 <= felt <= 236 and abs(felt - upper) >= 10
 
 
+def infer_horizontal_layout(frame, previous=None):
+    """Inferencia conservadora de 1 a 4 colunas pela repeticao visual das mesas.
+
+    Compara a estrutura em partes equivalentes de cada janela; nao usa OCR
+    em cada frame. Se o resultado for ambiguo, devolve None e nao inventa
+    uma quantidade. "auto4" significa 4 slots fixos (mesmo com vazios).
+    """
+    gray = frame.convert("L")
+    scores = {}
+    present_slots = {}
+    for count in (2, 3, 4):
+        mode = f"horizontal{count}"
+        slots = []
+        for table in range(1, count + 1):
+            bounds = layout_bounds(mode, table)
+            if not table_visible(gray, bounds, strict=False):
+                continue
+            part = gray.crop(bounds).resize((32, 48))
+            if ImageStat.Stat(part).stddev[0] < 7:
+                continue
+            slots.append((table, part))
+        present_slots[mode] = [index for index, _ in slots]
+        if len(slots) < 2:
+            continue
+        similarities = []
+        for i, (_, img1) in enumerate(slots):
+            for _, img2 in slots[i+1:]:
+                difference = ImageStat.Stat(ImageChops.difference(img1, img2)).mean[0]
+                similarities.append(max(0., 1. - difference / 75.))
+        consistency = statistics.median(similarities)
+        # Penalizar discordancia grande entre as varias janelas.
+        inconsistency = (max(similarities) - min(similarities)) if len(similarities) > 2 else 0.
+        coverage = len(slots) / count
+        scores[mode] = (consistency - .18 * inconsistency +
+                        .08 * coverage + .025 * (count - 2))
+    if scores:
+        ordered = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        mode, score = ordered[0]
+        runner = ordered[1][1] if len(ordered) > 1 else 0.
+        if previous in scores and scores[previous] >= score - .035:
+            mode = previous
+            score = scores[mode]
+        if score >= .68 and (mode == previous or score - runner >= .045):
+            return mode, round(score, 3), scores
+
+    # Uma unica mesa ampliada e o fallback somente quando nao ha evidencia
+    # de duas ou mais janelas repetidas. Caso contrario, manter inconclusivo.
+    if not scores or max(scores.values()) < .58:
+        if table_visible(gray, layout_bounds("horizontal1", 1), strict=False):
+            return "horizontal1", .70, scores
+    return None, 0., scores
+
+
+class AutoLayoutTracker:
+    """Confirmacao temporal: evita mudar layout por animacoes de uma jogada."""
+    def __init__(self):
+        self.stable = None
+        self.suspected = None
+        self.streak = 0
+
+    def observe(self, frame):
+        guess, confidence, _scores = infer_horizontal_layout(frame, self.stable)
+        if guess is None:
+            self.suspected = None
+            self.streak = 0
+            # Ambiguidade nao produz perda valida.
+            return self.stable, False, "indefinido"
+        if guess == self.stable:
+            self.suspected = None
+            self.streak = 0
+            return self.stable, True, "estavel"
+        if self.suspected != guess:
+            self.suspected = guess
+            self.streak = 1
+        else:
+            self.streak += 1
+        if self.streak >= 3:
+            self.stable = guess
+            self.suspected = None
+            self.streak = 0
+            return self.stable, True, "alterado"
+        return self.stable, False, "confirmando"
+
+
 def screenshot_profile():
     """Regioes estimadas do print enviado: quatro mesas verticais lado a lado.
 
