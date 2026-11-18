@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """Testes basicos para algoritmos visuais independentes de video real."""
 import unittest
+from unittest.mock import patch
 from PIL import Image, ImageDraw
 from analise_video import (parse_stack, changed_fraction, HandState, bright_fraction,
-                           screenshot_profile, normalize_nick, nickname_matches)
+                           screenshot_profile, normalize_nick, nickname_matches,
+                           replicate_horizontal_rect, stack_median)
 
 
 class VisualTests(unittest.TestCase):
@@ -32,6 +34,27 @@ class VisualTests(unittest.TestCase):
         self.assertEqual(GUI.infer_table(dummy, 239, 200), 1)
         self.assertEqual(GUI.infer_table(dummy, 240, 200), 2)
         self.assertEqual(GUI.infer_table(dummy, 959, 539), 4)
+
+    def test_copiar_area_do_saldo_entre_quatro_mesas(self):
+        regions = replicate_horizontal_rect([95, 480, 152, 502], 1)
+        self.assertEqual(regions[1], [95, 480, 152, 502])
+        self.assertEqual(regions[2], [335, 480, 392, 502])
+        self.assertEqual(regions[4], [815, 480, 872, 502])
+        other = replicate_horizontal_rect([335, 480, 392, 502], 2)
+        self.assertEqual(other, regions)
+
+    def test_ocr_rapido_ler_duas_amostras(self):
+        samples = [Image.new("L", (30, 15), 1) for _ in range(3)]
+        with patch("analise_video.ocr_stack", return_value=95.0) as mocked:
+            value, count = stack_median(samples, "unused", quick=True)
+            self.assertEqual(value, 95)
+            self.assertEqual(count, 2)
+            self.assertEqual(mocked.call_count, 2)
+        with patch("analise_video.ocr_stack", return_value=95.0) as mocked:
+            value, count = stack_median(samples, "unused", quick=False)
+            self.assertEqual(value, 95)
+            self.assertEqual(count, 3)
+            self.assertEqual(mocked.call_count, 3)
 
     def test_comparacao_nick(self):
         self.assertEqual(normalize_nick("~Púlgár~"), "pulgar")
