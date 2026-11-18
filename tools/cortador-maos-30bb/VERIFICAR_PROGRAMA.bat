@@ -37,7 +37,7 @@ pause
 exit /b 1
 
 :check
-"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "gemini_backend.py" "hud_recognition.py" "testes_gemini.py" "testes_hud.py"
+"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "gemini_backend.py" "hud_recognition.py" "pasta_saida.py" "testes_gemini.py" "testes_hud.py" "testes_pasta_saida.py"
 if errorlevel 1 (
   echo.
   echo ERRO: a verificacao de sintaxe falhou.
@@ -50,6 +50,15 @@ echo Sintaxe OK. Executando testes de reconhecimento:
 if errorlevel 1 (
   echo.
   echo Existem testes que falharam. Copie a mensagem acima e envie no chat.
+  pause
+  exit /b 1
+)
+echo.
+echo Testando a pasta padrao dos MP4:
+"%PYEXE%" %PYARGS% "testes_pasta_saida.py"
+if errorlevel 1 (
+  echo.
+  echo ERRO nos testes da pasta de saida.
   pause
   exit /b 1
 )
