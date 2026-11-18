@@ -26,12 +26,8 @@ except ImportError as exc:
     raise SystemExit("Pillow ausente. Execute INICIAR_ANALISE_VIDEO.bat para instalar.") from exc
 
 from cortador import Clip, export_clip, file_at, fmt, parse_time, probe, resource
-from gemini_backend import (
-    GeminiClient, GeminiError, GeminiLimitError,
-    DEFAULT_MODEL, ALLOWED_MODELS, read_key, save_key, remove_key
-)
 from hud_recognition import is_full_hud, read_hud_stack, read_hud_nick
-from poker_contexto import table_context_timestamps
+from analise_local import times_for_hand, assess_stacks, offline_review_decision
 from pasta_saida import load_export_folder, save_export_folder, valid_export_folder
 
 W, H = 960, 540
@@ -1339,236 +1335,84 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
     return sorted(collected, key=lambda item: (item.start, item.table))
 
 
-def recheck_sample_times(candidate, duration):
-    """Lê tempos reais salvos da mão; aceita estimativa para revisões antigas."""
-    if candidate.before_times and candidate.after_times:
-        pre = sorted(set(candidate.before_times))[-2:]
-        post = sorted(set(candidate.after_times))[-2:]
-        if len(pre) == len(post) == 2 and pre[-1] < post[0] and (
-                0 <= pre[0] and post[-1] < duration):
-            return pre, post
-    # Revisões anteriores não armazenavam os instantes exatos.
-    if (candidate.end - candidate.start < 10 or
-            candidate.start < 0 or candidate.end > duration + 0.02):
-        return None
-    pre = [candidate.start + 1, candidate.start + 3]
-    post = [candidate.end - 4, candidate.end - 2]
-    if pre[1] >= post[0] or post[1] >= duration:
-        return None
-    return pre, post
+def estimate_candidates_offline(videos, config, candidates, threshold,
+                                progress=lambda msg: None, sample_count=7):
+    """Triagem de possivel investimento >=30 BB pelo stack DURANTE cada mao.
 
-
-def recheck_candidates_with_gemini(videos, config, candidates, threshold,
-                                   client, on_progress=lambda text: None):
-    """Rele SOMENTE pendencias da revisao com o Gemini; nao varre o MP4 todo.
-
-    Usado em sessoes ja analisadas e salvas em .json, mesmo que nao tenham
-    gerado nenhum video. A interface nao considera IA como evidência infalível.
+    Nunca classifica automaticamente perda apenas pela queda do stack, porque
+    o vencedor/side pots e o rebuy exigem confirmacao por evidencia de video.
+    A leitura usa o HUD verde completo, em frames NATIVOS do video.
     """
     if not videos:
         return [], 0, 0
-    duration = sum(video.duration for video in videos)
-    ffmpeg = resource("ffmpeg")
-    if not ffmpeg:
-        raise RuntimeError("FFmpeg nao encontrado.")
+    ffmpeg, tesseract = resource("ffmpeg"), resource("tesseract")
+    if not ffmpeg or not tesseract:
+        raise RuntimeError("FFmpeg e Tesseract sao necessarios para triagem local.")
+    duration = sum(v.duration for v in videos)
     copies = [Candidate(**asdict(c)) for c in candidates]
-    checked = 0
-    positives = 0
-    for c in copies:
-        if c.excluded or c.confirmed or c.auto_verified or c.gemini_checked:
+    analyzed = 0
+    priority = 0
+    for candidate in copies:
+        if candidate.excluded or candidate.confirmed or candidate.pot_verified:
             continue
-        if ("INCONCLUSIVO - SALDO" not in c.status and
-                "POSSIVEL PERDA" not in c.status and
-                "INCONCLUSIVO - OCR" not in c.status):
+        # Arquivos gerados por versoes antigas nao podem continuar marcados
+        # como auto confirmados pela IA removida.
+        candidate.auto_verified = False
+        candidate.loss_bb = None
+        candidate.pot_verified = False
+        mode = layout_key(candidate.layout)
+        if mode == "auto4" or not 1 <= candidate.table <= layout_count(mode):
+            candidate.status = "REVISAR - DISPOSICAO DA MESA INSEGURA"
             continue
-        if client.disabled_reason or client.used >= client.limit:
-            break
-        times = recheck_sample_times(c, duration)
+        times = times_for_hand(candidate, duration, sample_count)
         if times is None:
-            c.reliability = "Sem quadros externos suficientes para confirmar a mao."
+            candidate.status = "REVISAR - LIMITES DA MAO INSEGUROS"
             continue
-        try:
-            data = config[str(c.table)]
-            mode = layout_key(c.layout)
-            if mode == "auto4":
-                # O modo gravado em Candidate deve ser concreto. Nao inventar.
-                continue
-            roi = layout_roi(data, c.table, mode, "stack")
-            bb = float(data.get("bb", 1))
-            if not bb > 0:
-                continue
-            before_times, after_times = times
-            before = [native_stack_crop(videos, at, roi, ffmpeg)
-                      for at in before_times]
-            after = [native_stack_crop(videos, at, roi, ffmpeg)
-                     for at in after_times]
-            values = client.read_pair(before, after, bb=bb,
-                                      max_stack_bb=MAX_STACK_BB,
-                                      expected_nick=c.nick.strip() or None)
-            checked += 1
-            c.gemini_checked = True
-            if values is None:
-                c.reliability = "Gemini tentou mas nao confirmou quatro saldos."
-                continue
-            old_pre, old_post = values
-            loss = net_loss_bb(old_pre, old_post, bb)
-            c.stack_before = old_pre
-            c.stack_after = old_post
-            c.loss_bb = round(loss, 2)
-            c.source = "Gemini"
-            if getattr(client, "last_pair_nick_verified", False):
-                c.nick_verified = True
-            c.reliability = "Gemini reavaliou 2 quadros antes e 2 depois."
-            if loss_reaches_threshold(loss, threshold):
-                c.auto_verified = True
-                c.status = "PERDA >= LIMITE - GEMINI (REANALISE)"
-                positives += 1
-            else:
-                # Não exportar mao ganhadora/menor que o limiar.
-                c.excluded = True
-                c.status = "SEM PERDA >= LIMITE (GEMINI) - REVISAR"
-            on_progress(f"Gemini verificou {checked} pendencias; "
-                        f"{positives} perdas >= {threshold:g} BB.")
-        except GeminiLimitError:
-            break
-        except (GeminiError, OSError, ValueError, RuntimeError) as exc:
-            c.reliability = "Reanalise Gemini indisponivel neste trecho."
-            on_progress("Gemini nao conseguiu conferir um trecho; mantendo revisao.")
-    return copies, checked, positives
-
-
-def recheck_candidates_with_poker_context(videos, config, candidates, threshold,
-                                          client, on_progress=lambda msg: None):
-    """A IA acompanha A MESA INTEIRA em varios momentos da mao encerrada.
-
-    O saldo pos-rebuy nao entra na formula. So aprova:
-      (1) contribuicao visivelmente mensurada do heroi >= limiar;
-      (2) pote ganho por outro jogador;
-      (3) nenhum side pot ou parte do pote recuperado.
-    """
-    if not videos:
-        return [], 0, 0
-    duration = sum(video.duration for video in videos)
-    ffmpeg = resource("ffmpeg")
-    if not ffmpeg:
-        raise RuntimeError("FFmpeg nao encontrado.")
-    revised = [Candidate(**asdict(c)) for c in candidates]
-    checked = 0
-    confirmed = 0
-    consecutive_errors = 0
-    for c in revised:
-        if (c.excluded or c.confirmed or c.pot_verified or
-                (c.gemini_checked and c.source == "Gemini - mesa inteira")):
+        rect = layout_roi(
+            config[str(candidate.table)], candidate.table, mode, "hero_hud")
+        if rect is None:
+            candidate.status = "REVISAR - HUD NAO LOCALIZADO"
             continue
-        if not c.nick:
-            c.reliability = "Nick do heroi ausente nesta revisao."
+        bb = float(config[str(candidate.table)].get("bb", 1))
+        if not bb > 0:
+            candidate.status = "REVISAR - BB INVALIDO"
             continue
-        if client.disabled_reason or client.used >= client.limit:
-            break
-        stage = "validacao dos limites da mao"
-        try:
-            mode = layout_key(c.layout)
-            if mode == "auto4" or not 1 <= c.table <= layout_count(mode):
-                c.reliability = "Disposicao da mesa indefinida no video."
-                continue
-            hand_start = (
-                c.hand_start if c.hand_start is not None
-                else max(0.0, c.start + 5))
-            hand_end = (
-                c.hand_end if c.hand_end is not None
-                else min(duration - .05, c.end - 5))
-            moments = table_context_timestamps(
-                hand_start, hand_end, duration,
-                after_times=c.after_times)
-            if moments is None:
-                c.reliability = "Mao curta ou limite de inicio/fim inseguro."
-                continue
-            table_box = layout_bounds(mode, c.table)
-            hud_box = layout_roi(config[str(c.table)], c.table, mode, "hero_hud")
-            if hud_box is None:
-                c.reliability = "HUD inteiro indisponivel nesta disposicao."
-                continue
-
-            # Um quadro panoramico ajuda a reconhecer a mesa no video de
-            # multiplas janelas. Os outros mostram as streets e o pote.
-            stage = "extracao da tela geral"
-            overview = native_stack_crop(
-                videos, moments[3], (0, 0, W, H), ffmpeg)
-            table_frames = []
-            for index, at in enumerate(moments):
-                stage = f"extracao da mesa - quadro {index + 1}/10"
-                table_frames.append(
-                    native_stack_crop(videos, at, table_box, ffmpeg))
-            hud_frames = []
-            for index, at in enumerate((moments[0], moments[-1])):
-                stage = f"extracao do HUD - quadro {index + 1}/2"
-                hud_frames.append(
-                    native_stack_crop(videos, at, hud_box, ffmpeg))
-            stage = "resposta do Gemini"
-            on_progress(f"Mesa {c.table}, {fmt(c.start)}: imagens obtidas; "
-                        "enviando 13 quadros ao Gemini.")
-            result = client.read_hand_context(
-                overview, table_frames, hud_frames,
-                expected_nick=c.nick, threshold=threshold)
-            consecutive_errors = 0
-            c.gemini_checked = True
-            checked += 1
-            c.source = "Gemini - mesa inteira"
-            c.reliability = (
-                str(result.get("reason") or "Resultado inconclusivo")[:200]
-                + (" | " + str(result.get("evidence"))[:250]
-                   if result.get("evidence") else ""))
-            c.auto_rebuy_seen = result.get("auto_rebuy_seen")
-            if result.get("hero_invested_bb") is not None:
-                c.hero_invested_bb = result["hero_invested_bb"]
-            if result.get("pot_winner"):
-                c.winner_nick = result["pot_winner"]
-
-            if result.get("verified") and loss_reaches_threshold(
-                    result.get("loss_bb"), threshold):
-                c.pot_verified = True
-                c.auto_verified = True
-                c.nick_verified = True
-                c.loss_bb = result["loss_bb"]
-                c.status = "PERDA >= LIMITE - POTE AO ADVERSARIO (IA)"
-                confirmed += 1
-            else:
-                # Rebuy ou saldo igual apos a mao nao define o resultado.
-                c.pot_verified = False
-                c.auto_verified = False
-                c.loss_bb = None
-                c.status = "INCONCLUSIVO - POTE/CONTRIBUICAO NAO CONFIRMADOS"
-            on_progress(f"Contexto: {checked} maos revisadas, {confirmed} "
-                        f"perdas demonstradas de >= {threshold:g} BB; "
-                        f"{client.used}/{client.limit} consultas.")
-        except GeminiLimitError as exc:
-            # O modelo, a chave ou a cota podem falhar mesmo que a GUI
-            # mostre "chave local: configurada". Nao esconder o motivo.
-            c.status = "INCONCLUSIVO - GEMINI BLOQUEADO"
-            c.reliability = f"{stage}: {str(exc)[:170]}"
-            on_progress(f"Mesa {c.table}, {fmt(c.start)}: {c.reliability}. "
-                        f"Chamadas {client.used}/{client.limit}.")
-            break
-        except (GeminiError, OSError, ValueError, RuntimeError) as exc:
-            consecutive_errors += 1
-            # As mensagens do GeminiError sao sanitizadas no backend.
-            # FFmpeg pode conter paths do usuario; mostrar a fase e classe,
-            # nao despejar stderr arbitrario nem dados locais.
-            if isinstance(exc, GeminiError):
-                detail = str(exc)[:180]
-            elif isinstance(exc, ValueError):
-                detail = str(exc)[:90]
-            else:
-                detail = f"{type(exc).__name__} ao obter os quadros"
-            c.status = "INCONCLUSIVO - FALHA DE LEITURA CONTEXTUAL"
-            c.reliability = f"{stage}: {detail}"
-            on_progress(f"Mesa {c.table}, {fmt(c.start)}: "
-                        f"{c.reliability}. Chamadas {client.used}/{client.limit}.")
-            if client.disabled_reason or consecutive_errors >= 3:
-                on_progress("Analise contextual interrompida apos falhas "
-                            "repetidas; outras maos foram preservadas.")
-                break
-    return revised, checked, confirmed
+        samples = {"before": [], "during": [], "after": []}
+        for kind in ("before", "during", "after"):
+            for at in times[kind]:
+                try:
+                    original = native_stack_crop(videos, at, rect, ffmpeg)
+                    value = ocr_stack(original, tesseract, quick=True)
+                    if value is not None and 0 <= value / bb <= MAX_STACK_BB:
+                        samples[kind].append(value)
+                    else:
+                        samples[kind].append(None)
+                except (OSError, RuntimeError, ValueError,
+                        subprocess.SubprocessError):
+                    samples[kind].append(None)
+        estimate = assess_stacks(
+            samples["before"], samples["during"], samples["after"],
+            bb, threshold)
+        candidate.hero_invested_bb = estimate["invested_estimate_bb"]
+        candidate.auto_rebuy_seen = (
+            True if estimate["rebuy_possible"] else None)
+        candidate.source = "Triagem local - OCR"
+        candidate.reliability = (
+            estimate["reason"] + " | "
+            + f"BB inicio={estimate['baseline_bb']}, "
+            + f"minimo={estimate['minimum_bb']} | "
+            + f"quadros OCR validos={sum(v is not None for v in samples['during'])}"
+            + f"/{len(samples['during'])}")
+        if estimate["prioritize"]:
+            priority += 1
+            candidate.status = "PRIORIDADE - APORTE >= LIMITE; CONFERIR POTE"
+        else:
+            candidate.status = "PENDENTE - " + estimate["reason"][:75]
+        analyzed += 1
+        if analyzed % 3 == 0 or analyzed == len(copies):
+            progress(f"Triagem local: {analyzed}/{len(copies)} maos, "
+                     f"{priority} com aporte provavel >= {threshold:g} BB.")
+    return copies, analyzed, priority
 
 
 DEFAULT_MARKINGS_FILE = "marcacoes_padrao.json"
