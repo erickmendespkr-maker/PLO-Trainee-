@@ -299,6 +299,7 @@ class GUI(tk.Tk):
         self.selection_origin = None
         self.candidates = []
         self.busy = False
+        self.layout = tk.StringVar(value="4 lado a lado")
         self.cfg = {str(t): {"bb": "1", "min_change": .08} for t in TABLES}
         self._ui()
         self.draw()
@@ -310,6 +311,12 @@ class GUI(tk.Tk):
         ttk.Button(top, text="Limpar videos", command=self.clear_videos).pack(side="left")
         self.info = ttk.Label(top, text="Nenhum video carregado")
         self.info.pack(side="left", padx=8)
+        ttk.Label(top, text="Disposicao:").pack(side="left", padx=(12, 3))
+        layout_box = ttk.Combobox(top, textvariable=self.layout,
+                                  values=["4 lado a lado", "2 por 2"],
+                                  state="readonly", width=16)
+        layout_box.pack(side="left")
+        layout_box.bind("<<ComboboxSelected>>", lambda event: self.on_layout_change())
 
         row = ttk.Frame(self)
         row.pack(fill="x", padx=8)
@@ -389,6 +396,34 @@ class GUI(tk.Tk):
         ttk.Label(self, text="Uso offline. Leituras de saldo por OCR sao estimativas; revise cada mao, rebuys e limites dos cortes.",
                   foreground="#9b571a").pack(padx=8, pady=2)
 
+    def layout_id(self):
+        return "horizontal4" if self.layout.get() == "4 lado a lado" else "grid2x2"
+
+    def infer_table(self, x, y):
+        if self.layout_id() == "horizontal4":
+            return min(4, 1 + int(x // (W / 4)))
+        return 1 + int(x >= W / 2) + 2 * int(y >= H / 2)
+
+    def table_bounds(self, table):
+        if self.layout_id() == "horizontal4":
+            w = W // 4
+            return (w * (table - 1), 0, w * table, H)
+        w, h = W // 2, H // 2
+        return ((table - 1) % 2 * w, (table - 1) // 2 * h,
+                ((table - 1) % 2 + 1) * w, ((table - 1) // 2 + 1) * h)
+
+    def on_layout_change(self):
+        if any(self.cfg[str(t)].get("hole") or self.cfg[str(t)].get("stack") for t in TABLES):
+            # Referencias coletadas em outro layout nao podem ser reutilizadas.
+            if not messagebox.askyesno("Trocar disposicao",
+                                       "Trocar a disposicao apaga as areas configuradas. Continuar?"):
+                self.layout.set("2 por 2" if self.layout_id() == "horizontal4" else "4 lado a lado")
+                return
+        self.cfg = {str(t): {"bb": "1", "min_change": .08} for t in TABLES}
+        self.on_table_change()
+        self.draw()
+        self.tell("Disposicao atualizada. Calibre as regioes de cada mesa.")
+
     def tell(self, msg):
         self.status.configure(text=msg)
 
@@ -448,8 +483,13 @@ class GUI(tk.Tk):
         shown = self.frame.convert("RGB").resize((VIEW_W, VIEW_H))
         self.photo = ImageTk.PhotoImage(shown)
         self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
-        self.canvas.create_line(VIEW_W//2, 0, VIEW_W//2, VIEW_H, fill="#f7cd46", width=2)
-        self.canvas.create_line(0, VIEW_H//2, VIEW_W, VIEW_H//2, fill="#f7cd46", width=2)
+        if self.layout_id() == "horizontal4":
+            for idx in (1, 2, 3):
+                x = VIEW_W * idx // 4
+                self.canvas.create_line(x, 0, x, VIEW_H, fill="#f7cd46", width=2)
+        else:
+            self.canvas.create_line(VIEW_W//2, 0, VIEW_W//2, VIEW_H, fill="#f7cd46", width=2)
+            self.canvas.create_line(0, VIEW_H//2, VIEW_W, VIEW_H//2, fill="#f7cd46", width=2)
         colors = {"hole": "#00ff91", "stack": "#00cfff"}
         for table in TABLES:
             data = self.cfg[str(table)]
@@ -484,8 +524,10 @@ class GUI(tk.Tk):
                 round(x2 * W/VIEW_W), round(y2 * H/VIEW_H)]
         table = int(self.table.get())
         xmid, ymid = (rect[0]+rect[2])/2, (rect[1]+rect[3])/2
-        inferred = 1 + int(xmid >= W/2) + 2*int(ymid >= H/2)
-        if inferred != table:
+        inferred = self.infer_table(xmid, ymid)
+        bounds = self.table_bounds(table)
+        if inferred != table or not (bounds[0] <= rect[0] < rect[2] <= bounds[2] and
+                                      bounds[1] <= rect[1] < rect[3] <= bounds[3]):
             messagebox.showwarning("Mesa", f"Esse retangulo parece estar na mesa {inferred}; voce selecionou a mesa {table}.")
             self.draw()
             return
@@ -525,7 +567,8 @@ class GUI(tk.Tk):
     def save_cfg(self):
         path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("Configuracao", "*.json")])
         if path:
-            Path(path).write_text(json.dumps(self.cfg, indent=2), encoding="utf-8")
+            Path(path).write_text(json.dumps({"layout": self.layout.get(), "tables": self.cfg},
+                                             indent=2), encoding="utf-8")
             self.tell("Configuracao salva.")
 
     def load_cfg(self):
@@ -533,7 +576,9 @@ class GUI(tk.Tk):
         if path:
             try:
                 data = json.loads(Path(path).read_text(encoding="utf-8"))
-                self.cfg = {str(i): data[str(i)] for i in TABLES}
+                settings = data.get("tables", data)
+                self.cfg = {str(i): settings[str(i)] for i in TABLES}
+                self.layout.set(data.get("layout", "2 por 2" if "tables" not in data else "4 lado a lado"))
                 self.on_table_change()
                 self.draw()
                 self.tell("Configuracao carregada.")
@@ -563,8 +608,8 @@ class GUI(tk.Tk):
                                             filetypes=[("Revisao visual", "*.json")])
         if not path:
             return
-        payload = {"version": 1, "videos": [asdict(v) for v in self.videos],
-                   "config": self.cfg, "threshold": self.threshold.get(),
+        payload = {"version": 2, "videos": [asdict(v) for v in self.videos],
+                   "layout": self.layout.get(), "config": self.cfg, "threshold": self.threshold.get(),
                    "candidates": [asdict(c) for c in self.candidates]}
         try:
             Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -587,6 +632,7 @@ class GUI(tk.Tk):
             self.total = sum(v.duration for v in videos)
             self.candidates = [Candidate(**entry) for entry in data["candidates"]]
             self.cfg = data.get("config", self.cfg)
+            self.layout.set(data.get("layout", "2 por 2"))
             self.threshold.set(str(data.get("threshold", 30)))
             self.info.configure(text=f"{len(videos)} arquivo(s) | {fmt(self.total)}")
             self.on_table_change()
@@ -730,7 +776,8 @@ class GUI(tk.Tk):
                 try:
                     clip = Clip(c.start, c.end, c.table, c.loss_bb, "Video OCR",
                                 "Video", "", True)
-                    export_clip(self.videos, clip, Path(folder) / filename, resource("ffmpeg"))
+                    export_clip(self.videos, clip, Path(folder) / filename,
+                                resource("ffmpeg"), layout=self.layout_id())
                 except Exception as exc:
                     status = "ERRO: " + str(exc)[-180:]
                 logs.append({"arquivo": filename, "mesa": c.table, "inicio": fmt(c.start),
