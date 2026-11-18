@@ -1609,53 +1609,116 @@ class GUI(tk.Tk):
             self.candidates[idx].excluded = True
             self.refresh()
 
-    def export(self):
+    def export(self, folder=None, automatic_only=False):
         if self.busy:
             return
         try:
             threshold = float(self.threshold.get().replace(",", "."))
         except ValueError:
-            messagebox.showerror("BB", "Limite BB invalido.")
+            messagebox.showerror("BB", "Perda minima invalida.")
             return
-        eligible = [c for c in self.candidates if c.confirmed and not c.excluded and
+        eligible = [c for c in self.candidates
+                    if not c.excluded and
+                    (c.auto_verified if automatic_only else
+                     (c.confirmed or c.auto_verified)) and
                     loss_reaches_threshold(c.loss_bb, threshold)]
+        if folder is None:
+            folder = filedialog.askdirectory(title="Pasta dos MP4 das perdas")
+            if not folder:
+                return
+        dest = Path(folder)
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            messagebox.showerror("Pasta de exportacao", str(exc))
+            return
+        # Relatorio inclui tambem casos fracos, evitando a impressao de
+        # que todos foram analisados corretamente.
+        report = dest / "relatorio_analise.csv"
+        try:
+            with report.open("w", encoding="utf-8-sig", newline="") as fh:
+                writer = csv.writer(fh, delimiter=";")
+                writer.writerow(["inicio", "fim", "mesa", "layout", "nick",
+                                 "saldo_antes", "saldo_depois", "perda_bb",
+                                 "ocr_consistente", "status", "confiabilidade"])
+                for c in self.candidates:
+                    writer.writerow([fmt(c.start), fmt(c.end), c.table, c.layout,
+                                     c.nick, c.stack_before, c.stack_after,
+                                     c.loss_bb, "SIM" if c.auto_verified else "NAO",
+                                     c.status, c.reliability])
+        except OSError as exc:
+            messagebox.showerror("Relatorio", str(exc))
+            return
+
         if not eligible:
-            messagebox.showinfo("Exportacao",
-                                "Nenhuma mao com perda >= limite e dados confirmados.")
+            self.auto_export_folder = None
+            self.tell("0 perdas com OCR consistente para exportar. "
+                      "Verifique o retangulo azul e clique Testar saldo.")
+            messagebox.showwarning(
+                "Nenhuma perda exportavel",
+                "O programa nao confirmou perdas de pelo menos "
+                f"{threshold:g} BB com leituras suficientes.\n\n"
+                "Nao foram gerados cortes possivelmente errados.\n"
+                f"Relatorio: {report}\n\n"
+                "Verifique o quadro azul sobre o numero do saldo e use "
+                "'Testar saldo'.")
             return
-        folder = filedialog.askdirectory(title="Pasta dos MP4 para o instrutor")
-        if not folder:
-            return
+
         self.busy = True
-        self.tell(f"Exportando {len(eligible)} maos conferidas...")
+        self.tell(f"Gerando {len(eligible)} MP4 de perdas identificadas...")
         hero_nick = self.nick.get().strip()
+        videos = self.videos[:]
         def worker():
             logs = []
             for i, c in enumerate(eligible, 1):
                 filename = f"mao_{i:03}_mesa{c.table}_perda_{c.loss_bb:.1f}BB.mp4"
+                destination = dest / filename
                 status = "OK"
                 try:
                     clip = Clip(c.start, c.end, c.table, c.loss_bb, "Video OCR",
                                 "Video", "", True)
-                    export_clip(self.videos, clip, Path(folder) / filename,
+                    export_clip(videos, clip, destination,
                                 resource("ffmpeg"), layout=c.layout)
                 except Exception as exc:
                     status = "ERRO: " + str(exc)[-180:]
+                    try:
+                        destination.unlink(missing_ok=True)
+                    except OSError:
+                        pass
                 logs.append({"arquivo": filename, "nick": c.nick or hero_nick,
-                             "nick_ocr_confirmado": c.nick_verified, "mesa": c.table,
-                             "disposicao": c.layout,
+                             "nick_ocr_confirmado": c.nick_verified,
+                             "classificacao": "OCR consistente" if c.auto_verified
+                                             else "Confirmado manualmente",
+                             "mesa": c.table, "disposicao": c.layout,
                              "inicio": fmt(c.start), "fim": fmt(c.end),
-                             "perda_bb_conferida": c.loss_bb, "status": status})
-                self.after(0, lambda j=i, s=status: self.tell(f"Exportado {j}/{len(eligible)}: {s}"))
-            with open(Path(folder)/"indice_das_maos.csv", "w", encoding="utf-8-sig", newline="") as fh:
-                writer = csv.DictWriter(fh, fieldnames=list(logs[0]), delimiter=";")
-                writer.writeheader()
-                writer.writerows(logs)
+                             "saldo_antes": c.stack_before,
+                             "saldo_depois": c.stack_after,
+                             "perda_bb": c.loss_bb, "status": status})
+                self.after(0, lambda j=i, st=status:
+                           self.tell(f"MP4 {j}/{len(eligible)}: {st}"))
+            try:
+                with (dest / "indice_das_maos.csv").open(
+                        "w", encoding="utf-8-sig", newline="") as fh:
+                    writer = csv.DictWriter(fh, fieldnames=list(logs[0]),
+                                            delimiter=";")
+                    writer.writeheader()
+                    writer.writerows(logs)
+            except OSError as exc:
+                logs.append({"status": "ERRO GRAVANDO INDICE: " + str(exc)})
+
             def done():
                 self.busy = False
-                good = sum(x["status"] == "OK" for x in logs)
-                self.tell(f"Finalizado {good}/{len(logs)}. Pasta: {folder}")
-                messagebox.showinfo("Exportacao", f"{good}/{len(logs)} MP4 gerados.\nIndice CSV em {folder}")
+                self.auto_export_folder = None
+                good = sum(entry["status"] == "OK" for entry in logs)
+                self.tell(f"{good}/{len(eligible)} MP4 gerados em {dest}.")
+                messagebox.showinfo(
+                    "Exportacao concluida",
+                    f"{good} de {len(eligible)} MP4 gerados.\n\n"
+                    f"Pasta: {dest}\n"
+                    "Indice: indice_das_maos.csv\n"
+                    "Diagnostico: relatorio_analise.csv\n\n"
+                    "As leituras por OCR sao estimativas; confira os cortes antes "
+                    "de enviar ao instrutor.")
             self.after(0, done)
         threading.Thread(target=worker, daemon=True).start()
 
