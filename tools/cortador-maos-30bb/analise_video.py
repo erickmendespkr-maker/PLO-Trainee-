@@ -1468,8 +1468,6 @@ class GUI(tk.Tk):
         ttk.Combobox(row, textvariable=self.field, values=["cartas", "saldo", "nick"],
                      state="readonly", width=8).pack(side="left")
         ttk.Button(row, text="Usar regioes do print", command=self.apply_profile).pack(side="left", padx=5)
-        ttk.Button(row, text="Autoajustar neste video",
-                   command=self.force_auto_align).pack(side="left", padx=4)
         ttk.Button(row, text="Salvar como padrao",
                    command=self.save_default_markings).pack(side="left", padx=4)
         ttk.Button(row, text="Usar padrao salvo",
@@ -1553,6 +1551,8 @@ class GUI(tk.Tk):
                    command=self.recheck_inconclusive).pack(side="left", pady=3)
         ttk.Button(review_ai, text="Abrir ultima revisao",
                    command=self.load_latest_review).pack(side="left", padx=8)
+        ttk.Button(review_ai, text="AUTOAJUSTAR MARCACOES NESTE VIDEO",
+                   command=self.force_auto_align).pack(side="left", padx=4)
         ttk.Label(review_ai, text="Usa os horarios da revisao salva, sem ler o video inteiro.",
                   foreground="#696969").pack(side="left", padx=8)
         self.status = ttk.Label(self, text="Aguardando videos e calibracao de cada mesa.")
