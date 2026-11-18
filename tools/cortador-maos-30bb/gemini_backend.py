@@ -252,9 +252,22 @@ class GeminiClient:
             with self._transport(request, timeout=45) as result:
                 response = json.loads(result.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            # Nunca incluir URL, headers, body ou chave em mensagens.
-            if exc.code in (400, 401, 403, 404, 429):
-                self.disabled_reason = f"Gemini HTTP {exc.code}: reveja modelo, chave ou cota."
+            # Nunca registrar URL, headers, resposta HTTP ou chave: os campos
+            # podem conter dados privados. Erros de pagamento nao sao
+            # recuperaveis com retry e precisam INTERROMPER o lote imediatamente.
+            explanations = {
+                400: "requisicao invalida; verifique compatibilidade do modelo.",
+                401: "chave ausente, expirada ou invalida.",
+                402: "pagamento exigido ou creditos prepagos esgotados neste "
+                     "projeto Gemini. Verifique faturamento no Google AI Studio; "
+                     "nao tente novamente ate resolver o acesso.",
+                403: "projeto sem permissao; verifique configuracao e restricoes.",
+                404: "modelo nao encontrado ou indisponivel neste projeto.",
+                429: "limite de quota ou requisicoes atingido.",
+            }
+            if exc.code in explanations:
+                self.disabled_reason = (
+                    f"Gemini HTTP {exc.code}: {explanations[exc.code]}")
                 raise GeminiLimitError(self.disabled_reason) from None
             raise GeminiError(f"Gemini HTTP {exc.code}.") from None
         except (TimeoutError, OSError, ValueError) as exc:
