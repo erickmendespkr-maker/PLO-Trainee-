@@ -29,6 +29,15 @@ Mãos em que as cartas do herói não aparecem de maneira confiável (ex.: carta
 
 **Portanto não considere os recortes como conjunto completo auditado de todas as perdas sem revisar.** O limiar de 30 BB é estrito (**>30**); perdas de exatamente 30 BB ficam de fora.
 
+## Instalação automática guiada (mais fácil)
+
+1. Baixe o ZIP da branch e abra a pasta `tools/cortador-maos-30bb`.
+2. Dê dois cliques em **INSTALAR_TUDO_WINDOWS.bat**. Após pedir sua autorização, ele usa o **WinGet da Microsoft** para instalar Python 3.12, FFmpeg e Tesseract e tenta instalar Pillow. Pode haver pedido de aprovação do Windows (UAC).
+3. Ao terminar, **feche e abra novamente** a pasta/terminal; execute **INICIAR_ANALISE_VIDEO.bat**.
+4. Se o programa disser que não achou FFmpeg/Tesseract, reinicie o Windows e tente de novo. Se seu Windows Ghost Spectre não tiver WinGet, será necessário instalar o App Installer ou usar os links manuais abaixo.
+
+O instalador **não foi testado neste Windows**; ele depende do WinGet e da conectividade. Não desative antivírus ou avisos de segurança para executá-lo.
+
 ## Instalação no Windows 10/11
 
 Não precisa ter Git.
