@@ -136,6 +136,26 @@ class GeminiTests(unittest.TestCase):
             "before": [150], "after": [110, 110]
         }))
 
+    def test_confirmar_nick_no_video_exige_quatro_quadros(self):
+        cases = [
+            (["~Pulgar~"] * 4, True),
+            (["~Pulgar~"] * 3 + [None], False),
+            (["outro"] * 4, False),
+        ]
+        image = Image.new("RGB", (180, 120), "black")
+        for names, expected in cases:
+            def transport(request, timeout):
+                payload = {"before": [150, 150], "after": [110, 110],
+                           "nicks": names}
+                return FakeResponse({"candidates": [{"content": {
+                    "parts": [{"text": json.dumps(payload)}]}}]})
+            client = GeminiClient(
+                "EXAMPLE_NOT_REAL_KEY", max_requests=1, transport=transport)
+            self.assertEqual(
+                client.read_pair([image, image], [image, image],
+                                 expected_nick="~Pulgar~"), (150, 110))
+            self.assertIs(client.last_pair_nick_verified, expected)
+
     def test_gemini_le_nome_e_saldo_no_mesmo_hud(self):
         requests = []
         def response(request, timeout):
