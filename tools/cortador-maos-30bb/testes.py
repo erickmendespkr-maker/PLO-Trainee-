@@ -49,6 +49,11 @@ class Tests(unittest.TestCase):
         v = Video("demo.mp4", 100, 1920, 1080, True)
         self.assertTrue(crop_filter(v, 4).startswith("crop=960:540:960:540"))
 
+    def test_horizontal_four_tables(self):
+        v = Video("demo.mp4", 100, 1920, 1080, True)
+        self.assertTrue(crop_filter(v, 1, "horizontal4").startswith("crop=480:1080:0:0"))
+        self.assertTrue(crop_filter(v, 4, "horizontal4").startswith("crop=480:1080:1440:0"))
+
     def test_sequential_videos(self):
         a = Video("a.mp4", 100, 1920, 1080, True, 0)
         b = Video("b.mp4", 200, 1920, 1080, False, 100)
