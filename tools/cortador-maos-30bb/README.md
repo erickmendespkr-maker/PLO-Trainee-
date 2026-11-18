@@ -174,3 +174,14 @@ Na versão atualizada:
 O retângulo correto precisa mostrar **somente o número do saldo, e a unidade BB se estiver na mesma linha**. Se a janela ampliada revelar nick, aposta, cartas, ícones, saldo de outro jogador, ou um texto cortado, redesenhe a região de saldo e repita o teste.
 
 **Observação:** o fallback em resolução original melhora a chance de reconhecimento, mas exige leitura adicional do vídeo e pode aumentar o tempo total. Não há garantia de identificação de todas as perdas: o programa ainda rejeita OCR duvidoso e não gera MP4 automaticamente a partir de números não verificados.
+
+## Guardar as marcacoes como padrao (novo)
+
+O programa agora guarda as regioes calibradas pelo usuario em um perfil permanente. O botao **Salvar como padrao** grava exatamente as caixas atuais de **cartas (verde)**, **saldo (azul)** e **nick (roxo)** das quatro posicoes, com o nick e o valor de 1 BB por mesa. Ao abrir a versao atualizada do programa, esse padrao sera carregado automaticamente. O botao **Usar padrao salvo** permite restaurar as marcas caso voce as altere por acidente.
+
+O arquivo e gravado em `%LOCALAPPDATA%\\CortadorPLO\\marcacoes_padrao.json`, **fora da pasta ZIP/GitHub**, para que as marcacoes persistam entre atualizacoes e entre gravacoes. O arquivo salva somente a calibracao, nao o video e nao os horarios de mudanca das mesas.
+
+**Se o programa antigo ja esta aberto e com os retangulos corretos (como no print enviado), nao feche sem salvar:** clique nele em **Salvar configuracao** e escolha um nome como `minhas_marcacoes.json`. Em seguida, abra o programa atualizado, clique **Abrir configuracao**, escolha esse JSON e so entao clique **Salvar como padrao**. Assim o perfil captura as coordenadas exatas do que foi desenhado na versao antiga, sem precisar calibrar novamente. O print isolado nao registra essas coordenadas numericamente.
+
+**Cuidado:** **Usar regioes do print** restaura a estimativa de fabrica, e nao os ajustes pessoais. Para voltar aos ajustes pessoais, use **Usar padrao salvo**. O padrao pode ser sobrescrito quando voce clicar **Salvar como padrao** de novo; por isso confira a previa. Mesas reorganizadas de forma diferente ainda podem precisar de revisao visual das caixas.
+
