@@ -1468,6 +1468,8 @@ class GUI(tk.Tk):
         ttk.Combobox(row, textvariable=self.field, values=["cartas", "saldo", "nick"],
                      state="readonly", width=8).pack(side="left")
         ttk.Button(row, text="Usar regioes do print", command=self.apply_profile).pack(side="left", padx=5)
+        ttk.Button(row, text="Autoajustar neste video",
+                   command=self.force_auto_align).pack(side="left", padx=4)
         ttk.Button(row, text="Salvar como padrao",
                    command=self.save_default_markings).pack(side="left", padx=4)
         ttk.Button(row, text="Usar padrao salvo",
@@ -1765,6 +1767,73 @@ class GUI(tk.Tk):
     def tell(self, msg):
         self.status.configure(text=msg)
 
+    def auto_align_current_frame(self, force=False):
+        """Calibra a partir das cartas do heroi, mantendo marcas manuais."""
+        if self.frame is None:
+            return 0
+        mode = self.layout_id()
+        if mode not in ("horizontal1", "horizontal2",
+                        "horizontal3", "horizontal4"):
+            return 0
+        profile = auto_hero_profile(self.frame, mode)
+        if profile is None:
+            return 0
+        adjusted = 0
+        count = layout_count(mode)
+        for table in range(1, count + 1):
+            x1, y1, x2, y2 = layout_bounds(mode, table)
+            data = self.cfg[str(table)]
+            for key, relative in profile.items():
+                source = data.get("layout_roi_sources", {}).get(
+                    mode, {}).get(key, "legacy")
+                if source == "manual" and not force:
+                    continue
+                rect = [relative[0] + x1, relative[1] + y1,
+                        relative[2] + x1, relative[3] + y1]
+                if not (x1 <= rect[0] < rect[2] <= x2 and
+                        y1 <= rect[1] < rect[3] <= y2):
+                    continue
+                data.setdefault("layout_rois", {}).setdefault(
+                    mode, {})[key] = rect
+                data.setdefault("layout_roi_sources", {}).setdefault(
+                    mode, {})[key] = "auto"
+                adjusted += 1
+        if adjusted:
+            try:
+                save_markings_file(
+                    default_markings_path(), self.cfg,
+                    self.nick.get(), self.layout.get())
+            except (OSError, ValueError, TypeError):
+                self.tell("AVISO: autoajuste aplicado, mas nao foi salvo.")
+            self.tell(f"Autoajuste no layout de {count} mesa(s): "
+                      f"{adjusted} regioes posicionadas pelo video.")
+            self.draw()
+        return adjusted
+
+    def force_auto_align(self):
+        if self.frame is None:
+            messagebox.showwarning("Autoajuste", "Carregue um video e clique Mostrar frame.")
+            return
+        if not messagebox.askyesno(
+                "Autoajustar marcacoes",
+                "Detectar as cartas na parte inferior das mesas e calcular "
+                "as regioes de nick e saldo?\\n\\n"
+                "Isto substitui as marcacoes DESTE layout, mas preserva "
+                "as marcacoes dos outros layouts."):
+            return
+        changed = self.auto_align_current_frame(force=True)
+        if not changed:
+            messagebox.showwarning(
+                "Autoajuste inconclusivo",
+                "Nao foram encontradas cartas do jogador com evidencia "
+                "suficiente neste quadro. Va a um instante em que suas "
+                "cartas estejam visiveis, clique Mostrar frame e tente novamente.")
+        else:
+            messagebox.showinfo(
+                "Autoajuste aplicado",
+                "As marcacoes foram ajustadas usando as cartas visiveis "
+                "neste video. Confira Testar saldo antes da analise completa.")
+
     def add_videos(self):
         paths = filedialog.askopenfilenames(filetypes=[("MP4", "*.mp4"), ("Videos", "*.mp4 *.mkv *.mov")])
         if not paths:
@@ -1830,6 +1899,9 @@ class GUI(tk.Tk):
                 self.preview_auto_mode = None
                 self.preview_confidence = 0.
             self.draw()
+            # Tenta alinhar automaticamente para o novo frame, mas jamais
+            # sobrescreve regioes que o usuario marcou manualmente.
+            self.auto_align_current_frame(force=False)
         except Exception as exc:
             messagebox.showerror("Previa", str(exc))
 
