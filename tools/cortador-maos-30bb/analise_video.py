@@ -29,6 +29,32 @@ W, H = 960, 540
 VIEW_W, VIEW_H = 720, 405
 TABLES = (1, 2, 3, 4)
 
+def screenshot_profile():
+    """Regioes estimadas do print enviado: quatro mesas verticais lado a lado.
+
+    Coordenadas em imagem normalizada 960x540. Hero sempre embaixo,
+    e somente as cartas do hero aparecem no pre-flop.
+    A geometria e valida somente se as mesas nao mudarem de posicao.
+    """
+    out = {}
+    for table in TABLES:
+        dx = (table - 1) * 240
+        out[str(table)] = {
+            "hole": [dx + 128, 434, dx + 206, 484],
+            "stack": [dx + 97, 488, dx + 153, 510],
+            "bb": "1", "detector": "bright",
+            "bright_cutoff": 165, "min_bright": .18,
+            "profile": "4_colunas_heroi_inferior_v1"
+        }
+    return out
+
+
+def bright_fraction(frame, rect, cutoff=165):
+    """Proporcao de pixels brilhantes na area das cartas do jogador."""
+    region = frame.crop(roi_tuple(rect)).convert("L")
+    mask = region.point(lambda value: 255 if value >= cutoff else 0)
+    return ImageStat.Stat(mask).mean[0] / 255.0
+
 
 def roi_tuple(rect):
     if not rect or len(rect) != 4:
@@ -230,13 +256,22 @@ def scan_videos(videos, config, threshold, progress):
         raise RuntimeError("Tesseract OCR nao encontrado. Instale e inclua no PATH ou copie tesseract.exe com seus dados de idioma.")
     if not ffmpeg:
         raise RuntimeError("FFmpeg nao encontrado.")
-    # As referencias e ROIs ficam em coordenadas de imagem reduzida 960x540.
+    # Regioes em 960x540. O modo 'bright' nao exige imagem sem cartas.
     table_cfg = {}
     for table in TABLES:
         data = config[str(table)]
+        detector = data.get("detector", "reference" if data.get("reference") else "bright")
+        if detector not in ("bright", "reference"):
+            raise ValueError(f"Modo de deteccao invalido na mesa {table}.")
+        if detector == "reference" and not data.get("reference"):
+            raise ValueError(f"Mesa {table}: referencia manual nao registrada.")
         table_cfg[table] = {
             "hole": roi_tuple(data["hole"]), "stack": roi_tuple(data["stack"]),
-            "empty": png_image(data["reference"]), "bb": float(data["bb"]),
+            "detector": detector,
+            "empty": png_image(data["reference"]) if detector == "reference" else None,
+            "bb": float(data["bb"]),
+            "bright_cutoff": int(data.get("bright_cutoff", 165)),
+            "min_bright": float(data.get("min_bright", .18)),
             "min_change": float(data.get("min_change", .08))}
         if table_cfg[table]["bb"] <= 0:
             raise ValueError(f"BB da mesa {table} deve ser positivo")
@@ -258,7 +293,10 @@ def scan_videos(videos, config, threshold, progress):
                 t = v.start + n
                 for table in TABLES:
                     cfg = table_cfg[table]
-                    occupied = changed_fraction(frame, cfg["empty"], cfg["hole"]) >= cfg["min_change"]
+                    if cfg["detector"] == "bright":
+                        occupied = bright_fraction(frame, cfg["hole"], cfg["bright_cutoff"]) >= cfg["min_bright"]
+                    else:
+                        occupied = changed_fraction(frame, cfg["empty"], cfg["hole"]) >= cfg["min_change"]
                     states[table].feed(t, occupied, frame.crop(cfg["stack"]), table,
                                        cfg["bb"], threshold, tesseract)
                 n += 1
@@ -300,9 +338,10 @@ class GUI(tk.Tk):
         self.candidates = []
         self.busy = False
         self.layout = tk.StringVar(value="4 lado a lado")
-        self.cfg = {str(t): {"bb": "1", "min_change": .08} for t in TABLES}
+        self.cfg = screenshot_profile()
         self._ui()
         self.draw()
+        self.tell("Quatro areas do print pre-configuradas: confira os retangulos na previa.")
 
     def _ui(self):
         top = ttk.Frame(self)
@@ -332,7 +371,7 @@ class GUI(tk.Tk):
         self.field = tk.StringVar(value="cartas")
         ttk.Combobox(row, textvariable=self.field, values=["cartas", "saldo"],
                      state="readonly", width=8).pack(side="left")
-        ttk.Button(row, text="Registrar referencia SEM cartas", command=self.set_empty).pack(side="left", padx=7)
+        ttk.Button(row, text="Usar regioes do print", command=self.apply_profile).pack(side="left", padx=7)
 
         row2 = ttk.Frame(self)
         row2.pack(fill="x", padx=8, pady=5)
@@ -340,7 +379,7 @@ class GUI(tk.Tk):
         self.bb = tk.StringVar(value="1")
         ttk.Entry(row2, textvariable=self.bb, width=8).pack(side="left", padx=5)
         ttk.Button(row2, text="Salvar BB da mesa", command=self.set_bb).pack(side="left")
-        ttk.Label(row2, text="Selecionar tempo sem cartas e desenhar 2 retangulos por mesa.").pack(side="left", padx=14)
+        ttk.Label(row2, text="Hero sempre embaixo; regioes predefinidas pelo print.").pack(side="left", padx=14)
         self.table.trace_add("write", lambda *_: self.on_table_change())
 
         self.canvas = tk.Canvas(self, width=VIEW_W, height=VIEW_H, background="#181818",
@@ -419,10 +458,21 @@ class GUI(tk.Tk):
                                        "Trocar a disposicao apaga as areas configuradas. Continuar?"):
                 self.layout.set("2 por 2" if self.layout_id() == "horizontal4" else "4 lado a lado")
                 return
-        self.cfg = {str(t): {"bb": "1", "min_change": .08} for t in TABLES}
+        self.cfg = screenshot_profile() if self.layout_id() == "horizontal4" else {
+            str(t): {"bb": "1", "detector": "bright",
+                     "bright_cutoff": 165, "min_bright": .18} for t in TABLES}
         self.on_table_change()
         self.draw()
         self.tell("Disposicao atualizada. Calibre as regioes de cada mesa.")
+
+    def apply_profile(self):
+        if self.layout_id() != "horizontal4":
+            messagebox.showwarning("Disposicao", "Selecione primeiro '4 lado a lado'.")
+            return
+        self.cfg = screenshot_profile()
+        self.on_table_change()
+        self.draw()
+        self.tell("Regioes pre-calibradas para 4 mesas. Nao precisa registrar imagem sem cartas.")
 
     def tell(self, msg):
         self.status.configure(text=msg)
@@ -469,7 +519,7 @@ class GUI(tk.Tk):
             result = subprocess.run(cmd, **kwargs)
             if result.returncode:
                 raise RuntimeError(result.stderr.decode("utf-8", "replace")[-500:])
-            self.frame = Image.open(io.BytesIO(result.stdout)).convert("L")
+            self.frame = Image.open(io.BytesIO(result.stdout)).convert("RGB")
             self.draw()
         except Exception as exc:
             messagebox.showerror("Previa", str(exc))
@@ -477,7 +527,7 @@ class GUI(tk.Tk):
     def draw(self, event=None):
         self.canvas.delete("all")
         if self.frame is None:
-            self.canvas.create_text(384, 215, text="Adicione o video completo ou partes consecutivas",
+            self.canvas.create_text(VIEW_W // 2, VIEW_H // 2, text="Adicione o video completo ou partes consecutivas",
                                     fill="white")
             return
         shown = self.frame.convert("RGB").resize((VIEW_W, VIEW_H))
@@ -535,7 +585,8 @@ class GUI(tk.Tk):
         self.cfg[str(table)][key] = rect
         if key == "hole":
             self.cfg[str(table)].pop("reference", None)
-        self.tell(f"Mesa {table}: regiao {key} definida. Registre referencia SEM cartas.")
+        self.cfg[str(table)]["detector"] = "bright"
+        self.tell(f"Mesa {table}: regiao {key} ajustada. Nao precisa referencia sem cartas.")
         self.draw()
 
     def set_empty(self):
@@ -547,7 +598,8 @@ class GUI(tk.Tk):
         if not messagebox.askyesno("Confirmar referencia",
                                    f"Na mesa {table}, a regiao marcada das cartas do jogador esta VAZIA neste frame?"):
             return
-        data["reference"] = image_png(self.frame.crop(roi_tuple(data["hole"])))
+        data["reference"] = image_png(self.frame.crop(roi_tuple(data["hole"])).convert("L"))
+        data["detector"] = "reference"
         self.tell(f"Mesa {table}: referencia SEM cartas registrada.")
         self.draw()
 
@@ -654,9 +706,11 @@ class GUI(tk.Tk):
                 raise ValueError("Limite BB precisa ser positivo.")
             for table in TABLES:
                 data = self.cfg[str(table)]
-                for key in ("hole", "stack", "reference"):
+                for key in ("hole", "stack"):
                     if not data.get(key):
-                        raise ValueError(f"Calibre mesa {table}: falta {key}.")
+                        raise ValueError(f"Falta regiao de {key} na mesa {table}.")
+                if data.get("detector") == "reference" and not data.get("reference"):
+                    raise ValueError(f"Mesa {table}: falta referencia manual.")
                 roi_tuple(data["hole"])
                 roi_tuple(data["stack"])
                 if not data.get("bb"):
