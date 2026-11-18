@@ -6,7 +6,10 @@ from PIL import Image, ImageDraw
 from analise_video import (parse_stack, changed_fraction, HandState, bright_fraction,
                            screenshot_profile, normalize_nick, nickname_matches,
                            replicate_horizontal_rect, stack_median,
-                           net_loss_bb, loss_reaches_threshold)
+                           net_loss_bb, loss_reaches_threshold, layout_key, mode_at,
+                           layout_count, layout_bounds, layout_rect,
+                           unmap_layout_rect, table_visible)
+from cortador import Video, crop_filter
 
 
 class VisualTests(unittest.TestCase):
@@ -26,6 +29,62 @@ class VisualTests(unittest.TestCase):
         self.assertLess(changed_fraction(blank, reference, rect), .01)
         self.assertGreater(changed_fraction(filled, reference, rect), .08)
 
+
+    def test_layout_variavel_de_uma_a_quatro_mesas(self):
+        self.assertEqual(layout_key("Auto (ate 4, slots fixos)"), "auto4")
+        self.assertEqual(layout_count("1 mesa"), 1)
+        self.assertEqual(layout_count("2 lado a lado"), 2)
+        self.assertEqual(layout_count("3 lado a lado"), 3)
+        self.assertEqual(layout_count("4 lado a lado"), 4)
+        self.assertEqual(layout_bounds("horizontal3", 1), (0, 0, 320, 540))
+        self.assertEqual(layout_bounds("horizontal3", 3), (640, 0, 960, 540))
+        self.assertEqual(layout_bounds("horizontal2", 2), (480, 0, 960, 540))
+        with self.assertRaises(ValueError):
+            layout_bounds("horizontal3", 4)
+
+    def test_linha_do_tempo_quatro_para_tres_para_duas(self):
+        events = [
+            {"start": 600, "layout": "3 lado a lado"},
+            {"start": 1200, "layout": "2 lado a lado"}
+        ]
+        self.assertEqual(mode_at(0, "4 lado a lado", events), "horizontal4")
+        self.assertEqual(mode_at(599, "4 lado a lado", events), "horizontal4")
+        self.assertEqual(mode_at(600, "4 lado a lado", events), "horizontal3")
+        self.assertEqual(mode_at(1199, "4 lado a lado", events), "horizontal3")
+        self.assertEqual(mode_at(1200, "4 lado a lado", events), "horizontal2")
+
+    def test_regioes_escaladas_por_mesa(self):
+        profile = screenshot_profile()
+        for count in (1, 2, 3, 4):
+            mode = f"horizontal{count}"
+            for table in range(1, count + 1):
+                for name in ("hole", "stack", "nick"):
+                    source = profile[str(table)][name]
+                    mapped = layout_rect(source, table, mode)
+                    bounds = layout_bounds(mode, table)
+                    self.assertTrue(bounds[0] <= mapped[0] < mapped[2] <= bounds[2])
+                    self.assertTrue(bounds[1] <= mapped[1] < mapped[3] <= bounds[3])
+                    back = unmap_layout_rect(mapped, table, mode)
+                    self.assertLessEqual(max(abs(a-b) for a, b in zip(source, back)), 1)
+
+    def test_mesa_vazia_nao_conta_como_mesa_ativa(self):
+        frame = Image.new("L", (960, 540), 0)
+        self.assertFalse(table_visible(frame, layout_bounds("horizontal4", 1)))
+        # Simula uma mesa somente no primeiro slot, sem OCR.
+        ImageDraw.Draw(frame).rectangle([5, 150, 234, 450], fill=105)
+        self.assertTrue(table_visible(frame, layout_bounds("horizontal4", 1)))
+        self.assertFalse(table_visible(frame, layout_bounds("horizontal4", 2)))
+
+    def test_corte_com_quantidade_variavel_de_mesas(self):
+        video = Video("mock.mp4", 100.0, 1920, 1080, True)
+        self.assertTrue(crop_filter(video, 3, "horizontal3").startswith(
+            "crop=640:1080:1280:0"))
+        self.assertTrue(crop_filter(video, 2, "horizontal2").startswith(
+            "crop=960:1080:960:0"))
+        self.assertTrue(crop_filter(video, 1, "horizontal1").startswith(
+            "crop=1920:1080:0:0"))
+        with self.assertRaises(ValueError):
+            crop_filter(video, 4, "horizontal3")
 
     def test_layout_de_quatro_colunas(self):
         from analise_video import GUI
