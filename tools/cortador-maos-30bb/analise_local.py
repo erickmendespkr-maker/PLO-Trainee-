@@ -98,7 +98,8 @@ def offline_review_decision(amount_bb, threshold, pot_destination):
 
     pot_destination: 'oponente_tudo', 'hero_parte', 'hero_tudo', 'incerto'.
     """
-    if pot_destination != "oponente_tudo":
+    if pot_destination not in ("oponente_tudo",
+                               "hero_parte_liquido_conferido"):
         return False
     if isinstance(amount_bb, bool) or not isinstance(amount_bb, (int, float)):
         return False
