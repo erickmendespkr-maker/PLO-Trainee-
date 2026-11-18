@@ -102,7 +102,7 @@ def unmap_layout_rect(rect, table, mode):
             round(old_x + (rect[2] - new_x) * count / 4), rect[3]]
 
 
-def table_visible(frame, bounds):
+def table_visible(frame, bounds, strict=True):
     """Detecta mesas presentes em slots fixos por assinatura visual do felt.
 
     Conservador: discrimina espacos vazios uniformes de uma mesa, mas uma
@@ -114,10 +114,14 @@ def table_visible(frame, bounds):
         return False
     patch = frame.crop(bounds).convert("L").resize((40, 60))
     all_stats = ImageStat.Stat(patch)
-    if all_stats.stddev[0] < 10:
+    if all_stats.stddev[0] < 8:
         return False
     upper = ImageStat.Stat(patch.crop((5, 1, 35, 9))).mean[0]
     felt = ImageStat.Stat(patch.crop((10, 22, 30, 37))).mean[0]
+    # Auto exige assinatura visual do felt para evitar considerar desktop uma mesa.
+    # Um layout explicitamente selecionado aceita temas mais escuros ou diferentes.
+    if not strict:
+        return 8 <= felt <= 247
     return 16 <= felt <= 236 and abs(felt - upper) >= 10
 
 
@@ -531,7 +535,8 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                     cfg = table_cfg[(mode, table)]
                     # Detecta janelas removidas mesmo quando o modo e "Auto".
                     # Tres quadros ausentes consecutivos evitam reset por animacao.
-                    if not table_visible(frame, layout_bounds(mode, table)):
+                    if not table_visible(
+                            frame, layout_bounds(mode, table), strict=(mode == "auto4")):
                         missing_counts[table] += 1
                         if missing_counts[table] == 3:
                             close_state(table, t, "INCONCLUSIVO - MESA FECHADA OU OCULTA")
@@ -803,7 +808,8 @@ class GUI(tk.Tk):
         mode = self.layout_id()
         found = [
             table for table in range(1, layout_count(mode) + 1)
-            if table_visible(self.frame, layout_bounds(mode, table))
+            if table_visible(
+                self.frame, layout_bounds(mode, table), strict=(mode == "auto4"))
         ]
         if found:
             summary = ", ".join(str(t) for t in found)
