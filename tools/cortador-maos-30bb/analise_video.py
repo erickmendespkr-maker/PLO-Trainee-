@@ -1785,8 +1785,8 @@ class GUI(tk.Tk):
         self.cfg = screenshot_profile()
         self.on_table_change()
         self.draw()
-        self.tell("Pre-calibracao do print restaurada. "
-                  "Clique Salvar como padrao para manter esta escolha.")
+        self.tell("Perfil de HUD unico restaurado. "
+                  "A caixa verde ja inclui cartas, nick e saldo.")
 
     def save_default_markings(self):
         """Captura TODAS as marcas atuais, incluindo ajustes manuais do nick."""
@@ -1795,10 +1795,10 @@ class GUI(tk.Tk):
                 default_markings_path(), self.cfg, self.nick.get(),
                 self.layout.get())
             self.markings_source = "Marcacoes salvas no computador"
-            self.tell("Marcacoes de cartas, saldo, nick e BB salvas como padrao.")
+            self.tell("HUD unico por mesa e BB salvos como padrao.")
             messagebox.showinfo(
                 "Padrao salvo",
-                "As marcacoes atuais das 4 posicoes foram salvas.\n\n"
+                "Os HUDs unicos foram salvos para as disposicoes configuradas.\n\n"
                 "Elas serao carregadas automaticamente toda vez que abrir "
                 "o programa, inclusive apos atualizar o ZIP.\n\n"
                 f"Arquivo: {target}")
@@ -2135,7 +2135,7 @@ class GUI(tk.Tk):
         table = int(self.table.get())
         name_rect = self.cfg[str(table)].get("nick")
         if not name_rect:
-            messagebox.showwarning("Nick", "Marque a regiao do nick da mesa selecionada.")
+            messagebox.showwarning("Nick", "Marque o HUD unico com cartas, nick e saldo.")
             return
         tesseract = resource("tesseract")
         if not tesseract:
@@ -2577,7 +2577,7 @@ class GUI(tk.Tk):
         if failures and not successes:
             return messagebox.askyesno(
                 "OCR dos saldos nao funciona nesta previa",
-                "Nenhuma caixa azul apresentou saldo valido no frame original.\n"
+                "Nenhuma faixa de saldo do HUD unico foi reconhecida no frame original.\n"
                 "O Gemini opcional pode tentar ler quando OCR falhar.\n\n"
                 "Clique 'Testar saldo' para ver o recorte ORIGINAL ampliado "
                 "e as leituras brutas antes de iniciar horas de analise.\n\n"
@@ -2814,7 +2814,7 @@ class GUI(tk.Tk):
                 f"{threshold:g} BB com leituras suficientes.\n\n"
                 "Nao foram gerados cortes possivelmente errados.\n"
                 f"Relatorio: {report}\n\n"
-                "Verifique o quadro azul e use Testar saldo. "
+                "Verifique se o HUD verde cobre cartas, nick e saldo; use Testar saldo. "
                 "Se ativou Gemini, confira conexao e limite de chamadas.")
             return
 
