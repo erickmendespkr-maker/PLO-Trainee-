@@ -264,3 +264,16 @@ Na versao atualizada, voce pode fazer uma unica ativacao local:
 Apos isso, o Gemini passa a ser detectado automaticamente nas proximas aberturas do programa, sem solicitar a chave novamente. O botao antigo **Configurar chave** continua disponivel como alternativa. Se voce desmarcar **Gemini quando OCR falhar**, o programa respeita essa escolha na sessao atual.
 
 A chave nunca e salva em arquivos JSON do perfil, revisoes ou GitHub; seu valor e armazenado localmente com Windows DPAPI. **Ativar Gemini significa enviar pequenos recortes de tela ao Google** e pode consumir cota ou gerar custo em projetos pagos. As leituras da IA ainda precisam ser conferidas.
+
+
+## Autoajuste das marcacoes ao trocar de video
+
+**Problema:** a pre-calibracao de 4 mesas e os retangulos salvos de videos antigos podiam iniciar deslocados em gravacoes de 3 mesas. O erro era especialmente grave para as regioes roxa e azul, que anteriormente se sobrepunham e deixavam o OCR do saldo capturar partes do nick ou botoes.
+
+**Correcao:** quando voce abre um novo video e a previa reconhece 1 a 4 mesas lado a lado, o aplicativo procura as **cartas claras do heroi na faixa inferior de cada mesa**, estima a posicao de cartas, nick e saldo e salva as coordenadas especificas para esse layout. A regiao do saldo deixa de se sobrepor ao nick no perfil inicial. O ajuste nao altera layouts diferentes e nao sobrescreve regioes marcadas manualmente na versao atual.
+
+A barra de comandos agora inclui **AUTOAJUSTAR MARCACOES NESTE VIDEO**. Se estiver visualizando um trecho com as cartas do heroi abertas e as caixas permanecerem desalinhadas, clique nesse botao para forcar a calibracao do layout atual, sem afetar os outros layouts. O botao pede confirmacao antes de substituir marcas existentes. Se a imagem nao tiver evidencia suficiente das cartas, ele informa que o ajuste foi inconclusivo e **nao inventa coordenadas**.
+
+A calibracao automatica usa heuristicas de brilho, por isso nao garante encontrar corretamente todas as mesas/temas de poker. **Antes de iniciar uma analise de horas, clique em Testar saldo e compare o numero lido com a gravacao.** O Gemini pode ajudar a ler saldos, mas nao corrige uma ROI sobre outro jogador.
+
+As regioes geradas automaticamente sao salvas em `%LOCALAPPDATA%\CortadorPLO\marcacoes_padrao.json`. Regioes manuais permanecem prioritarias ate voce usar o botao de autoajuste e confirmar sua substituicao. Uma gravacao onde o jogador ainda nao recebeu cartas pode requerer navegar ate uma mao com cartas visiveis e clicar Mostrar frame.
