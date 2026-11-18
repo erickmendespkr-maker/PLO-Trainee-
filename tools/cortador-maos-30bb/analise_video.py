@@ -154,8 +154,9 @@ def detect_hero_cards_anchor(frame, mode, table):
         hits = 0
         for x in range(left, right):
             red, green, blue = pixels[x, y]
-            if (red >= 165 and green >= 162 and blue >= 155 and
-                    max(red, green, blue) - min(red, green, blue) <= 85):
+            if (red + green + blue >= 480 and
+                    max(red, green, blue) >= 175 and
+                    min(red, green, blue) >= 65):
                 hits += 1
         density.append(hits)
     min_density = max(11, round((right-left) * .16))
@@ -180,8 +181,9 @@ def detect_hero_cards_anchor(frame, mode, table):
         hits = 0
         for y in range(card_top, card_bottom):
             red, green, blue = pixels[x, y]
-            if (red >= 165 and green >= 162 and blue >= 155 and
-                    max(red, green, blue) - min(red, green, blue) <= 85):
+            if (red + green + blue >= 480 and
+                    max(red, green, blue) >= 175 and
+                    min(red, green, blue) >= 65):
                 hits += 1
         if hits >= max(4, round((card_bottom-card_top) * .18)):
             columns.append(x)
@@ -217,9 +219,8 @@ def auto_hero_profile(frame, mode):
             anchors.append((rect[0] - x1, rect[1], rect[2] - x1, rect[3]))
     if not anchors:
         return None
-    reference = tuple(round(statistics.median(row[index]))
-                      for index in range(4)
-                      for row in [list(zip(*anchors))])
+    columns = list(zip(*anchors))
+    reference = tuple(round(statistics.median(values)) for values in columns)
     width = layout_bounds(mode, 1)[2]
     hole = [reference[0], reference[1],
             reference[2], reference[3]]
@@ -235,6 +236,33 @@ def auto_hero_profile(frame, mode):
     if stack[3] <= stack[1] or nick[3] > stack[1]:
         return None
     return {"hole": hole, "nick": nick, "stack": stack}
+
+
+def apply_auto_hero_profile(config, frame, mode, force=False):
+    """Autoajuste por frame, preservando regioes marcadas manualmente."""
+    mode = layout_key(mode)
+    profile = auto_hero_profile(frame, mode)
+    if profile is None:
+        return 0
+    adjusted = 0
+    for table in range(1, layout_count(mode) + 1):
+        x1, y1, x2, y2 = layout_bounds(mode, table)
+        data = config[str(table)]
+        for key, relative in profile.items():
+            source = data.get("layout_roi_sources", {}).get(
+                mode, {}).get(key, "legacy")
+            if source == "manual" and not force:
+                continue
+            rect = [relative[0] + x1, relative[1] + y1,
+                    relative[2] + x1, relative[3] + y1]
+            if not (x1 <= rect[0] < rect[2] <= x2 and
+                    y1 <= rect[1] < rect[3] <= y2):
+                continue
+            data.setdefault("layout_rois", {}).setdefault(mode, {})[key] = rect
+            data.setdefault("layout_roi_sources", {}).setdefault(
+                mode, {})[key] = "auto"
+            adjusted += 1
+    return adjusted
 
 
 def unmap_layout_rect(rect, table, mode):
@@ -1775,29 +1803,7 @@ class GUI(tk.Tk):
         if mode not in ("horizontal1", "horizontal2",
                         "horizontal3", "horizontal4"):
             return 0
-        profile = auto_hero_profile(self.frame, mode)
-        if profile is None:
-            return 0
-        adjusted = 0
-        count = layout_count(mode)
-        for table in range(1, count + 1):
-            x1, y1, x2, y2 = layout_bounds(mode, table)
-            data = self.cfg[str(table)]
-            for key, relative in profile.items():
-                source = data.get("layout_roi_sources", {}).get(
-                    mode, {}).get(key, "legacy")
-                if source == "manual" and not force:
-                    continue
-                rect = [relative[0] + x1, relative[1] + y1,
-                        relative[2] + x1, relative[3] + y1]
-                if not (x1 <= rect[0] < rect[2] <= x2 and
-                        y1 <= rect[1] < rect[3] <= y2):
-                    continue
-                data.setdefault("layout_rois", {}).setdefault(
-                    mode, {})[key] = rect
-                data.setdefault("layout_roi_sources", {}).setdefault(
-                    mode, {})[key] = "auto"
-                adjusted += 1
+        adjusted = apply_auto_hero_profile(self.cfg, self.frame, mode, force)
         if adjusted:
             try:
                 save_markings_file(
