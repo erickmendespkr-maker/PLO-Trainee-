@@ -243,15 +243,19 @@ class GeminiClient:
         return _parse_response(response)
 
     def read_pair(self, before_images, after_images, bb=1.0,
-                  max_stack_bb=5000.0):
+                  max_stack_bb=5000.0, expected_nick=None):
         if len(before_images) != 2 or len(after_images) != 2:
             return None
         parts = [{
             "text": (
                 "Voce faz APENAS OCR literal de numeros de fichas/BB "
-                "em quatro recortes de tela de poker, na ordem: "
-                "ANTES1, ANTES2, DEPOIS1, DEPOIS2. "
-                "Cada imagem mostra a regiao do saldo de um unico jogador. "
+                "em quatro imagens do HUD VERDE COMPLETO de um jogador, "
+                "na ordem: ANTES1, ANTES2, DEPOIS1, DEPOIS2. "
+                "Em cada HUD aparecem CARTAS, NICK e SALDO (em BB). "
+                "Encontre a linha do nick do heroi e LEIA O SALDO associado "
+                "ao nick, geralmente imediatamente abaixo dele. "
+                "Ignore numeros nas cartas, botees, pote e apostas. "
+                + (f"O nick esperado e {expected_nick}. " if expected_nick else "") +
                 "Leia cada imagem INDEPENDENTEMENTE. "
                 "Nao calcule perdas. Nao adivinhe valores ausentes. "
                 "Se o numero estiver ilegivel ou cortado, use null. "
@@ -270,21 +274,43 @@ class GeminiClient:
         payload = self._request(parts)
         return interpret_stack_response(payload, bb, max_stack_bb)
 
-    def read_single(self, image, bb=1.0, max_stack_bb=5000.0):
-        """Teste visual de UMA regiao de saldo; nao serve para confirmar perdas."""
-        parts = [{
-            "text": (
-                "Faca somente a leitura literal do NUMERO DE SALDO no recorte. "
-                "Nao invente digitos. Se nao houver um unico numero claro, use null. "
-                "Retorne apenas JSON: " + '{"value":114.0}' + " ou " +
-                '{"value":null}' + "."
+    def read_hud_fields(self, image, bb=1.0, max_stack_bb=5000.0,
+                        expected_nick=None):
+        """Le NICK e SALDO do HUD completo na mesma chamada da API."""
+        instructions = (
+            "Analise um HUD de poker da parte inferior da mesa. "
+            "A imagem inclui cartas do jogador, seu nick e seu saldo em BB. "
+            "Identifique somente o nick do JOGADOR QUE RECEBEU AS CARTAS "
+            "e o saldo mostrado junto a esse nick, geralmente logo abaixo. "
+            "Ignore numeros das cartas, potes, botoes de acao e apostas. "
+            "Nao adivinhe texto ilegivel: use null. "
+        )
+        if expected_nick:
+            instructions += (
+                f"O nick esperado e {expected_nick}. Se ele nao estiver visivel, "
+                "use null para o nick e saldo. "
             )
-        }, {"inline_data": {
-            "mime_type": "image/png", "data": _image_png(image)}}]
-        payload = self._request(parts)
+        instructions += (
+            'Responda somente JSON: {"nick":"~Pulgar~","value":125.7} '
+            'ou {"nick":null,"value":null}.'
+        )
+        payload = self._request([
+            {"text": instructions},
+            {"inline_data": {
+                "mime_type": "image/png", "data": _image_png(image)}},
+        ])
         if not isinstance(payload, dict):
-            return None
-        return normalize_amount(payload.get("value"), max_stack_bb * bb)
+            return {"nick": None, "value": None}
+        name = payload.get("nick")
+        return {
+            "nick": name.strip() if isinstance(name, str) and name.strip() else None,
+            "value": normalize_amount(payload.get("value"), max_stack_bb * bb),
+        }
+
+    def read_single(self, image, bb=1.0, max_stack_bb=5000.0):
+        """Compatibilidade com a tela antiga de teste de um saldo."""
+        return self.read_hud_fields(
+            image, bb=bb, max_stack_bb=max_stack_bb)["value"]
 
     def ping(self):
         """Teste minimo de credencial; conta como uma requisicao."""
