@@ -332,6 +332,36 @@ class VisualTests(unittest.TestCase):
                 painter.rectangle([px, 440, px+2, 471], fill=(100, 43, 34))
         return frame
 
+    def test_migrar_marcacao_verde_grande_do_programa_antigo(self):
+        from copy import deepcopy
+        cfg = screenshot_profile()
+        for table in range(1, 4):
+            dx = (table - 1) * 320
+            cfg[str(table)]["layout_rois"] = {
+                "horizontal3": {"hole": [100 + dx, 405, 285 + dx, 527]}}
+            cfg[str(table)]["layout_roi_sources"] = {
+                "horizontal3": {"hole": "manual"}}
+        validated = validated_markings({
+            "tables": deepcopy(cfg), "layout": "Automatico (1 a 4 mesas)"})
+        recovered = validated["tables"]
+        for table in range(1, 4):
+            dx = (table - 1) * 320
+            self.assertEqual(
+                layout_roi(recovered[str(table)], table,
+                           "horizontal3", "hero_hud"),
+                (100 + dx, 405, 285 + dx, 527))
+            self.assertEqual(
+                recovered[str(table)]["layout_roi_sources"][
+                    "horizontal3"]["hero_hud"], "manual")
+        # Uma caixa antiga so de cartas NAO sera confundida com HUD inteiro.
+        old = screenshot_profile()
+        old["1"]["layout_rois"] = {
+            "horizontal3": {"hole": [177, 434, 271, 483]}}
+        checked = validated_markings({"tables": old})
+        self.assertEqual(
+            layout_roi(checked["1"], 1, "horizontal3", "hero_hud"),
+            default_hero_hud("horizontal3", 1))
+
     def test_um_hud_grande_cobre_cartas_nick_e_saldo_sem_3_caixas(self):
         config = screenshot_profile()
         for table in range(1, 4):
