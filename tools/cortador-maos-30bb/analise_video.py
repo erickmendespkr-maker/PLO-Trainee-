@@ -31,6 +31,7 @@ from gemini_backend import (
     DEFAULT_MODEL, ALLOWED_MODELS, read_key, save_key, remove_key
 )
 from hud_recognition import is_full_hud, read_hud_stack, read_hud_nick
+from poker_contexto import table_context_timestamps
 from pasta_saida import load_export_folder, save_export_folder, valid_export_folder
 
 W, H = 960, 540
@@ -828,14 +829,26 @@ class Candidate:
     gemini_checked: bool = False
     before_times: list[float] = field(default_factory=list)
     after_times: list[float] = field(default_factory=list)
+    hand_start: float | None = None
+    hand_end: float | None = None
+    pot_verified: bool = False
+    hero_invested_bb: float | None = None
+    winner_nick: str = ""
+    auto_rebuy_seen: bool | None = None
 
 
-def eligible_losses(candidates, threshold, automatic_only=False):
-    """So encaminha a exportacao perdas confirmadas ou OCR consistente."""
-    return [c for c in candidates if not c.excluded and
-            (c.auto_verified if automatic_only else
-             (c.confirmed or c.auto_verified)) and
-            loss_reaches_threshold(c.loss_bb, threshold)]
+def eligible_losses(candidates, threshold, automatic_only=False,
+                    require_pot_evidence=False):
+    """Com rebuy automatico, OCR de stacks sozinho NAO permite MP4 automatico."""
+    chosen = []
+    for c in candidates:
+        if c.excluded or not loss_reaches_threshold(c.loss_bb, threshold):
+            continue
+        trusted_auto = c.auto_verified and (
+            not require_pot_evidence or c.pot_verified)
+        if trusted_auto if automatic_only else (trusted_auto or c.confirmed):
+            chosen.append(c)
+    return chosen
 
 
 def net_loss_bb(stack_before, stack_after, bb_value):
@@ -869,7 +882,8 @@ class HandState:
         self.results = []
 
     def feed(self, t, occupied, stack_img, table, bb, threshold, tesseract,
-             quick=False, native_reader=None, gemini_reader=None):
+             quick=False, native_reader=None, gemini_reader=None,
+             auto_rebuy=False):
         if not self.active:
             if self.pending is not None:
                 if not occupied and len(self.pending["after"]) < 6:
@@ -880,7 +894,8 @@ class HandState:
                 if len(self.pending["after"]) >= 6 or occupied:
                     self.finish(table, bb, threshold, tesseract, quick=quick,
                                 native_reader=native_reader,
-                                gemini_reader=gemini_reader)
+                                gemini_reader=gemini_reader,
+                                auto_rebuy=auto_rebuy)
             if occupied:
                 if self.on_count == 0:
                     self.on_start = t
@@ -914,10 +929,24 @@ class HandState:
                 self.empty_frames.clear()
 
     def finish(self, table, bb, threshold, tesseract, quick=False,
-               native_reader=None, gemini_reader=None):
+               native_reader=None, gemini_reader=None, auto_rebuy=False):
         data = self.pending
         self.pending = None
         if not data:
+            return
+        if auto_rebuy:
+            # A mesa pode recompor para 100 BB imediatamente apos uma perda.
+            # Saldo pre/pos identico nao prova ganho e nao permite descartar
+            # nenhuma mao. Registrar todas para interpretacao do POTE.
+            self.results.append(Candidate(
+                max(0, data["start"] - 5), data["end"] + 5, table,
+                None, None, None, "INCONCLUSIVO - AGUARDANDO POTE/REBUY",
+                layout=self.layout,
+                reliability="Verificar aporte do heroi e premiacao do pote",
+                source="Contexto pendente",
+                before_times=data.get("before_times", [])[:],
+                after_times=data.get("after_times", [])[:],
+                hand_start=data["start"], hand_end=data["end"]))
             return
         pre, n_pre = stack_median(data["before"], tesseract, quick=quick, bb=bb)
         post, n_post = stack_median(data["after"], tesseract, quick=quick, bb=bb)
@@ -1028,7 +1057,7 @@ class HandState:
 
 def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                 quick=True, initial_layout="Automatico (1 a 4 mesas)", events=None,
-                detected_events=None, gemini_client=None):
+                detected_events=None, gemini_client=None, auto_rebuy=False):
     """Varre uma unica gravacao ou varios videos, com ate 4 mesas e eventos de layout."""
     tesseract = resource("tesseract")
     ffmpeg = resource("ffmpeg")
@@ -1148,7 +1177,8 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
         if state.pending and cfg is not None:
             state.finish(table, cfg["bb"], threshold, tesseract, quick=quick,
                          native_reader=read_native_at,
-                         gemini_reader=read_with_gemini)
+                         gemini_reader=None if auto_rebuy else read_with_gemini,
+                         auto_rebuy=auto_rebuy)
         for candidate in state.results:
             candidate.start = max(candidate.start, segment_start)
             candidate.end = min(candidate.end, end_time)
@@ -1268,7 +1298,8 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                     states[table].feed(t, occupied, frame.crop(cfg["stack"]), table,
                                        cfg["bb"], threshold, tesseract, quick=quick,
                                        native_reader=read_native_at,
-                                       gemini_reader=read_with_gemini)
+                                       gemini_reader=None if auto_rebuy else read_with_gemini,
+                                       auto_rebuy=auto_rebuy)
                 if seen:
                     detected_frames += 1
                 n += 1
