@@ -18,7 +18,8 @@ from analise_video import (parse_stack, changed_fraction, HandState, bright_frac
                            net_loss_bb, loss_reaches_threshold, layout_key, mode_at,
                            layout_count, layout_bounds, layout_rect,
                            layout_roi, store_layout_roi, unmap_layout_rect,
-                           table_visible,
+                           detect_hero_cards_anchor, auto_hero_profile,
+                           apply_auto_hero_profile, table_visible,
                            infer_horizontal_layout, AutoLayoutTracker)
 from cortador import Video, crop_filter
 
@@ -316,6 +317,61 @@ class VisualTests(unittest.TestCase):
             self.assertEqual(mode, "horizontal3")
             self.assertTrue(safe)
             self.assertEqual(status, "alterado")
+
+    def synthetic_hero_cards(self, count=3):
+        frame = Image.new("RGB", (960, 540), (18, 109, 82))
+        painter = ImageDraw.Draw(frame)
+        width = 960 // count
+        for table in range(count):
+            x = table * width + round(width * .52)
+            painter.rectangle([x, 433, x + round(width * .32), 476],
+                              fill=(238, 233, 213))
+            for j in range(5):
+                px = x + j * round(width * .063)
+                painter.rectangle([px, 440, px+2, 471], fill=(100, 43, 34))
+        return frame
+
+    def test_autoajuste_3_mesas_ancora_cartas_do_heroi(self):
+        image = self.synthetic_hero_cards(3)
+        anchor = detect_hero_cards_anchor(image, "horizontal3", 1)
+        self.assertIsNotNone(anchor)
+        self.assertTrue(140 <= anchor[0] < 200)
+        self.assertTrue(420 <= anchor[1] < 465)
+        profile = auto_hero_profile(image, "horizontal3")
+        self.assertIsNotNone(profile)
+        self.assertLessEqual(profile["nick"][3], profile["stack"][1])
+        config = screenshot_profile()
+        updated = apply_auto_hero_profile(config, image, "horizontal3")
+        self.assertEqual(updated, 9)
+        for table in range(1, 4):
+            rect = layout_roi(config[str(table)], table, "horizontal3", "hole")
+            self.assertTrue((table-1)*320 <= rect[0] < table*320)
+        # As quatro posicoes de outro layout nao sao recalibradas.
+        self.assertEqual(
+            layout_roi(config["1"], 1, "horizontal4", "hole"),
+            tuple(config["1"]["hole"]))
+
+    def test_autoajuste_nao_apaga_marcacao_manual(self):
+        image = self.synthetic_hero_cards(3)
+        config = screenshot_profile()
+        store_layout_roi(config, 1, "horizontal3", "stack",
+                         [120, 485, 206, 499], source="manual")
+        saved = layout_roi(config["2"], 2, "horizontal3", "stack")
+        updated = apply_auto_hero_profile(config, image, "horizontal3")
+        self.assertEqual(updated, 6)
+        self.assertEqual(layout_roi(config["2"], 2, "horizontal3", "stack"), saved)
+        updated_force = apply_auto_hero_profile(config, image,
+                                                "horizontal3", force=True)
+        self.assertEqual(updated_force, 9)
+        self.assertNotEqual(layout_roi(config["2"], 2, "horizontal3", "stack"), saved)
+
+    def test_autoajuste_sem_cartas_nao_movimenta_perfis(self):
+        blank = Image.new("RGB", (960, 540), (18, 109, 82))
+        config = screenshot_profile()
+        before = config["1"]["stack"][:]
+        self.assertEqual(apply_auto_hero_profile(config, blank,
+                                                 "horizontal3"), 0)
+        self.assertEqual(config["1"]["stack"], before)
 
     def test_marcacao_de_tres_mesas_nao_move_a_de_quatro(self):
         config = screenshot_profile()
