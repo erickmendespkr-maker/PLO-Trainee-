@@ -443,14 +443,18 @@ def read_nickname(image, tesseract):
     return readings
 
 
-def stack_median(images, tesseract, quick=False):
+MAX_STACK_BB = 5000.0  # Teto amplo de seguranca contra OCR absurdo, nao um buy-in fixo.
+
+
+def stack_median(images, tesseract, quick=False, bb=1):
+    """Le saldos consistentes; descarta OCR fora de uma faixa ampla em BB."""
     """Analise rapida: ate duas imagens, um OCR por imagem se legivel."""
     values = []
     samples = images[-2:] if quick else images
     for sample in samples:
         try:
             v = ocr_stack(sample, tesseract, quick=quick)
-            if v is not None:
+            if v is not None and 0 <= v / bb <= MAX_STACK_BB:
                 values.append(v)
         except (subprocess.SubprocessError, OSError):
             continue
@@ -458,14 +462,16 @@ def stack_median(images, tesseract, quick=False):
         # Salvaguarda para leitura ausente: terceira imagem em modo detalhado.
         try:
             retry = ocr_stack(images[0], tesseract, quick=False)
-            if retry is not None:
+            if retry is not None and 0 <= retry / bb <= MAX_STACK_BB:
                 values.append(retry)
         except (subprocess.SubprocessError, OSError):
             pass
     if not values:
         return None, 0
     middle = statistics.median(values)
-    consistent = [x for x in values if abs(x - middle) <= max(2, middle * .08)]
+    # Variacoes acima de 1% entre leituras sao suspeitas. Em BB pequenos,
+    # permitir ate 1 BB de variacao por arredondamento na tela.
+    consistent = [x for x in values if abs(x - middle) <= max(bb, middle * .01)]
     if not consistent:
         return None, 0
     return statistics.median(consistent), len(consistent)
@@ -485,6 +491,8 @@ class Candidate:
     nick: str = ""
     nick_verified: bool = False
     layout: str = "horizontal4"
+    auto_verified: bool = False
+    reliability: str = ""
 
 
 def net_loss_bb(stack_before, stack_after, bb_value):
@@ -557,21 +565,46 @@ class HandState:
         self.pending = None
         if not data:
             return
-        pre, n_pre = stack_median(data["before"], tesseract, quick=quick)
-        post, n_post = stack_median(data["after"], tesseract, quick=quick)
+        pre, n_pre = stack_median(data["before"], tesseract, quick=quick, bb=bb)
+        post, n_post = stack_median(data["after"], tesseract, quick=quick, bb=bb)
+
         loss = None if pre is None or post is None else net_loss_bb(pre, post, bb)
+        if quick and (loss is None or loss_reaches_threshold(loss, threshold)):
+            # Uma possivel perda deve passar por outra rodada OCR mais rigorosa.
+            # A fase 1 e rapida; so perdas/erros consomem processamento extra.
+            detail_pre, n_dp = stack_median(data["before"], tesseract, quick=False, bb=bb)
+            detail_post, n_da = stack_median(data["after"], tesseract, quick=False, bb=bb)
+            if detail_pre is not None and detail_post is not None:
+                pre, post = detail_pre, detail_post
+                n_pre, n_post = n_dp, n_da
+                loss = net_loss_bb(pre, post, bb)
+            else:
+                # Resultado do passe rapido sozinho nunca e auto verificado.
+                n_pre, n_post = 0, 0
+
         if loss is None:
-            status = "INCONCLUSIVO - OCR"
-        elif loss_reaches_threshold(loss, threshold):
-            status = "POSSIVEL PERDA >= LIMITE"
-            if n_pre < 2 or n_post < 2:
-                status += " (LEITURA FRACA)"
-        else:
+            self.results.append(Candidate(
+                max(0, data["start"] - 5), data["end"] + 5, table,
+                None, pre, post, "INCONCLUSIVO - SALDO NAO LIDO",
+                layout=self.layout, reliability="OCR ausente"))
             return
+
+        if not loss_reaches_threshold(loss, threshold):
+            # Mãos ganhas, sem perda ou com perda < limite nao entram.
+            return
+
+        # Leitura coerente de 2 amostras antes e 2 depois e exigida para
+        # exportacao automatica. Valores absurdos ja foram filtrados.
+        strong = (n_pre >= 2 and n_post >= 2 and
+                  0 <= post / bb <= MAX_STACK_BB and
+                  0 <= pre / bb <= MAX_STACK_BB)
+        status = ("PERDA >= LIMITE - OCR CONSISTENTE" if strong else
+                  "POSSIVEL PERDA >= LIMITE - OCR FRACO")
         self.results.append(Candidate(
             max(0, data["start"] - 5), data["end"] + 5, table,
-            round(loss, 2) if loss is not None else None, pre, post, status,
-            layout=self.layout))
+            round(loss, 2), pre, post, status,
+            layout=self.layout, auto_verified=strong,
+            reliability=f"antes {n_pre} leituras / depois {n_post} leituras"))
 
 
 def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
