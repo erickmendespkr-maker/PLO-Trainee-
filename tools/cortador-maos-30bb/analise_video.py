@@ -449,8 +449,7 @@ MAX_STACK_BB = 5000.0  # Teto amplo de seguranca contra OCR absurdo, nao um buy-
 
 
 def stack_median(images, tesseract, quick=False, bb=1):
-    """Le saldos consistentes; descarta OCR fora de uma faixa ampla em BB."""
-    """Analise rapida: ate duas imagens, um OCR por imagem se legivel."""
+    """Le saldos consistentes; modo rapido usa ate duas imagens por lado."""
     values = []
     samples = images[-2:] if quick else images
     for sample in samples:
@@ -495,6 +494,14 @@ class Candidate:
     layout: str = "horizontal4"
     auto_verified: bool = False
     reliability: str = ""
+
+
+def eligible_losses(candidates, threshold, automatic_only=False):
+    """So encaminha a exportacao perdas confirmadas ou OCR consistente."""
+    return [c for c in candidates if not c.excluded and
+            (c.auto_verified if automatic_only else
+             (c.confirmed or c.auto_verified)) and
+            loss_reaches_threshold(c.loss_bb, threshold)]
 
 
 def net_loss_bb(stack_before, stack_after, bb_value):
@@ -970,7 +977,7 @@ class GUI(tk.Tk):
         ttk.Button(edit, text="Descartar", command=self.exclude).pack(side="left")
         ttk.Button(edit, text="Ver inicio", command=lambda: self.preview_edge("start")).pack(side="left", padx=5)
         ttk.Button(edit, text="Ver fim", command=lambda: self.preview_edge("end")).pack(side="left")
-        ttk.Button(edit, text="EXPORTAR CONFERIDAS", command=self.export).pack(side="right")
+        ttk.Button(edit, text="EXPORTAR PERDAS", command=self.export).pack(side="right")
         ttk.Label(self, text="Uso offline. Leituras de saldo por OCR sao estimativas; revise cada mao, rebuys e limites dos cortes.",
                   foreground="#9b571a").pack(padx=8, pady=2)
 
@@ -1263,7 +1270,7 @@ class GUI(tk.Tk):
         try:
             reading = ocr_stack(
                 self.frame.crop(layout_rect(rect, table, self.layout_id())), tesseract)
-            if reading is None:
+            if reading is None or reading / float(self.cfg[str(table)].get("bb", 1)) > MAX_STACK_BB:
                 messagebox.showwarning(
                     "Saldo nao reconhecido",
                     "O programa nao leu um numero nesta caixa azul.\n"
@@ -1458,6 +1465,42 @@ class GUI(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Abrir revisao", str(exc))
 
+    def check_stacks_before_analysis(self):
+        """Alerta se o video nao produz nenhum saldo legivel nas ROIs atuais."""
+        if self.frame is None or not resource("tesseract"):
+            return True
+        mode = self.layout_id()
+        successes = []
+        failures = []
+        for table in range(1, layout_count(mode) + 1):
+            if not table_visible(self.frame, layout_bounds(mode, table), strict=False):
+                continue
+            rect = self.cfg[str(table)].get("stack")
+            if not rect:
+                continue
+            try:
+                bb = float(self.cfg[str(table)].get("bb", 1))
+                image = self.frame.crop(layout_rect(rect, table, mode))
+                value = ocr_stack(image, resource("tesseract"), quick=True)
+                if value is not None and 0 <= value / bb <= MAX_STACK_BB:
+                    successes.append(f"Mesa {table}: {value / bb:g} BB")
+                else:
+                    failures.append(f"Mesa {table}")
+            except (OSError, ValueError, subprocess.SubprocessError):
+                failures.append(f"Mesa {table}")
+        if failures and not successes:
+            return messagebox.askyesno(
+                "OCR dos saldos nao funciona nesta previa",
+                "Nenhuma caixa azul apresentou um saldo valido no frame atual.\n"
+                "Isso explica uma lista cheia de 'INCONCLUSIVO - OCR' e zero MP4.\n\n"
+                "Confira se as caixas azuis estao sobre o numero do saldo e "
+                "clique 'Testar saldo' antes de iniciar as horas de analise.\n\n"
+                "Deseja analisar mesmo assim?")
+        if failures:
+            self.tell("OCR do frame: " + "; ".join(successes) +
+                      " | falharam: " + ", ".join(failures))
+        return True
+
     def analyze(self):
         if self.busy:
             return
@@ -1490,6 +1533,8 @@ class GUI(tk.Tk):
                 raise ValueError("Instale Tesseract OCR e coloque tesseract.exe no PATH.")
         except Exception as exc:
             messagebox.showerror("Configuracao", str(exc))
+            return
+        if not self.check_stacks_before_analysis():
             return
         destination = None
         if self.auto_export.get():
@@ -1619,11 +1664,8 @@ class GUI(tk.Tk):
         except ValueError:
             messagebox.showerror("BB", "Perda minima invalida.")
             return
-        eligible = [c for c in self.candidates
-                    if not c.excluded and
-                    (c.auto_verified if automatic_only else
-                     (c.confirmed or c.auto_verified)) and
-                    loss_reaches_threshold(c.loss_bb, threshold)]
+        eligible = eligible_losses(self.candidates, threshold,
+                                   automatic_only=automatic_only)
         if folder is None:
             folder = filedialog.askdirectory(title="Pasta dos MP4 das perdas")
             if not folder:
