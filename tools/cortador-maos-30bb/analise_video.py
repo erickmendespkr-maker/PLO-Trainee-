@@ -1787,6 +1787,15 @@ class GUI(tk.Tk):
         self.cfg[str(table)]["detector"] = "bright"
         self.tell(f"Regiao {key} ajustada somente para esta disposicao. "
                   "Outros layouts foram preservados.")
+        try:
+            save_markings_file(
+                default_markings_path(), self.cfg, self.nick.get(), self.layout.get())
+            self.markings_source = "Marcacoes salvas automaticamente"
+            self.tell(f"Regiao {key} salva automaticamente para {self.layout_id()}. "
+                      "Outros layouts preservados.")
+        except (OSError, ValueError, TypeError):
+            self.tell("AVISO: nao foi possivel salvar esta marcacao no Windows. "
+                      "Use Salvar configuracao para manter seus ajustes.")
         self.draw()
 
     def test_stack_frame(self):
@@ -1933,7 +1942,7 @@ class GUI(tk.Tk):
         if not messagebox.askokcancel(
                 "Ativar Gemini no Windows",
                 "Cole primeiro uma CHAVE NOVA no clipboard (Ctrl+C) e clique OK. "
-                "A chave enviada no chat deve ser revogada.\\n\\n"
+                "A chave enviada no chat deve ser revogada.\n\n"
                 "A chave ficara protegida pelo Windows e sera reutilizada "
                 "nas proximas execucoes, sem configurar outra vez. "
                 "Somente recortes de saldos serao enviados ao Google "
@@ -1942,6 +1951,12 @@ class GUI(tk.Tk):
         try:
             value = self.clipboard_get()
             save_key(value)
+            # A chave nao deve continuar no clipboard apos armazenamento DPAPI.
+            try:
+                if self.clipboard_get() == value:
+                    self.clipboard_clear()
+            except tk.TclError:
+                pass
             self.use_gemini.set(True)
             self.ai_status.configure(text="Chave local: configurada")
             self.tell("Gemini ativado. Chave salva no Windows; nao sera "
