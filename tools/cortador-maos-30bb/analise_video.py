@@ -154,6 +154,27 @@ def infer_horizontal_layout(frame, previous=None):
     scores = {}
     seams_by_mode = {}
     seam_cache = {}
+
+    # Mesas que fecham sem rearranjo deixam um slot inteiro vazio. Se esse
+    # vazio for confundido com "1 mesa ampliada", o crop fica errado.
+    slot4 = []
+    for table in TABLES:
+        bounds = layout_bounds("horizontal4", table)
+        patch = gray.crop(bounds).resize((24, 36))
+        textured = ImageStat.Stat(patch).stddev[0] >= 9
+        slot4.append(textured)
+    # Prioriza a grade original quando restam 1-3 janelas e os demais
+    # quadrantes sao uniformes. Uma mesa ampliada costuma ocupar >1 slot.
+    if 1 <= sum(slot4) <= 3:
+        uniform_blanks = all(
+            ImageStat.Stat(gray.crop(layout_bounds("horizontal4", i+1))
+                          .resize((24, 36))).stddev[0] < 5
+            for i, present in enumerate(slot4) if not present)
+        # Delimitador alto ao lado da janela ativa impede classificar
+        # erroneamente uma faixa homogenea de uma mesa ampliada.
+        seams = [vertical_seam_strength(gray, x) for x in (240, 480, 720)]
+        if uniform_blanks and max(seams) >= .35:
+            return "horizontal4", .85, {"horizontal4": .85}
     for count in (2, 3, 4):
         mode = f"horizontal{count}"
         slots = []
