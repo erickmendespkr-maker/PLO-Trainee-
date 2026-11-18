@@ -1628,15 +1628,16 @@ class GUI(tk.Tk):
         ttk.Button(row2, text="Verificar nick no frame", command=self.verify_nick_frame).pack(
             side="left", padx=7)
         ttk.Checkbutton(row2, text="OCR rapido", variable=self.quick).pack(side="left", padx=4)
-        ttk.Checkbutton(row2, text="Gerar MP4 para revisao",
+        ttk.Checkbutton(row2, text="Salvar MP4 de perdas confirmadas",
                         variable=self.auto_export).pack(side="left", padx=6)
         self.table.trace_add("write", lambda *_: self.on_table_change())
 
         rebuy_row = ttk.Frame(self)
         rebuy_row.pack(fill="x", padx=8, pady=(0, 3))
-        ttk.Checkbutton(
-            rebuy_row, text="Rebuy automatico: analisar aporte e destino do pote",
-            variable=self.auto_rebuy).pack(side="left", padx=4)
+        ttk.Label(
+            rebuy_row, text="Rebuy automatico considerado | 3 etapas: "
+                            "mao, aporte e pote",
+            foreground="#696969").pack(side="left", padx=4)
         ttk.Label(rebuy_row, text="Saldo voltar a 100 BB nao significa ganho.",
                   foreground="#696969").pack(side="left", padx=8)
 
@@ -2290,7 +2291,7 @@ class GUI(tk.Tk):
                 self.nick.set(data.get("nick", "~Pulgar~"))
                 self.quick.set(bool(data.get("quick", True)))
                 self.auto_export.set(bool(data.get("auto_export", True)))
-                self.auto_rebuy.set(bool(data.get("auto_rebuy", True)))
+                self.auto_rebuy.set(True)
                 self.layout.set(data.get("layout", "2 por 2" if "tables" not in data else "4 lado a lado"))
                 self.timeline = sorted(data.get("timeline", []), key=lambda x: float(x["start"]))
                 self.detected_timeline = []
@@ -2423,7 +2424,7 @@ class GUI(tk.Tk):
             self.nick.set(data.get("nick", "~Pulgar~"))
             self.quick.set(bool(data.get("quick", True)))
             self.auto_export.set(bool(data.get("auto_export", True)))
-            self.auto_rebuy.set(bool(data.get("auto_rebuy", True)))
+            self.auto_rebuy.set(True)
             self.threshold.set(str(data.get("threshold", 30)))
             self.info.configure(text=f"{len(videos)} arquivo(s) | {fmt(self.total)}")
             self.on_table_change()
@@ -2579,7 +2580,7 @@ class GUI(tk.Tk):
             return
 
         self.busy = True
-        self.tell("Fase 1/2: localizando maos do heroi (sem acesso a internet)...")
+        self.tell("Fase 1/3: localizando maos do heroi (offline)...")
         cfg = json.loads(json.dumps(self.cfg))
         videos = self.videos[:]
         hero_nick = self.nick.get().strip()
@@ -2597,45 +2598,58 @@ class GUI(tk.Tk):
                     initial_layout=layout, events=events,
                     detected_events=detections, auto_rebuy=rebuy_mode)
                 self.after(0, lambda: self.tell(
-                    f"Fase 2/2: {len(results)} maos candidatas; "
+                    f"Fase 2/3: {len(results)} maos candidatas; "
                     "OCR do stack durante cada mao..."))
                 estimates, analyzed, priority = estimate_candidates_offline(
                     videos, cfg, results, threshold,
                     lambda msg: self.after(0, lambda m=msg: self.tell(m)))
-                summary = (f"{analyzed} maos com triagem de aporte; "
-                           f"{priority} prioritarias (AINDA NAO confirmadas)")
+                self.after(0, lambda: self.tell(
+                    f"Fase 3/3: verificando quem recebeu o pote "
+                    f"em {priority} maos com aporte >= {threshold:g} BB..."))
+                decisions, verified, losses = confirm_candidates_by_pot_offline(
+                    videos, cfg, estimates, threshold,
+                    lambda msg: self.after(0, lambda m=msg: self.tell(m)))
+                summary = (f"{analyzed} maos, {priority} com aporte potencial; "
+                           f"{verified} destinos de pote analisados, "
+                           f"{losses} perdas confirmadas")
                 self.after(0, lambda: self.finished(
-                    estimates, detections, summary, export_review=True))
+                    decisions, detections, summary, export_review=False,
+                    auto_export_losses=True))
             except Exception as exc:
                 self.after(0, lambda e=str(exc): self.failed(e))
         threading.Thread(target=worker, daemon=True).start()
 
-    def finished(self, results, detections=None, summary="", export_review=False):
+    def finished(self, results, detections=None, summary="",
+                 export_review=False, auto_export_losses=False):
         self.candidates = results
         self.detected_timeline = sorted(detections or [],
                                         key=lambda e: e["start"])
         self.busy = False
         self.refresh()
         saved = self.autosave_review()
+        threshold = float(self.threshold.get().replace(",", "."))
         priorities = sum(
             c.hero_invested_bb is not None and
-            c.hero_invested_bb >= float(self.threshold.get().replace(",", "."))
-            for c in results)
+            c.hero_invested_bb >= threshold for c in results)
+        confirmed = sum(c.pot_verified and c.auto_verified and
+                        loss_reaches_threshold(c.loss_bb, threshold)
+                        for c in results)
         self.tell(f"Analise offline: {len(results)} maos; {priorities} com "
-                  "aporte potencial acima do limite. "
+                  f"aporte potencial, {confirmed} perdas confirmadas. "
                   + ("Revisao salva." if saved else
                      "AVISO: nao foi possivel salvar revisao.") + " " + summary)
-        if export_review and self.auto_export.get() and results:
-            # So cria MP4 de REVISAO, nunca os chama de perdas confirmadas.
+        if auto_export_losses and self.auto_export.get() and confirmed:
+            self.export(automatic_only=True)
+        elif export_review and self.auto_export.get() and results:
             self.export_review_candidates(confirm=False)
         else:
             messagebox.showinfo(
-                "Triagem offline concluida",
+                "Analise offline concluida",
                 f"{len(results)} maos encontradas.\n"
-                f"{priorities} com possivel aporte >= limite.\n\n"
-                "Nenhuma queda de stack e considerada prova de derrota. "
-                "Confirme o destino do pote e a perda liquida antes de "
-                "exportar PERDAS confirmadas.")
+                f"{priorities} com aporte potencial >= limite.\n"
+                f"{confirmed} perdas com destino de pote confirmado.\n\n"
+                "Somente perdas confirmadas geram MP4 automaticamente. "
+                "Para casos duvidosos, use EXPORTAR PARA REVISAO.")
 
     def failed(self, error):
         self.busy = False
@@ -2839,7 +2853,7 @@ class GUI(tk.Tk):
             return
         eligible = eligible_losses(
             self.candidates, threshold, automatic_only=automatic_only,
-            require_pot_evidence=self.auto_rebuy.get())
+            require_pot_evidence=True)
         if folder is None:
             try:
                 folder = str(self.current_output_folder(create=True))
@@ -2913,8 +2927,8 @@ class GUI(tk.Tk):
                 destination = dest / filename
                 status = "OK"
                 try:
-                    clip = Clip(c.start, c.end, c.table, c.loss_bb, "Video OCR/IA",
-                                "Video", "", True)
+                    clip = Clip(c.start, c.end, c.table, c.loss_bb, "Pote confirmado",
+                                "Offline", "", True)
                     export_clip(videos, clip, destination,
                                 resource("ffmpeg"), layout=c.layout)
                 except Exception as exc:
@@ -2961,8 +2975,8 @@ class GUI(tk.Tk):
                     f"Pasta: {dest}\n"
                     "Indice: indice_das_maos.csv\n"
                     "Diagnostico: relatorio_analise.csv\n\n"
-                    "As leituras por OCR/IA sao estimativas; confira os cortes antes "
-                    "de enviar ao instrutor.")
+                    "A confirmacao automatica usa OCR da mesa e pode falhar. "
+                    "Confira os cortes antes de enviar ao instrutor.")
             self.after(0, done)
         threading.Thread(target=worker, daemon=True).start()
 
