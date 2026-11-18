@@ -202,6 +202,17 @@ class VisualTests(unittest.TestCase):
                            left + round(.83*width), 496), fill=156)
         return frame
 
+    def test_detectar_quatro_mesas_por_divisorias_mesmo_sem_similaridade(self):
+        # Cartas/apostas podem ser muito diferentes de uma janela para outra.
+        # Divisorias estaveis ainda devem permitir 4 mesas, nunca 1 mesa.
+        frame = Image.new("L", (960, 540), 125)
+        seams = lambda image, x: .74 if x in (240, 480, 720) else 0.02
+        with patch("analise_video.vertical_seam_strength", side_effect=seams), \
+             patch("analise_video.table_visible", return_value=True):
+            layout, confidence, _ = infer_horizontal_layout(frame)
+        self.assertEqual(layout, "horizontal4")
+        self.assertGreater(confidence, .80)
+
     def test_detector_automatico_de_varias_mesas(self):
         for count in (1, 2, 3, 4):
             image = self.mock_mesatela(count)
