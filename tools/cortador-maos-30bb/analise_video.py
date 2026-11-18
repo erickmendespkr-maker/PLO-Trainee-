@@ -1727,9 +1727,15 @@ class GUI(tk.Tk):
         ttk.Checkbutton(row2, text="OCR rapido", variable=self.quick).pack(side="left", padx=4)
         ttk.Checkbutton(row2, text="Gerar MP4 automaticos",
                         variable=self.auto_export).pack(side="left", padx=6)
-        ttk.Checkbutton(row2, text="Rebuy automatico (verificar pote)",
-                        variable=self.auto_rebuy).pack(side="left", padx=6)
         self.table.trace_add("write", lambda *_: self.on_table_change())
+
+        rebuy_row = ttk.Frame(self)
+        rebuy_row.pack(fill="x", padx=8, pady=(0, 3))
+        ttk.Checkbutton(
+            rebuy_row, text="Rebuy automatico: analisar aporte e destino do pote",
+            variable=self.auto_rebuy).pack(side="left", padx=4)
+        ttk.Label(rebuy_row, text="Saldo voltar a 100 BB nao significa ganho.",
+                  foreground="#696969").pack(side="left", padx=8)
 
         changes = ttk.Frame(self)
         changes.pack(fill="x", padx=8, pady=(0, 3))
@@ -2900,7 +2906,9 @@ class GUI(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Configuracao", str(exc))
             return
-        if not self.check_stacks_before_analysis():
+        # Com recomposicao automatica, o saldo inicial e final nao prova
+        # perda; nao bloquear a leitura da mesa por erro de OCR do HUD.
+        if not self.auto_rebuy.get() and not self.check_stacks_before_analysis():
             return
         destination = None
         if self.auto_export.get():
