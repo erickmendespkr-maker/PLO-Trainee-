@@ -1878,6 +1878,8 @@ class GUI(tk.Tk):
         ttk.Button(edit, text="Ver inicio", command=lambda: self.preview_edge("start")).pack(side="left", padx=5)
         ttk.Button(edit, text="Ver fim", command=lambda: self.preview_edge("end")).pack(side="left")
         ttk.Button(edit, text="EXPORTAR PERDAS", command=self.export).pack(side="right")
+        ttk.Button(edit, text="EXPORTAR MAOS PARA REVISAO (SEM IA)",
+                   command=self.export_review_candidates).pack(side="right", padx=5)
         ttk.Label(self, text="Uso offline. Leituras de saldo por OCR sao estimativas; revise cada mao, rebuys e limites dos cortes.",
                   foreground="#9b571a").pack(padx=8, pady=2)
 
@@ -3088,6 +3090,101 @@ class GUI(tk.Tk):
         if idx is not None:
             self.candidates[idx].excluded = True
             self.refresh()
+
+    def export_review_candidates(self):
+        """Entrega cortes reais de todas as maos detectadas, sem depender de API.
+
+        Estes clips NAO sao classificados como perdas confirmadas. Sao uma
+        maneira pratica de conferir o pote e o aporte do heroi offline.
+        """
+        if self.busy:
+            return
+        if not self.videos or not self.candidates:
+            messagebox.showwarning(
+                "Revisao offline",
+                "Adicione um video e execute ANALISAR VIDEO(S) sem Gemini, "
+                "ou clique Abrir ultima revisao para aproveitar os horarios.")
+            return
+        candidates = [c for c in self.candidates
+                      if not c.excluded and c.end > c.start
+                      and 1 <= c.table <= 4]
+        if not candidates:
+            messagebox.showwarning("Revisao offline",
+                                   "Nao ha maos candidatas para exportar.")
+            return
+        if not messagebox.askyesno(
+                "Exportar cortes para revisao",
+                f"Gerar {len(candidates)} MP4 separados para revisao?\n\n"
+                "Todos serao marcados como PENDENTES. "
+                "Eles NAO representam perdas comprovadas de 30 BB.\n\n"
+                "Esta opcao funciona 100% localmente, sem Gemini, "
+                "e usa a pasta padrao de MP4.\n\n"
+                "Deseja continuar?"):
+            return
+        try:
+            dest = self.current_output_folder(create=True) / "Maos para revisar"
+            dest.mkdir(parents=True, exist_ok=True)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Pasta dos MP4", str(exc))
+            return
+        videos = self.videos[:]
+        ffmpeg = resource("ffmpeg")
+        if not ffmpeg:
+            messagebox.showerror("FFmpeg", "FFmpeg nao encontrado no Windows.")
+            return
+        self.busy = True
+        self.tell(f"Exportando {len(candidates)} maos em MP4 para revisao offline...")
+        def worker():
+            index = []
+            for i, c in enumerate(candidates, 1):
+                name = (f"REVISAO_{i:03}_mesa{c.table}_"
+                        f"{fmt(c.start).replace(':', '-')}_PENDENTE.mp4")
+                destination = dest / name
+                status = "OK"
+                try:
+                    clip = Clip(
+                        c.start, c.end, c.table,
+                        0.0, "Candidato pendente de revisao",
+                        "Offline", "", False)
+                    export_clip(videos, clip, destination, ffmpeg, layout=c.layout)
+                except Exception as exc:
+                    status = "ERRO: " + str(exc)[-180:]
+                    destination.unlink(missing_ok=True)
+                index.append({
+                    "arquivo": name, "mesa": c.table, "layout": c.layout,
+                    "inicio": fmt(c.start), "fim": fmt(c.end),
+                    "nick": c.nick, "perda_bb": "",
+                    "classificacao": "PENDENTE - NAO E PERDA CONFIRMADA",
+                    "origem": c.source, "estado_analise": c.status,
+                    "resultado_exportacao": status
+                })
+                self.after(0, lambda k=i, st=status:
+                           self.tell(f"Revisao offline: MP4 {k}/{len(candidates)} - {st}"))
+            try:
+                with (dest / "indice_revisao_offline.csv").open(
+                        "w", encoding="utf-8-sig", newline="") as fh:
+                    writer = csv.DictWriter(
+                        fh, fieldnames=list(index[0]), delimiter=";")
+                    writer.writeheader()
+                    writer.writerows(index)
+            except OSError:
+                self.after(0, lambda:
+                           self.tell("AVISO: os MP4 foram processados, "
+                                     "mas o CSV de revisao nao foi salvo."))
+            def done():
+                self.busy = False
+                succeeded = sum(item["resultado_exportacao"] == "OK"
+                                for item in index)
+                self.tell(f"Revisao offline: {succeeded}/{len(candidates)} "
+                          f"MP4 gerados em {dest}")
+                messagebox.showinfo(
+                    "Cortes de revisao",
+                    f"{succeeded} de {len(candidates)} MP4 gerados.\n\n"
+                    f"Pasta: {dest}\n\n"
+                    "IMPORTANTE: sao jogadas candidatas, nao perdas confirmadas. "
+                    "Confira os potes e descarte as que nao perderam 30 BB.")
+            self.after(0, done)
+        threading.Thread(target=worker, daemon=True).start()
 
     def export(self, folder=None, automatic_only=False):
         if self.busy:
