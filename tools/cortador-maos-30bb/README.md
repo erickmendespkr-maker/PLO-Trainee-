@@ -10,8 +10,8 @@ Existe uma **primeira implementação de detecção visual + OCR**, ainda **não
 
 1. Selecionar **um vídeo completo** ou múltiplos MP4 consecutivos.
 2. Escolher a disposição das **quatro mesas**: `4 lado a lado` (padrão no vídeo do usuário; mesa 1 mais à esquerda, mesa 4 mais à direita) ou `2 por 2` (mesa 1 superior esquerda, 2 superior direita, 3 inferior esquerda, 4 inferior direita).
-3. Configurar **uma única vez, por mesa**, a área pequena das **cartas do próprio jogador** e a área numérica do **saldo de fichas** (sem nome nem símbolos adicionais).
-4. Em um quadro **sem cartas**, registrar a referência visual daquela área e informar o valor de **1 big blind em fichas**.
+3. O programa já traz **as quatro regiões das cartas e do saldo pré-calibradas a partir do print**. O jogador principal fica na parte inferior de todas as mesas e é o único com cartas visíveis no pré-flop. As regiões podem ser corrigidas com o mouse se o layout mudar.
+4. Não precisa mais registrar quadro sem cartas: a detecção usa a presença das cartas claras na região fixa do herói. O valor de 1 BB começa em **1**, porque a interface do print já exibe o stack em BB.
 5. O analisador passa pelo **vídeo inteiro** em ordem, amostrando 1 quadro por segundo por meio de FFmpeg, e tenta reconhecer transições **sem cartas → cartas visíveis → sem cartas** em cada mesa separadamente.
 6. Usa Tesseract OCR para estimar o saldo **antes e depois** da mão; seleciona prováveis quedas líquidas **estritamente superiores a 30 BB**, além das mãos com leitura inconclusiva.
 7. Mostra a lista com horários da gravação, mesa e perda **estimada**, e permite conferir/editar os valores e os limites. Você também pode **incluir manualmente** mãos que o OCR não detectou e **salvar/abrir a revisão** em JSON para continuar mais tarde.
@@ -25,7 +25,7 @@ As configurações das regiões das quatro mesas podem ser salvas em JSON e reut
 
 **O programa não identifica automaticamente o nick ~Pulgar~ pelo texto.** Você precisa marcar as cartas e o saldo desse jogador no vídeo de cada mesa. A calibração atual é fixa durante a gravação; se a disposição das mesas mudar, analise o segmento separadamente após nova calibração.
 
-Mãos em que as cartas do herói não aparecem de maneira confiável (ex.: cartas encobertas, exibição de cartas durante todo o vídeo) podem ser ignoradas. Mãos sem flop também são potencialmente detectáveis porque a detecção observa **cartas do herói**, não depende do board.
+A pre-calibração usa posições inferidas de um print, não coordenadas validadas frame a frame no MP4 completo. Imagens de cartas claras e elementos luminosos de interface podem confundir o detector, então confira os retângulos na prévia antes de analisar. Mãos em que as cartas do herói não aparecem de maneira confiável (ex.: cartas encobertas, exibição de cartas durante todo o vídeo) podem ser ignoradas. Mãos sem flop também são potencialmente detectáveis porque a detecção observa **cartas do herói**, não depende do board.
 
 **Portanto não considere os recortes como conjunto completo auditado de todas as perdas sem revisar.** O limiar de 30 BB é estrito (**>30**); perdas de exatamente 30 BB ficam de fora.
 
@@ -53,13 +53,13 @@ Não precisa ter Git.
 **Seu vídeo é horizontal, com quatro janelas verticais lado a lado.** Confirme no topo **Disposição: 4 lado a lado** antes de calibrar. As linhas amarelas devem dividir a prévia em quatro colunas. Na versão antiga as linhas formavam quatro quadrantes e os MP4 saíam incorretos; esta atualização corrige o preview, o mapeamento e o recorte.
 
 - Abra o vídeo e escolha uma **mesa** de 1 a 4.
-- Use **Ir ao tempo global** para chegar a uma mão ou momento adequado.
-- Em **Marcar região**, escolha **cartas** e desenhe um retângulo pequeno envolvendo somente as cartas do herói (sem cobrir nome, mesa, apostas, timer ou mensagens).
-- Escolha **saldo** e desenhe um retângulo bem justo sobre o **valor numérico do saldo do herói**.
-- Navegue até um instante em que o campo de cartas daquela mesa esteja **vazio**; clique em **Registrar referência SEM cartas**.
+- Confira as **regiões predefinidas em verde (cartas) e azul (saldo)**. As quatro mesas estão alinhadas horizontalmente, com o herói na posição inferior.
+- Só se necessário, use **Marcar região → cartas** para corrigir o retângulo das cinco cartas do herói (sem cobrir nome, mesa, apostas, timer ou mensagens).
+- Só se necessário, escolha **saldo** e desenhe um retângulo bem justo sobre o valor numérico do saldo do herói.
+- **Não é necessário registrar referência sem cartas.** O programa procura as cartas claras nos retângulos predefinidos; pressione **Usar regiões do print** para restaurar todas as áreas, se necessário.
 - Informe o valor de uma BB naquela mesa: exemplo fictício R$0,50/R$1,00 significa **1** (na mesma unidade do saldo). Se a interface exibe o saldo já em BB, coloque **1**.
-- Repita nas quatro mesas. Salve a configuração.
-- Clique **ANALISAR VIDEO(S)**; o tempo necessário depende do comprimento do vídeo e do hardware.
+- As quatro mesas já vêm configuradas. Confira se os retângulos cobrem corretamente suas cartas e saldos e, em seguida, salve a configuração.
+- Clique **ANALISAR VIDEO(S)**; a detecção é automática, mas a precisão dos saldos do OCR e a classificação das perdas ainda dependem da revisão humana.
 - Confira individualmente as perdas prováveis e os limites de tempo; use **Conferir/Salvar**. Se incorreto, **Descartar**.
 - Clique **EXPORTAR CONFERIDAS** para gerar MP4 independentes com apenas a mesa escolhida.
 
