@@ -230,11 +230,16 @@ def file_at(videos: list[Video], t: float) -> tuple[Video, float]:
 def crop_filter(v: Video, table: int, layout: str = "grid2x2") -> str:
     if table not in (1, 2, 3, 4):
         raise ValueError("Selecione a mesa 1, 2, 3 ou 4.")
-    if layout == "horizontal4":
-        # Gravacoes do usuario: quatro janelas de poker verticais lado a lado.
-        w, h = v.width // 4, v.height
-        x, y = (table - 1) * w, 0
-        scale = "720:1080"
+    if layout in ("horizontal1", "horizontal2", "horizontal3", "horizontal4"):
+        # 1 a 4 mesas lado a lado, com largura igual em cada trecho do video.
+        count = int(layout[-1])
+        if table > count:
+            raise ValueError(f"Mesa {table} nao existe no layout de {count} mesa(s).")
+        x = round(v.width * (table - 1) / count)
+        x_end = round(v.width * table / count)
+        w, h = x_end - x, v.height
+        y = 0
+        scale = "960:540" if count == 1 else "720:1080"
     elif layout == "grid2x2":
         w, h = v.width // 2, v.height // 2
         x, y = (table - 1) % 2 * w, (table - 1) // 2 * h
