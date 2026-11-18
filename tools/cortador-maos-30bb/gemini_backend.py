@@ -175,7 +175,10 @@ def _image_png(image: Image.Image):
 def _parse_response(message):
     if not isinstance(message, dict):
         return None
-    parts = message.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    candidates = message.get("candidates") or []
+    if not candidates:
+        return None
+    parts = candidates[0].get("content", {}).get("parts", [])
     texts = [p.get("text", "") for p in parts if isinstance(p, dict) and p.get("text")]
     if not texts:
         return None
@@ -266,6 +269,22 @@ class GeminiClient:
                 "mime_type": "image/png", "data": _image_png(image)}})
         payload = self._request(parts)
         return interpret_stack_response(payload, bb, max_stack_bb)
+
+    def read_single(self, image, bb=1.0, max_stack_bb=5000.0):
+        """Teste visual de UMA regiao de saldo; nao serve para confirmar perdas."""
+        parts = [{
+            "text": (
+                "Faca somente a leitura literal do NUMERO DE SALDO no recorte. "
+                "Nao invente digitos. Se nao houver um unico numero claro, use null. "
+                "Retorne apenas JSON: " + '{"value":114.0}' + " ou " +
+                '{"value":null}' + "."
+            )
+        }, {"inline_data": {
+            "mime_type": "image/png", "data": _image_png(image)}}]
+        payload = self._request(parts)
+        if not isinstance(payload, dict):
+            return None
+        return normalize_amount(payload.get("value"), max_stack_bb * bb)
 
     def ping(self):
         """Teste minimo de credencial; conta como uma requisicao."""
