@@ -251,6 +251,19 @@ class Candidate:
     nick_verified: bool = False
 
 
+def net_loss_bb(stack_before, stack_after, bb_value):
+    """Perda liquida em BB a partir dos saldos reais daquela mao, sem stack padrao."""
+    if bb_value <= 0:
+        raise ValueError("BB deve ser positivo.")
+    return (stack_before - stack_after) / bb_value
+
+
+def loss_reaches_threshold(loss_bb, threshold):
+    """O valor de corte e INCLUSIVO (30 BB entra no filtro de 30 BB)."""
+    return loss_bb is not None and (loss_bb >= threshold or
+                                   abs(loss_bb - threshold) <= 1e-9)
+
+
 class HandState:
     """Deteccao de cartas do heroi por diferenca com quadro vazio de referencia."""
     def __init__(self):
@@ -309,11 +322,11 @@ class HandState:
             return
         pre, n_pre = stack_median(data["before"], tesseract, quick=quick)
         post, n_post = stack_median(data["after"], tesseract, quick=quick)
-        loss = None if pre is None or post is None else (pre - post) / bb
+        loss = None if pre is None or post is None else net_loss_bb(pre, post, bb)
         if loss is None:
             status = "INCONCLUSIVO - OCR"
-        elif loss > threshold:
-            status = "POSSIVEL PERDA > LIMITE"
+        elif loss_reaches_threshold(loss, threshold):
+            status = "POSSIVEL PERDA >= LIMITE"
             if n_pre < 2 or n_post < 2:
                 status += " (LEITURA FRACA)"
         else:
@@ -495,7 +508,7 @@ class GUI(tk.Tk):
 
         controls = ttk.Frame(self)
         controls.pack(fill="x", padx=8, pady=5)
-        ttk.Label(controls, text="Limiar (BB):").pack(side="left")
+        ttk.Label(controls, text="Perda minima (BB):").pack(side="left")
         self.threshold = tk.StringVar(value="30")
         ttk.Entry(controls, textvariable=self.threshold, width=7).pack(side="left", padx=5)
         ttk.Button(controls, text="Salvar configuracao", command=self.save_cfg).pack(side="left")
@@ -998,10 +1011,10 @@ class GUI(tk.Tk):
             messagebox.showerror("BB", "Limite BB invalido.")
             return
         eligible = [c for c in self.candidates if c.confirmed and not c.excluded and
-                    c.loss_bb is not None and c.loss_bb > threshold]
+                    loss_reaches_threshold(c.loss_bb, threshold)]
         if not eligible:
             messagebox.showinfo("Exportacao",
-                                "Nenhuma mao > limite com saldo e limites confirmados.")
+                                "Nenhuma mao com perda >= limite e dados confirmados.")
             return
         folder = filedialog.askdirectory(title="Pasta dos MP4 para o instrutor")
         if not folder:
