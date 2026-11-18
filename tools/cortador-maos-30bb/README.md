@@ -13,9 +13,9 @@ Existe uma **primeira implementação de detecção visual + OCR**, ainda **não
 3. Preencha **Nick do jogador** (por padrão, `~Pulgar~`). O programa já traz **as regiões das cartas, do saldo e do nome pré-calibradas a partir do print**. O jogador principal fica na parte inferior de todas as mesas e é o único com cartas visíveis no pré-flop. As regiões podem ser corrigidas com o mouse se o layout mudar.
 4. Em **Marcar região → nick** é possível ajustar a área roxa sobre o nome do jogador, se necessário. O botão **Verificar nick no frame** usa Tesseract OCR para testar se o nome foi reconhecido neste quadro. Não precisa mais registrar quadro sem cartas: a detecção usa a presença das cartas claras na região fixa do herói. O valor de 1 BB começa em **1**, porque a interface do print já exibe o stack em BB.
 5. O analisador passa pelo **vídeo inteiro** em ordem, amostrando 1 quadro por segundo por meio de FFmpeg, e tenta reconhecer transições **sem cartas → cartas visíveis → sem cartas** em cada mesa separadamente.
-6. Usa Tesseract OCR para estimar o saldo **antes e depois** da mão; seleciona prováveis quedas líquidas **estritamente superiores a 30 BB**, além das mãos com leitura inconclusiva.
+6. Usa Tesseract OCR para estimar o saldo **antes e depois** da mão; seleciona prováveis quedas líquidas **de 30 BB ou mais (incluindo exatamente 30 BB)**, além das mãos com leitura inconclusiva.
 7. Mostra a lista com horários da gravação, mesa e perda **estimada**, e permite conferir/editar os valores e os limites. Você também pode **incluir manualmente** mãos que o OCR não detectou e **salvar/abrir a revisão** em JSON para continuar mais tarde.
-8. **Somente as mãos conferidas** e acima do limite são exportadas em **MP4 independentes**, recortadas na mesa correspondente, com início anterior às cartas e fim após a mão; gera também **indice_das_maos.csv**.
+8. **Somente as mãos conferidas** com perda igual ou acima do limite são exportadas em **MP4 independentes**, recortadas na mesa correspondente, com início anterior às cartas e fim após a mão; gera também **indice_das_maos.csv**.
 
 As configurações das regiões das quatro mesas podem ser salvas em JSON e reutilizadas. A revisão das mãos também pode ser salva em arquivo JSON, evitando ter de analisar o vídeo inteiro novamente depois de fechar o programa.
 
@@ -27,7 +27,7 @@ As configurações das regiões das quatro mesas podem ser salvas em JSON e reut
 
 A pre-calibração usa posições inferidas de um print, não coordenadas validadas frame a frame no MP4 completo. Imagens de cartas claras e elementos luminosos de interface podem confundir o detector, então confira os retângulos na prévia antes de analisar. Mãos em que as cartas do herói não aparecem de maneira confiável (ex.: cartas encobertas, exibição de cartas durante todo o vídeo) podem ser ignoradas. Mãos sem flop também são potencialmente detectáveis porque a detecção observa **cartas do herói**, não depende do board.
 
-**Portanto não considere os recortes como conjunto completo auditado de todas as perdas sem revisar.** O limiar de 30 BB é estrito (**>30**); perdas de exatamente 30 BB ficam de fora.
+**Portanto não considere os recortes como conjunto completo auditado de todas as perdas sem revisar.** O limiar de 30 BB é **inclusivo (≥30)**. Não existe saldo inicial padrão de 100 BB: a perda líquida é calculada por `(saldo antes − saldo depois) / valor de 1 BB`. Portanto, 100→70, 150→120 e 200→170 são todos exemplos de perda de 30 BB; uma mão em que o jogador aposta 30 BB e recupera esse valor não entra como perda de 30 BB.
 
 ## Instalação automática guiada (mais fácil)
 
