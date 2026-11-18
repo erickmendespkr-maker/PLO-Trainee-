@@ -486,7 +486,10 @@ def parse_stack(value):
     # A regiao do OCR deve conter SOMENTE o saldo em fichas do jogador.
     # Nunca junte numeros separados por espacos: isso produzia leituras
     # falsas como "154020" a partir de varios textos sobrepostos.
-    candidates = re.findall(r"\d+(?:[.,]\d+)*", value)
+    # Tesseract frequentemente devolve '114, 0' para '114,0'.
+    # Juntar somente quando existe pontuacao decimal explicita.
+    cleaned = re.sub(r"(?<=\\d)([.,])\\s+(?=\\d)", r"\\1", value)
+    candidates = re.findall(r"\d+(?:[.,]\d+)*", cleaned)
     # A caixa do saldo deve conter um unico numero. Dois tokens indicam
     # captura de outro campo da mesa e nao servem para exportacao automatica.
     if len(candidates) != 1:
@@ -655,10 +658,12 @@ class HandState:
              quick=False, native_reader=None, gemini_reader=None):
         if not self.active:
             if self.pending is not None:
-                if not occupied and len(self.pending["after"]) < 3:
+                if not occupied and len(self.pending["after"]) < 6:
                     self.pending["after"].append(stack_img.copy())
                     self.pending["after_times"].append(t)
-                if len(self.pending["after"]) >= 3 or occupied:
+                # Esperar saldo estabilizar apos animacao/pagamento do pote,
+                # sem atravesar o inicio da mao seguinte.
+                if len(self.pending["after"]) >= 6 or occupied:
                     self.finish(table, bb, threshold, tesseract, quick=quick,
                                 native_reader=native_reader,
                                 gemini_reader=gemini_reader)
