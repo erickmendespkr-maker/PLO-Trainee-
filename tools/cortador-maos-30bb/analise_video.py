@@ -117,9 +117,9 @@ def hero_hud_parts(hud):
         "hole": (round(x1 + width * .40), round(y1 + height * .20),
                  round(x1 + width * .94), round(y1 + height * .64)),
         "nick": (round(x1 + width * .11), round(y1 + height * .47),
-                 round(x1 + width * .58), round(y1 + height * .65)),
+                 round(x1 + width * .43), round(y1 + height * .65)),
         "stack": (round(x1 + width * .11), round(y1 + height * .67),
-                  round(x1 + width * .58), round(y1 + height * .80)),
+                  round(x1 + width * .43), round(y1 + height * .80)),
     }
     return {name: roi_tuple(rect) for name, rect in parts.items()}
 
