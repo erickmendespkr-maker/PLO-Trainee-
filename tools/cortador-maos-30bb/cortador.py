@@ -23,7 +23,7 @@ DEFAULT_HERO = "~Pulgar~"
 
 
 def resource(binary: str) -> str:
-    here = Path(__file__).resolve().parent
+    here = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
     exe = binary + (".exe" if os.name == "nt" else "")
     local = here / exe
     return str(local) if local.exists() else (shutil.which(exe) or shutil.which(binary) or "")
@@ -283,7 +283,7 @@ class Editor(tk.Toplevel):
         self.root = root
         self.original = clip
         self.title("Editar / adicionar mão")
-        self.geometry("390x350")
+        self.geometry("430x450")
         self.resizable(False, False)
         current = root.position.get()
         data = clip or Clip(max(0, current - 60), min(root.total, current + 15), getattr(root, "last_table", 1), 31, "Mão para revisão")
@@ -558,7 +558,7 @@ class App(tk.Tk):
                     start = parse_time(col("inicio_global", "inicio", "start"))
                     end = parse_time(col("fim_global", "fim", "end"))
                     table = int(col("mesa", "table") or "0")
-                    loss = float(col("perda_bb", "loss_bb", "bb") or "0")
+                    loss = float((col("perda_bb", "loss_bb", "bb") or "0").replace(",", "."))
                     label = col("descricao", "label", "id") or "Importado do CSV"
                     if start >= 0 and end <= self.total and start < end:
                         self.clips.append(Clip(start, end, table, loss, label, "CSV", "", False))
