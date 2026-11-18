@@ -1111,7 +1111,8 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
             images_before = [read_native_at(at, table, scan_mode) for at in before]
             images_after = [read_native_at(at, table, scan_mode) for at in after]
             result = gemini_client.read_pair(
-                images_before, images_after, bb=bb, max_stack_bb=MAX_STACK_BB)
+                images_before, images_after, bb=bb, max_stack_bb=MAX_STACK_BB,
+                expected_nick=hero_nick.strip() or None)
             gemini_errors = 0
             if result is not None:
                 progress(f"Gemini: mesa {table}, mao em {fmt(data['start'])}, "
@@ -2146,40 +2147,76 @@ class GUI(tk.Tk):
 
 
     def verify_nick_frame(self):
-        if self.frame is None:
-            messagebox.showwarning("Nick", "Carregue um video e clique em Mostrar frame.")
+        if self.frame is None or not self.videos:
+            messagebox.showwarning("Nick", "Carregue o video e clique Mostrar frame.")
             return
         nick = self.nick.get().strip()
         if not nick:
             messagebox.showwarning("Nick", "Preencha o nick do jogador.")
             return
-        table = int(self.table.get())
-        name_rect = self.cfg[str(table)].get("nick")
-        if not name_rect:
-            messagebox.showwarning("Nick", "Marque o HUD unico com cartas, nick e saldo.")
-            return
-        tesseract = resource("tesseract")
-        if not tesseract:
-            messagebox.showwarning("OCR", "Tesseract nao encontrado.")
-            return
         try:
-            values = read_nickname(
-                self.frame.crop(layout_roi(self.cfg[str(table)], table,
-                                           self.layout_id(), "nick")), tesseract)
-            verified = any(nickname_matches(value, nick) for value in values)
-            displayed = " / ".join(values) or "(nao legivel)"
-            if verified:
-                self.tell(f"Mesa {table}: nick {nick} confirmado neste frame.")
-                messagebox.showinfo("Nick reconhecido", f"Mesa {table}: {nick} confirmado.\nOCR: {displayed}")
-            else:
-                self.tell(f"Mesa {table}: nick nao confirmado no HUD verde pelo OCR.")
-                messagebox.showwarning(
-                    "Nick nao confirmado",
-                    f"Mesa {table}: o OCR nao confirmou {nick}.\nLeitura: {displayed}\n\n"
-                    "O programa agora pesquisa a caixa verde inteira. "
-                    "Experimente Testar Gemini no frame, caso esteja ativado.")
-        except Exception as exc:
-            messagebox.showerror("OCR de nick", str(exc))
+            table = int(self.table.get())
+            mode = self.layout_id()
+            if table > layout_count(mode):
+                raise ValueError("Mesa nao aparece neste layout.")
+            hud = layout_roi(self.cfg[str(table)], table, mode, "hero_hud")
+            if hud is None:
+                raise ValueError("Marque um HUD unico antes de verificar o nick.")
+            when = parse_time(self.seek.get())
+            tesseract = resource("tesseract")
+            ffmpeg = resource("ffmpeg")
+            if not tesseract or not ffmpeg:
+                raise ValueError("Tesseract ou FFmpeg nao encontrado.")
+            full_hud = native_stack_crop(self.videos, when, hud, ffmpeg)
+            readings = read_nickname(full_hud, tesseract)
+            matched = any(nickname_matches(line, nick) for line in readings)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+            messagebox.showerror("Verificar nick", str(exc))
+            return
+
+        shown = " / ".join(readings[:8]) or "(sem leitura)"
+        if matched:
+            self.tell(f"Nick {nick} confirmado no HUD completo da mesa {table}.")
+            messagebox.showinfo(
+                "Nick reconhecido", f"Mesa {table}: {nick} confirmado.\nOCR: {shown}")
+            return
+
+        if not self.use_gemini.get() or not read_key():
+            self.tell("Nick nao identificado no HUD completo pelo OCR.")
+            messagebox.showwarning(
+                "Nick ainda nao confirmado",
+                f"O OCR pesquisou o HUD verde inteiro e nao confirmou {nick}.\n"
+                f"Texto: {shown}\n\n"
+                "Com Gemini ativado, o botao pode tentar ler nick e saldo "
+                "no mesmo HUD. Verifique tambem se o nome esta visivel no video.")
+            return
+
+        self.tell(f"OCR nao reconheceu {nick}; consultando Gemini no HUD inteiro...")
+        key = read_key()
+        model = self.gemini_model.get()
+        bb = float(self.cfg[str(table)].get("bb", 1))
+        def worker():
+            try:
+                client = GeminiClient(key, model=model, max_requests=1)
+                fields = client.read_hud_fields(
+                    full_hud, bb=bb, max_stack_bb=MAX_STACK_BB,
+                    expected_nick=nick)
+                recognized = fields["nick"]
+                confirmed = bool(recognized and nickname_matches(recognized, nick))
+                message = (
+                    f"Nick esperado: {nick}\n"
+                    f"Gemini reconheceu: {recognized or '(nao legivel)'}\n"
+                    f"Saldo: {fields['value'] if fields['value'] is not None else '(nao legivel)'}\n\n"
+                    + ("Nick confirmado na imagem." if confirmed else
+                       "Nick inconclusivo; confira a imagem.")
+                )
+                self.after(0, lambda msg=message:
+                           messagebox.showinfo("Nick e saldo no HUD", msg))
+            except GeminiError as exc:
+                self.after(0, lambda msg=str(exc):
+                           messagebox.showwarning("Gemini", msg))
+        threading.Thread(target=worker, daemon=True).start()
+
 
     def set_empty(self):
         table = int(self.table.get())
@@ -2262,11 +2299,11 @@ class GUI(tk.Tk):
 
     def test_gemini_frame(self):
         if not self.videos or self.frame is None:
-            messagebox.showwarning("Gemini", "Carregue o video e use Mostrar frame.")
+            messagebox.showwarning("Gemini", "Carregue o video e clique Mostrar frame.")
             return
         key = read_key()
         if not key:
-            messagebox.showwarning("Gemini", "Clique primeiro em Configurar chave.")
+            messagebox.showwarning("Gemini", "Clique Configurar chave primeiro.")
             return
         try:
             model = self.gemini_model.get()
@@ -2274,33 +2311,46 @@ class GUI(tk.Tk):
             when = parse_time(self.seek.get())
             mode = self.layout_id()
             if table > layout_count(mode):
-                raise ValueError("Mesa indisponivel no instante selecionado.")
-            rect = layout_roi(self.cfg[str(table)], table, mode, "stack")
+                raise ValueError("Mesa indisponivel neste instante.")
+            rect = layout_roi(self.cfg[str(table)], table, mode, "hero_hud")
+            if rect is None:
+                raise ValueError("Este layout nao tem HUD marcado.")
             bb = float(self.cfg[str(table)].get("bb", 1))
+            expected_nick = self.nick.get().strip()
             videos = self.videos[:]
         except (ValueError, KeyError) as exc:
             messagebox.showerror("Gemini", str(exc))
             return
 
-        self.tell("Gemini: testando OCR de UM recorte do saldo...")
+        self.tell("Gemini: lendo nick e saldo no HUD VERDE COMPLETO...")
         def worker():
             try:
                 crop = native_stack_crop(videos, when, rect, resource("ffmpeg"))
                 client = GeminiClient(key, model=model, max_requests=1)
-                value = client.read_single(crop, bb=bb, max_stack_bb=MAX_STACK_BB)
-                if value is None:
-                    result = "Gemini nao leu o saldo com seguranca. Confira o recorte."
-                else:
-                    result = f"Gemini leu {value / bb:g} BB na mesa {table}. Confira no video."
-                self.after(0, lambda: messagebox.showinfo("Teste Gemini", result))
+                fields = client.read_hud_fields(
+                    crop, bb=bb, max_stack_bb=MAX_STACK_BB,
+                    expected_nick=expected_nick)
+                value = fields["value"]
+                found_nick = fields["nick"]
+                result = (
+                    f"HUD completo da mesa {table}\n"
+                    f"Nick lido: {found_nick or '(nao legivel)'}\n"
+                    f"Nick esperado: {expected_nick}\n"
+                    f"Saldo: {value / bb:g} BB" if value is not None else
+                    f"HUD completo da mesa {table}\n"
+                    f"Nick lido: {found_nick or '(nao legivel)'}\n"
+                    f"Nick esperado: {expected_nick}\n"
+                    "Saldo nao legivel."
+                )
+                self.after(0, lambda msg=result:
+                           messagebox.showinfo("Teste Gemini — HUD completo", msg))
             except GeminiError as exc:
                 self.after(0, lambda msg=str(exc):
                            messagebox.showwarning("Teste Gemini", msg))
-            except (OSError, ValueError, RuntimeError) as exc:
+            except (OSError, ValueError, RuntimeError):
                 self.after(0, lambda:
                            messagebox.showwarning(
-                               "Teste Gemini", "Nao foi possivel obter o recorte "
-                               "ou enviar a imagem. Confira a gravacao e a conexao."))
+                               "Teste Gemini", "Falhou a leitura do HUD ou a conexao."))
         threading.Thread(target=worker, daemon=True).start()
 
     def on_table_change(self):
