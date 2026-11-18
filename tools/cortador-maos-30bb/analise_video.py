@@ -578,9 +578,11 @@ class HandState:
         post, n_post = stack_median(data["after"], tesseract, quick=quick, bb=bb)
 
         loss = None if pre is None or post is None else net_loss_bb(pre, post, bb)
-        if quick and (loss is None or loss_reaches_threshold(loss, threshold)):
-            # Uma possivel perda deve passar por outra rodada OCR mais rigorosa.
-            # A fase 1 e rapida; so perdas/erros consomem processamento extra.
+        if quick and (loss_reaches_threshold(loss, threshold) or
+                      (loss is None and (pre is not None or post is not None))):
+            # Rechecar apenas possiveis perdas ou leitura parcialmente legivel.
+            # Se ambos os lados sao ilegíveis, evitar ate 12 chamadas extras
+            # por mao: a ROI provavelmente precisa ser corrigida.
             detail_pre, n_dp = stack_median(data["before"], tesseract, quick=False, bb=bb)
             detail_post, n_da = stack_median(data["after"], tesseract, quick=False, bb=bb)
             if detail_pre is not None and detail_post is not None:
