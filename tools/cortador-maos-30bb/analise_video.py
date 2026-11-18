@@ -123,7 +123,7 @@ def parse_stack(value):
         return None
 
 
-def ocr_stack(img, tesseract):
+def ocr_stack(img, tesseract, quick=False):
     # Binarizacao com 2 passes (interface clara/escura).
     sample = ImageOps.autocontrast(img.convert("L").resize((img.width * 4, img.height * 4)))
     sample = ImageEnhance.Contrast(sample).enhance(2.4)
@@ -142,6 +142,8 @@ def ocr_stack(img, tesseract):
                 val = parse_stack(p.stdout)
                 if val is not None:
                     values.append(val)
+                    if quick:  # no fast mode do not perform a redundant second OCR pass
+                        break
     if not values:
         return None
     if len(values) == 2 and abs(values[0] - values[1]) > max(3, values[0] * .08):
@@ -189,15 +191,25 @@ def read_nickname(image, tesseract):
     return readings
 
 
-def stack_median(images, tesseract):
+def stack_median(images, tesseract, quick=False):
+    """Analise rapida: ate duas imagens, um OCR por imagem se legivel."""
     values = []
-    for image in images:
+    samples = images[-2:] if quick else images
+    for sample in samples:
         try:
-            v = ocr_stack(image, tesseract)
+            v = ocr_stack(sample, tesseract, quick=quick)
             if v is not None:
                 values.append(v)
         except (subprocess.SubprocessError, OSError):
             continue
+    if quick and not values and len(images) > 2:
+        # Salvaguarda para leitura ausente: terceira imagem em modo detalhado.
+        try:
+            retry = ocr_stack(images[0], tesseract, quick=False)
+            if retry is not None:
+                values.append(retry)
+        except (subprocess.SubprocessError, OSError):
+            pass
     if not values:
         return None, 0
     middle = statistics.median(values)
@@ -236,13 +248,13 @@ class HandState:
         self.pending = None
         self.results = []
 
-    def feed(self, t, occupied, stack_img, table, bb, threshold, tesseract):
+    def feed(self, t, occupied, stack_img, table, bb, threshold, tesseract, quick=False):
         if not self.active:
             if self.pending is not None:
                 if not occupied and len(self.pending["after"]) < 3:
                     self.pending["after"].append(stack_img.copy())
                 if len(self.pending["after"]) >= 3 or occupied:
-                    self.finish(table, bb, threshold, tesseract)
+                    self.finish(table, bb, threshold, tesseract, quick=quick)
             if occupied:
                 if self.on_count == 0:
                     self.on_start = t
@@ -273,13 +285,13 @@ class HandState:
                 self.off_count = 0
                 self.empty_frames.clear()
 
-    def finish(self, table, bb, threshold, tesseract):
+    def finish(self, table, bb, threshold, tesseract, quick=False):
         data = self.pending
         self.pending = None
         if not data:
             return
-        pre, n_pre = stack_median(data["before"], tesseract)
-        post, n_post = stack_median(data["after"], tesseract)
+        pre, n_pre = stack_median(data["before"], tesseract, quick=quick)
+        post, n_post = stack_median(data["after"], tesseract, quick=quick)
         loss = None if pre is None or post is None else (pre - post) / bb
         if loss is None:
             status = "INCONCLUSIVO - OCR"
@@ -294,7 +306,7 @@ class HandState:
             round(loss, 2) if loss is not None else None, pre, post, status))
 
 
-def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~"):
+def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~", quick=True):
     tesseract = resource("tesseract")
     ffmpeg = resource("ffmpeg")
     if not tesseract:
@@ -359,7 +371,7 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~"):
                     else:
                         occupied = changed_fraction(frame, cfg["empty"], cfg["hole"]) >= cfg["min_change"]
                     states[table].feed(t, occupied, frame.crop(cfg["stack"]), table,
-                                       cfg["bb"], threshold, tesseract)
+                                       cfg["bb"], threshold, tesseract, quick=quick)
                 n += 1
                 if n % 60 == 0:
                     progress(f"{Path(v.path).name}: {fmt(n)} / {fmt(v.duration)} analisados")
@@ -375,7 +387,7 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~"):
     candidates = []
     for table, state in states.items():
         if state.pending:
-            state.finish(table, table_cfg[table]["bb"], threshold, tesseract)
+            state.finish(table, table_cfg[table]["bb"], threshold, tesseract, quick=quick)
         candidates.extend(state.results)
         if state.active:
             candidates.append(Candidate(max(0, state.start_at - 5), total, table,
@@ -407,6 +419,7 @@ class GUI(tk.Tk):
         self.busy = False
         self.layout = tk.StringVar(value="4 lado a lado")
         self.nick = tk.StringVar(value="~Pulgar~")
+        self.quick = tk.BooleanVar(value=True)
         self.cfg = screenshot_profile()
         self._ui()
         self.draw()
@@ -453,6 +466,7 @@ class GUI(tk.Tk):
         ttk.Entry(row2, textvariable=self.nick, width=18).pack(side="left")
         ttk.Button(row2, text="Verificar nick no frame", command=self.verify_nick_frame).pack(
             side="left", padx=7)
+        ttk.Checkbutton(row2, text="OCR rapido", variable=self.quick).pack(side="left", padx=4)
         self.table.trace_add("write", lambda *_: self.on_table_change())
 
         self.canvas = tk.Canvas(self, width=VIEW_W, height=VIEW_H, background="#181818",
@@ -765,7 +779,8 @@ class GUI(tk.Tk):
         path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("Configuracao", "*.json")])
         if path:
             Path(path).write_text(json.dumps(
-                {"layout": self.layout.get(), "nick": self.nick.get().strip(), "tables": self.cfg},
+                {"layout": self.layout.get(), "nick": self.nick.get().strip(),
+                 "quick": self.quick.get(), "tables": self.cfg},
                 indent=2), encoding="utf-8")
             self.tell("Configuracao salva.")
 
@@ -777,6 +792,7 @@ class GUI(tk.Tk):
                 settings = data.get("tables", data)
                 self.cfg = {str(i): settings[str(i)] for i in TABLES}
                 self.nick.set(data.get("nick", "~Pulgar~"))
+                self.quick.set(bool(data.get("quick", True)))
                 self.layout.set(data.get("layout", "2 por 2" if "tables" not in data else "4 lado a lado"))
                 self.on_table_change()
                 self.draw()
@@ -810,7 +826,7 @@ class GUI(tk.Tk):
             return
         payload = {"version": 2, "videos": [asdict(v) for v in self.videos],
                    "layout": self.layout.get(), "config": self.cfg, "threshold": self.threshold.get(),
-                   "nick": self.nick.get().strip(),
+                   "nick": self.nick.get().strip(), "quick": self.quick.get(),
                    "candidates": [asdict(c) for c in self.candidates]}
         try:
             Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -835,6 +851,7 @@ class GUI(tk.Tk):
             self.cfg = data.get("config", self.cfg)
             self.layout.set(data.get("layout", "2 por 2"))
             self.nick.set(data.get("nick", "~Pulgar~"))
+            self.quick.set(bool(data.get("quick", True)))
             self.threshold.set(str(data.get("threshold", 30)))
             self.info.configure(text=f"{len(videos)} arquivo(s) | {fmt(self.total)}")
             self.on_table_change()
@@ -877,11 +894,12 @@ class GUI(tk.Tk):
         cfg = json.loads(json.dumps(self.cfg))
         videos = self.videos[:]
         hero_nick = self.nick.get().strip()
+        quick = self.quick.get()
         def worker():
             try:
                 results = scan_videos(videos, cfg, threshold,
                                       lambda msg: self.after(0, lambda m=msg: self.tell(m)),
-                                      hero_nick=hero_nick)
+                                      hero_nick=hero_nick, quick=quick)
                 self.after(0, lambda: self.finished(results))
             except Exception as exc:
                 self.after(0, lambda e=str(exc): self.failed(e))
