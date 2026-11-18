@@ -1755,6 +1755,7 @@ class GUI(tk.Tk):
             return
         try:
             save_key(candidate)
+            self.use_gemini.set(True)
             self.ai_status.configure(text="Chave local: configurada")
             self.tell("Chave Gemini salva com protecao do Windows. "
                       "A chave nao fica no repositorio.")
