@@ -18,7 +18,7 @@ from collections import deque
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 try:
     from PIL import Image, ImageChops, ImageEnhance, ImageOps, ImageStat, ImageTk
@@ -26,6 +26,10 @@ except ImportError as exc:
     raise SystemExit("Pillow ausente. Execute INICIAR_ANALISE_VIDEO.bat para instalar.") from exc
 
 from cortador import Clip, export_clip, file_at, fmt, parse_time, probe, resource
+from gemini_backend import (
+    GeminiClient, GeminiError, GeminiLimitError,
+    DEFAULT_MODEL, ALLOWED_MODELS, read_key, save_key, remove_key
+)
 
 W, H = 960, 540
 VIEW_W, VIEW_H = 720, 405
@@ -575,6 +579,7 @@ class Candidate:
     layout: str = "horizontal4"
     auto_verified: bool = False
     reliability: str = ""
+    source: str = "OCR"
 
 
 def eligible_losses(candidates, threshold, automatic_only=False):
@@ -616,7 +621,7 @@ class HandState:
         self.results = []
 
     def feed(self, t, occupied, stack_img, table, bb, threshold, tesseract,
-             quick=False, native_reader=None):
+             quick=False, native_reader=None, gemini_reader=None):
         if not self.active:
             if self.pending is not None:
                 if not occupied and len(self.pending["after"]) < 3:
@@ -624,7 +629,8 @@ class HandState:
                     self.pending["after_times"].append(t)
                 if len(self.pending["after"]) >= 3 or occupied:
                     self.finish(table, bb, threshold, tesseract, quick=quick,
-                                native_reader=native_reader)
+                                native_reader=native_reader,
+                                gemini_reader=gemini_reader)
             if occupied:
                 if self.on_count == 0:
                     self.on_start = t
@@ -658,7 +664,7 @@ class HandState:
                 self.empty_frames.clear()
 
     def finish(self, table, bb, threshold, tesseract, quick=False,
-               native_reader=None):
+               native_reader=None, gemini_reader=None):
         data = self.pending
         self.pending = None
         if not data:
@@ -713,6 +719,18 @@ class HandState:
                 pre, post = n_before, n_after
                 n_pre, n_post = c_before, c_after
 
+        used_gemini = False
+        if gemini_reader is not None and (
+                loss is None or n_pre < 2 or n_post < 2):
+            # Gemini so recebe quatro recortes quando OCR nativo e reduzido
+            # nao deram leituras suficientes. Nada de video completo.
+            gemini_values = gemini_reader(data, table, self.scan_mode, bb)
+            if gemini_values is not None:
+                pre, post = gemini_values
+                loss = net_loss_bb(pre, post, bb)
+                n_pre = n_post = 2
+                used_gemini = True
+
         if loss is None:
             self.results.append(Candidate(
                 max(0, data["start"] - 5), data["end"] + 5, table,
@@ -729,18 +747,23 @@ class HandState:
         strong = (n_pre >= 2 and n_post >= 2 and
                   0 <= post / bb <= MAX_STACK_BB and
                   0 <= pre / bb <= MAX_STACK_BB)
-        status = ("PERDA >= LIMITE - OCR CONSISTENTE" if strong else
-                  "POSSIVEL PERDA >= LIMITE - OCR FRACO")
+        if used_gemini:
+            status = "PERDA >= LIMITE - GEMINI (2 ANTES + 2 DEPOIS)"
+        else:
+            status = ("PERDA >= LIMITE - OCR CONSISTENTE" if strong else
+                      "POSSIVEL PERDA >= LIMITE - OCR FRACO")
         self.results.append(Candidate(
             max(0, data["start"] - 5), data["end"] + 5, table,
             round(loss, 2), pre, post, status,
             layout=self.layout, auto_verified=strong,
-            reliability=f"antes {n_pre} leituras / depois {n_post} leituras"))
+            reliability=(f"Gemini: 2 quadros antes / 2 depois" if used_gemini else
+                         f"OCR: antes {n_pre} / depois {n_post} leituras"),
+            source="Gemini" if used_gemini else "OCR"))
 
 
 def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                 quick=True, initial_layout="Automatico (1 a 4 mesas)", events=None,
-                detected_events=None):
+                detected_events=None, gemini_client=None):
     """Varre uma unica gravacao ou varios videos, com ate 4 mesas e eventos de layout."""
     tesseract = resource("tesseract")
     ffmpeg = resource("ffmpeg")
@@ -800,6 +823,43 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
         roi = table_cfg[(scan_mode, table)]["stack"]
         return native_stack_crop(videos, global_second, roi, ffmpeg)
 
+    ai_alerts = set()
+
+    def read_with_gemini(data, table, scan_mode, bb):
+        if gemini_client is None or gemini_client.disabled_reason:
+            return None
+
+        def distinct_last_two(name):
+            times = []
+            for at in data.get(name + "_times", []):
+                if not any(abs(at - prev) < 0.5 for prev in times):
+                    times.append(at)
+            return times[-2:]
+
+        before = distinct_last_two("before")
+        after = distinct_last_two("after")
+        if len(before) < 2 or len(after) < 2:
+            return None
+
+        try:
+            images_before = [read_native_at(at, table, scan_mode) for at in before]
+            images_after = [read_native_at(at, table, scan_mode) for at in after]
+            result = gemini_client.read_pair(
+                images_before, images_after, bb=bb, max_stack_bb=MAX_STACK_BB)
+            if result is not None:
+                progress(f"Gemini: mesa {table}, mao em {fmt(data['start'])}, "
+                         "quatro saldos coerentes.")
+            return result
+        except GeminiLimitError as exc:
+            if "limit" not in ai_alerts:
+                progress(f"Gemini suspenso: {exc}")
+                ai_alerts.add("limit")
+        except (GeminiError, OSError, ValueError, RuntimeError) as exc:
+            if "error" not in ai_alerts:
+                progress(f"Gemini indisponivel em um trecho: {exc}")
+                ai_alerts.add("error")
+        return None
+
     def close_state(table, end_time, reason):
         state = states.pop(table, None)
         if state is None:
@@ -808,7 +868,8 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
         cfg = table_cfg.get(key)
         if state.pending and cfg is not None:
             state.finish(table, cfg["bb"], threshold, tesseract, quick=quick,
-                         native_reader=read_native_at)
+                         native_reader=read_native_at,
+                         gemini_reader=read_with_gemini)
         for candidate in state.results:
             candidate.start = max(candidate.start, segment_start)
             candidate.end = min(candidate.end, end_time)
@@ -927,7 +988,8 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                                                     cfg["hole"]) >= cfg["min_change"]
                     states[table].feed(t, occupied, frame.crop(cfg["stack"]), table,
                                        cfg["bb"], threshold, tesseract, quick=quick,
-                                       native_reader=read_native_at)
+                                       native_reader=read_native_at,
+                                       gemini_reader=read_with_gemini)
                 if seen:
                     detected_frames += 1
                 n += 1
