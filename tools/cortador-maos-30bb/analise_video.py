@@ -31,6 +31,7 @@ from gemini_backend import (
     DEFAULT_MODEL, ALLOWED_MODELS, read_key, save_key, remove_key
 )
 from hud_recognition import is_full_hud, read_hud_stack, read_hud_nick
+from pasta_saida import load_export_folder, save_export_folder, valid_export_folder
 
 W, H = 960, 540
 VIEW_W, VIEW_H = 720, 405
@@ -1526,6 +1527,7 @@ class GUI(tk.Tk):
         self.gemini_limit = tk.StringVar(value="40")
         self.show_inconclusive = tk.BooleanVar(value=False)
         self.auto_export_folder = None
+        self.output_dir = tk.StringVar(value=str(load_export_folder()))
         self.cfg = screenshot_profile()
         self.markings_source = "Pre-calibracao do print"
         preset = default_markings_path()
@@ -1658,6 +1660,15 @@ class GUI(tk.Tk):
                    command=self.force_auto_align).pack(side="left", padx=4)
         ttk.Label(review_ai, text="Usa os horarios da revisao salva, sem ler o video inteiro.",
                   foreground="#696969").pack(side="left", padx=8)
+        output_row = ttk.Frame(self)
+        output_row.pack(fill="x", padx=8, pady=(2, 4))
+        ttk.Label(output_row, text="Pasta padrao dos MP4:").pack(side="left", padx=(0, 5))
+        ttk.Entry(output_row, textvariable=self.output_dir,
+                  state="readonly").pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ttk.Button(output_row, text="Alterar pasta",
+                   command=self.choose_output_folder).pack(side="left", padx=3)
+        ttk.Button(output_row, text="Abrir pasta",
+                   command=self.open_output_folder).pack(side="left", padx=3)
         self.status = ttk.Label(self, text="Aguardando videos e calibracao de cada mesa.")
         self.status.pack(fill="x", padx=8)
 
@@ -2535,6 +2546,43 @@ class GUI(tk.Tk):
             self.tell(f"Revisao aberta: {len(self.candidates)} candidatas. Confira e exporte.")
         except Exception as exc:
             messagebox.showerror("Abrir revisao", str(exc))
+
+    def current_output_folder(self, create=False):
+        """Pasta selecionada pelo usuario, reutilizada em todas as exportacoes."""
+        path = valid_export_folder(self.output_dir.get())
+        if create:
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def choose_output_folder(self):
+        """Alterar uma vez e lembrar no Windows entre as execucoes."""
+        if self.busy:
+            return
+        current = self.current_output_folder()
+        initial = current if current.is_dir() else current.parent
+        while not initial.is_dir() and initial != initial.parent:
+            initial = initial.parent
+        chosen = filedialog.askdirectory(
+            title="Escolha a pasta padrao para salvar as maos analisadas",
+            initialdir=str(initial))
+        if not chosen:
+            return
+        try:
+            folder = save_export_folder(chosen)
+            self.output_dir.set(str(folder))
+            self.tell(f"Pasta padrao dos MP4 salva: {folder}")
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Pasta de saida", str(exc))
+
+    def open_output_folder(self):
+        try:
+            folder = self.current_output_folder(create=True)
+            if os.name == "nt":
+                os.startfile(str(folder))
+            else:
+                messagebox.showinfo("Pasta de saida", str(folder))
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Pasta de saida", str(exc))
 
     def recheck_inconclusive(self):
         """Recupera resultado de uma execucao anterior usando a revisao JSON."""
