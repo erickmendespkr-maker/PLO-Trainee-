@@ -479,7 +479,7 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
         state = states.pop(table, None)
         if state is None:
             return
-        key = (state.layout, table)
+        key = (state.scan_mode, table)
         cfg = table_cfg.get(key)
         if state.pending and cfg is not None:
             state.finish(table, cfg["bb"], threshold, tesseract, quick=quick)
@@ -541,6 +541,7 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
                         states[table] = HandState()
                         states[table].layout = (
                             "horizontal4" if mode == "auto4" else mode)
+                        states[table].scan_mode = mode
                     missing_counts[table] = 0
 
                     key = (mode, table)
@@ -585,7 +586,9 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
     for candidate in collected:
         candidate.end = min(total, candidate.end)
         candidate.nick = hero_nick.strip()
-        candidate.nick_verified = nick_verified.get((candidate.layout, candidate.table), False)
+        key = ("auto4" if candidate.layout == "horizontal4" and
+               "auto4" in all_modes else candidate.layout, candidate.table)
+        candidate.nick_verified = nick_verified.get(key, False)
         if hero_nick.strip() and not candidate.nick_verified:
             candidate.status += " | NICK NAO CONFIRMADO"
     progress(f"Video completo: {len(collected)} candidatas/pendencias. "
@@ -1029,7 +1032,7 @@ class GUI(tk.Tk):
         if path:
             Path(path).write_text(json.dumps(
                 {"layout": self.layout.get(), "nick": self.nick.get().strip(),
-                 "quick": self.quick.get(), "tables": self.cfg},
+                 "quick": self.quick.get(), "timeline": self.timeline, "tables": self.cfg},
                 indent=2), encoding="utf-8")
             self.tell("Configuracao salva.")
 
@@ -1043,6 +1046,8 @@ class GUI(tk.Tk):
                 self.nick.set(data.get("nick", "~Pulgar~"))
                 self.quick.set(bool(data.get("quick", True)))
                 self.layout.set(data.get("layout", "2 por 2" if "tables" not in data else "4 lado a lado"))
+                self.timeline = sorted(data.get("timeline", []), key=lambda x: float(x["start"]))
+                self.refresh_changes()
                 self.on_table_change()
                 self.draw()
                 self.tell("Configuracao carregada.")
@@ -1060,7 +1065,9 @@ class GUI(tk.Tk):
         self.candidates.append(Candidate(start, min(start + 60, self.total),
                                          int(self.table.get()), None, None, None,
                                          "ADICIONADA MANUALMENTE - REVISAR",
-                                         nick=self.nick.get().strip()))
+                                         nick=self.nick.get().strip(),
+                                         layout=("horizontal4" if self.layout_id() == "auto4"
+                                                 else self.layout_id())))
         self.refresh()
         self.grid.selection_set(str(len(self.candidates)-1))
         self.grid.see(str(len(self.candidates)-1))
@@ -1076,6 +1083,7 @@ class GUI(tk.Tk):
         payload = {"version": 2, "videos": [asdict(v) for v in self.videos],
                    "layout": self.layout.get(), "config": self.cfg, "threshold": self.threshold.get(),
                    "nick": self.nick.get().strip(), "quick": self.quick.get(),
+                   "timeline": self.timeline,
                    "candidates": [asdict(c) for c in self.candidates]}
         try:
             Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1099,6 +1107,8 @@ class GUI(tk.Tk):
             self.candidates = [Candidate(**entry) for entry in data["candidates"]]
             self.cfg = data.get("config", self.cfg)
             self.layout.set(data.get("layout", "2 por 2"))
+            self.timeline = sorted(data.get("timeline", []), key=lambda x: float(x["start"]))
+            self.refresh_changes()
             self.nick.set(data.get("nick", "~Pulgar~"))
             self.quick.set(bool(data.get("quick", True)))
             self.threshold.set(str(data.get("threshold", 30)))
@@ -1122,7 +1132,12 @@ class GUI(tk.Tk):
                 raise ValueError("Limite BB precisa ser positivo.")
             if not self.nick.get().strip():
                 raise ValueError("Preencha o nick do jogador principal.")
-            for table in TABLES:
+            modes = {layout_key(self.layout.get())}
+            modes.update(layout_key(e["layout"]) for e in self.timeline)
+            required = set()
+            for mode in modes:
+                required.update(range(1, layout_count(mode) + 1))
+            for table in sorted(required):
                 data = self.cfg[str(table)]
                 for key in ("hole", "stack"):
                     if not data.get(key):
@@ -1144,11 +1159,14 @@ class GUI(tk.Tk):
         videos = self.videos[:]
         hero_nick = self.nick.get().strip()
         quick = self.quick.get()
+        initial_layout = self.layout.get()
+        events = [entry.copy() for entry in self.timeline]
         def worker():
             try:
                 results = scan_videos(videos, cfg, threshold,
                                       lambda msg: self.after(0, lambda m=msg: self.tell(m)),
-                                      hero_nick=hero_nick, quick=quick)
+                                      hero_nick=hero_nick, quick=quick,
+                                      initial_layout=initial_layout, events=events)
                 self.after(0, lambda: self.finished(results))
             except Exception as exc:
                 self.after(0, lambda e=str(exc): self.failed(e))
@@ -1245,7 +1263,6 @@ class GUI(tk.Tk):
         self.busy = True
         self.tell(f"Exportando {len(eligible)} maos conferidas...")
         hero_nick = self.nick.get().strip()
-        layout = self.layout_id()
         def worker():
             logs = []
             for i, c in enumerate(eligible, 1):
@@ -1255,11 +1272,12 @@ class GUI(tk.Tk):
                     clip = Clip(c.start, c.end, c.table, c.loss_bb, "Video OCR",
                                 "Video", "", True)
                     export_clip(self.videos, clip, Path(folder) / filename,
-                                resource("ffmpeg"), layout=layout)
+                                resource("ffmpeg"), layout=c.layout)
                 except Exception as exc:
                     status = "ERRO: " + str(exc)[-180:]
                 logs.append({"arquivo": filename, "nick": c.nick or hero_nick,
                              "nick_ocr_confirmado": c.nick_verified, "mesa": c.table,
+                             "disposicao": c.layout,
                              "inicio": fmt(c.start), "fim": fmt(c.end),
                              "perda_bb_conferida": c.loss_bb, "status": status})
                 self.after(0, lambda j=i, s=status: self.tell(f"Exportado {j}/{len(eligible)}: {s}"))
