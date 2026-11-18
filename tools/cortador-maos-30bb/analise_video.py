@@ -2630,9 +2630,10 @@ class GUI(tk.Tk):
             return
         folder = None
         if self.auto_export.get():
-            folder = filedialog.askdirectory(
-                title="Salvar MP4 das perdas recuperadas com IA")
-            if not folder:
+            try:
+                folder = str(self.current_output_folder(create=True))
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Pasta dos MP4", str(exc))
                 return
         current = [Candidate(**asdict(c)) for c in self.candidates]
         config = json.loads(json.dumps(self.cfg))
@@ -2762,9 +2763,10 @@ class GUI(tk.Tk):
             return
         destination = None
         if self.auto_export.get():
-            destination = filedialog.askdirectory(
-                title="Escolha a pasta para os MP4 das perdas detectadas")
-            if not destination:
+            try:
+                destination = str(self.current_output_folder(create=True))
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Pasta dos MP4", str(exc))
                 return
         self.auto_export_folder = destination
         self.busy = True
@@ -2905,8 +2907,10 @@ class GUI(tk.Tk):
         eligible = eligible_losses(self.candidates, threshold,
                                    automatic_only=automatic_only)
         if folder is None:
-            folder = filedialog.askdirectory(title="Pasta dos MP4 das perdas")
-            if not folder:
+            try:
+                folder = str(self.current_output_folder(create=True))
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Pasta dos MP4", str(exc))
                 return
         dest = Path(folder)
         try:
