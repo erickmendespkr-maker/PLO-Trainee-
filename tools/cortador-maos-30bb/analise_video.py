@@ -1305,7 +1305,7 @@ class GUI(tk.Tk):
         self.nick = tk.StringVar(value="~Pulgar~")
         self.quick = tk.BooleanVar(value=True)
         self.auto_export = tk.BooleanVar(value=True)
-        self.use_gemini = tk.BooleanVar(value=False)
+        self.use_gemini = tk.BooleanVar(value=bool(read_key()))
         self.gemini_model = tk.StringVar(value=DEFAULT_MODEL)
         self.gemini_limit = tk.StringVar(value="40")
         self.show_inconclusive = tk.BooleanVar(value=False)
@@ -1403,6 +1403,8 @@ class GUI(tk.Tk):
                   width=5).pack(side="left")
         ttk.Button(airow, text="Configurar chave",
                    command=self.configure_gemini).pack(side="left", padx=5)
+        ttk.Button(airow, text="Ativar chave copiada",
+                   command=self.import_copied_gemini_key).pack(side="left", padx=3)
         ttk.Button(airow, text="Testar Gemini no frame",
                    command=self.test_gemini_frame).pack(side="left", padx=4)
         self.ai_status = ttk.Label(
@@ -1926,6 +1928,29 @@ class GUI(tk.Tk):
         except ValueError:
             messagebox.showerror("BB", "Informe quanto vale 1 BB em fichas na tela.")
 
+    def import_copied_gemini_key(self):
+        """Importacao em um clique do clipboard, mediante clique explicito."""
+        if not messagebox.askokcancel(
+                "Ativar Gemini no Windows",
+                "Cole primeiro uma CHAVE NOVA no clipboard (Ctrl+C) e clique OK. "
+                "A chave enviada no chat deve ser revogada.\\n\\n"
+                "A chave ficara protegida pelo Windows e sera reutilizada "
+                "nas proximas execucoes, sem configurar outra vez. "
+                "Somente recortes de saldos serao enviados ao Google "
+                "quando voce ativar o Gemini."):
+            return
+        try:
+            value = self.clipboard_get()
+            save_key(value)
+            self.use_gemini.set(True)
+            self.ai_status.configure(text="Chave local: configurada")
+            self.tell("Gemini ativado. Chave salva no Windows; nao sera "
+                      "solicitada nas proximas analises.")
+        except (tk.TclError, OSError, GeminiError) as exc:
+            messagebox.showerror("Ativar Gemini", 
+                                 "Nao foi possivel importar a chave copiada. "
+                                 "Copie uma chave nova do AI Studio e tente novamente.")
+
     def configure_gemini(self):
         """Solicita a chave no computador, nunca a coloca no GitHub ou JSON."""
         if not messagebox.askokcancel(
@@ -2020,7 +2045,8 @@ class GUI(tk.Tk):
                 self.nick.set(data.get("nick", "~Pulgar~"))
                 self.quick.set(bool(data.get("quick", True)))
                 self.auto_export.set(bool(data.get("auto_export", True)))
-                self.use_gemini.set(bool(data.get("use_gemini", False)))
+                self.use_gemini.set(
+                    bool(read_key()) and bool(data.get("use_gemini", True)))
                 saved_model = data.get("gemini_model", DEFAULT_MODEL)
                 self.gemini_model.set(
                     saved_model if saved_model in ALLOWED_MODELS else DEFAULT_MODEL)
@@ -2152,7 +2178,8 @@ class GUI(tk.Tk):
             self.nick.set(data.get("nick", "~Pulgar~"))
             self.quick.set(bool(data.get("quick", True)))
             self.auto_export.set(bool(data.get("auto_export", True)))
-            self.use_gemini.set(bool(data.get("use_gemini", False)))
+            self.use_gemini.set(
+                bool(read_key()) and bool(data.get("use_gemini", True)))
             saved_model = data.get("gemini_model", DEFAULT_MODEL)
             self.gemini_model.set(
                 saved_model if saved_model in ALLOWED_MODELS else DEFAULT_MODEL)
