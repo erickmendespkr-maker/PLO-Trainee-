@@ -126,6 +126,23 @@ def table_visible(frame, bounds, strict=True):
     return 16 <= felt <= 236 and abs(felt - upper) >= 10
 
 
+def vertical_seam_strength(frame, x):
+    """Fração de alturas com borda vertical perto de um separador entre mesas."""
+    if not (10 <= x <= W - 10):
+        return 0.
+    img = frame.convert("L")
+    px = img.load()
+    evidence = 0
+    sampled = 0
+    for y in range(32, H - 25, 14):
+        sampled += 1
+        values = [px[x + dx, y] for dx in (-8, -6, -4, -2, 0, 2, 4, 6, 8)]
+        maximum = max(abs(values[i] - values[i+1]) for i in range(len(values)-1))
+        if maximum >= 18:
+            evidence += 1
+    return evidence / max(sampled, 1)
+
+
 def infer_horizontal_layout(frame, previous=None):
     """Inferencia conservadora de 1 a 4 colunas pela repeticao visual das mesas.
 
@@ -135,7 +152,7 @@ def infer_horizontal_layout(frame, previous=None):
     """
     gray = frame.convert("L")
     scores = {}
-    present_slots = {}
+    seams_by_mode = {}
     for count in (2, 3, 4):
         mode = f"horizontal{count}"
         slots = []
@@ -147,7 +164,11 @@ def infer_horizontal_layout(frame, previous=None):
             if ImageStat.Stat(part).stddev[0] < 7:
                 continue
             slots.append((table, part))
-        present_slots[mode] = [index for index, _ in slots]
+        boundary_scores = [
+            vertical_seam_strength(gray, round(W * index / count))
+            for index in range(1, count)]
+        seam = statistics.mean(boundary_scores)
+        seams_by_mode[mode] = seam
         if len(slots) < 2:
             continue
         similarities = []
@@ -160,7 +181,13 @@ def infer_horizontal_layout(frame, previous=None):
         inconsistency = (max(similarities) - min(similarities)) if len(similarities) > 2 else 0.
         coverage = len(slots) / count
         scores[mode] = (consistency - .18 * inconsistency +
-                        .08 * coverage + .025 * (count - 2))
+                        .08 * coverage + .025 * (count - 2) +
+                        .12 * seam)
+    # Sem divisorias verticais, a semelhanca entre duas metades da mesma
+    # mesa unica pode parecer falsamente duas mesas repetidas.
+    if scores and max(seams_by_mode.get(mode, 0.) for mode in scores) < .14:
+        if table_visible(gray, layout_bounds("horizontal1", 1), strict=False):
+            return "horizontal1", .70, scores
     if scores:
         ordered = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         mode, score = ordered[0]
