@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import difflib
 import io
 import json
 import os
@@ -12,6 +13,7 @@ import statistics
 import subprocess
 import tempfile
 import threading
+import unicodedata
 from collections import deque
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -42,6 +44,7 @@ def screenshot_profile():
         out[str(table)] = {
             "hole": [dx + 128, 434, dx + 206, 484],
             "stack": [dx + 97, 488, dx + 153, 510],
+            "nick": [dx + 91, 472, dx + 155, 496],
             "bb": "1", "detector": "bright",
             "bright_cutoff": 165, "min_bright": .18,
             "profile": "4_colunas_heroi_inferior_v1"
@@ -146,6 +149,46 @@ def ocr_stack(img, tesseract):
     return statistics.median(values)
 
 
+def normalize_nick(value):
+    """Ignora acentos, caixa, sinais e espacos para comparar nome de tela."""
+    ascii_text = unicodedata.normalize("NFKD", str(value))
+    ascii_text = "".join(c for c in ascii_text if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]", "", ascii_text.casefold())
+
+
+def nickname_matches(recognized, expected):
+    wanted = normalize_nick(expected)
+    seen = normalize_nick(recognized)
+    if len(wanted) < 3 or len(seen) < 3:
+        return False
+    if wanted in seen:
+        return True
+    # Pequenos erros do OCR sao comuns no nome sobreposto a um avatar.
+    return difflib.SequenceMatcher(None, seen, wanted).ratio() >= .84
+
+
+def read_nickname(image, tesseract):
+    """Lê nome apenas na area definida do jogador; pode falhar em fonte pequena."""
+    region = image.convert("L")
+    if region.width < 6 or region.height < 6:
+        return []
+    region = ImageOps.autocontrast(region.resize(
+        (max(180, region.width * 5), max(48, region.height * 5))))
+    variants = [region, ImageOps.invert(region)]
+    readings = []
+    with tempfile.TemporaryDirectory(prefix="plo_nick_") as temp_dir:
+        for index, candidate in enumerate(variants):
+            filepath = Path(temp_dir) / f"nick_{index}.png"
+            candidate.save(filepath)
+            process = subprocess.run(
+                [tesseract, str(filepath), "stdout", "--psm", "7"],
+                capture_output=True, text=True, errors="replace", timeout=16,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            if process.returncode == 0 and process.stdout.strip():
+                readings.append(process.stdout.strip())
+    return readings
+
+
 def stack_median(images, tesseract):
     values = []
     for image in images:
@@ -175,6 +218,8 @@ class Candidate:
     status: str
     confirmed: bool = False
     excluded: bool = False
+    nick: str = ""
+    nick_verified: bool = False
 
 
 class HandState:
@@ -249,7 +294,7 @@ class HandState:
             round(loss, 2) if loss is not None else None, pre, post, status))
 
 
-def scan_videos(videos, config, threshold, progress):
+def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~"):
     tesseract = resource("tesseract")
     ffmpeg = resource("ffmpeg")
     if not tesseract:
@@ -267,6 +312,7 @@ def scan_videos(videos, config, threshold, progress):
             raise ValueError(f"Mesa {table}: referencia manual nao registrada.")
         table_cfg[table] = {
             "hole": roi_tuple(data["hole"]), "stack": roi_tuple(data["stack"]),
+            "nick": roi_tuple(data["nick"]) if data.get("nick") else None,
             "detector": detector,
             "empty": png_image(data["reference"]) if detector == "reference" else None,
             "bb": float(data["bb"]),
@@ -276,6 +322,10 @@ def scan_videos(videos, config, threshold, progress):
         if table_cfg[table]["bb"] <= 0:
             raise ValueError(f"BB da mesa {table} deve ser positivo")
     states = {table: HandState() for table in TABLES}
+    nick_verified = {table: False for table in TABLES}
+    nick_attempts = {table: 0 for table in TABLES}
+    # Tentativas limitadas para nao tornar o OCR do nome caro num video longo.
+    nick_sample_times = (0, 15, 45, 90, 180, 360)
     for file_index, v in enumerate(videos):
         progress(f"Lendo {file_index+1}/{len(videos)}: {Path(v.path).name}")
         command = [ffmpeg, "-hide_banner", "-loglevel", "error",
@@ -293,6 +343,17 @@ def scan_videos(videos, config, threshold, progress):
                 t = v.start + n
                 for table in TABLES:
                     cfg = table_cfg[table]
+                    if (hero_nick.strip() and cfg["nick"] and not nick_verified[table] and
+                            nick_attempts[table] < len(nick_sample_times) and
+                            file_index == 0 and n in nick_sample_times):
+                        nick_attempts[table] += 1
+                        try:
+                            texts = read_nickname(frame.crop(cfg["nick"]), tesseract)
+                            if any(nickname_matches(value, hero_nick) for value in texts):
+                                nick_verified[table] = True
+                                progress(f"Mesa {table}: nick {hero_nick} identificado visualmente.")
+                        except (OSError, subprocess.SubprocessError):
+                            pass
                     if cfg["detector"] == "bright":
                         occupied = bright_fraction(frame, cfg["hole"], cfg["bright_cutoff"]) >= cfg["min_bright"]
                     else:
@@ -321,6 +382,13 @@ def scan_videos(videos, config, threshold, progress):
                                         None, None, None, "INCONCLUSIVO - MAO INCOMPLETA"))
     for candidate in candidates:
         candidate.end = min(total, candidate.end)
+        candidate.nick = hero_nick.strip()
+        candidate.nick_verified = nick_verified[candidate.table]
+        if hero_nick.strip() and not candidate.nick_verified:
+            candidate.status += " | NICK NAO CONFIRMADO"
+    if hero_nick.strip():
+        ok = ", ".join(str(t) for t in TABLES if nick_verified[t]) or "nenhuma"
+        progress(f"Nick {hero_nick}: mesas com OCR confirmado: {ok}; demais exigem conferencia visual.")
     return sorted(candidates, key=lambda c: (c.start, c.table))
 
 
@@ -338,6 +406,7 @@ class GUI(tk.Tk):
         self.candidates = []
         self.busy = False
         self.layout = tk.StringVar(value="4 lado a lado")
+        self.nick = tk.StringVar(value="~Pulgar~")
         self.cfg = screenshot_profile()
         self._ui()
         self.draw()
@@ -369,7 +438,7 @@ class GUI(tk.Tk):
                      state="readonly", width=3).pack(side="left")
         ttk.Label(row, text="Marcar regiao:").pack(side="left", padx=4)
         self.field = tk.StringVar(value="cartas")
-        ttk.Combobox(row, textvariable=self.field, values=["cartas", "saldo"],
+        ttk.Combobox(row, textvariable=self.field, values=["cartas", "saldo", "nick"],
                      state="readonly", width=8).pack(side="left")
         ttk.Button(row, text="Usar regioes do print", command=self.apply_profile).pack(side="left", padx=7)
 
@@ -379,7 +448,10 @@ class GUI(tk.Tk):
         self.bb = tk.StringVar(value="1")
         ttk.Entry(row2, textvariable=self.bb, width=8).pack(side="left", padx=5)
         ttk.Button(row2, text="Salvar BB da mesa", command=self.set_bb).pack(side="left")
-        ttk.Label(row2, text="Hero sempre embaixo; regioes predefinidas pelo print.").pack(side="left", padx=14)
+        ttk.Label(row2, text="Nick do jogador:").pack(side="left", padx=(14, 3))
+        ttk.Entry(row2, textvariable=self.nick, width=18).pack(side="left")
+        ttk.Button(row2, text="Verificar nick no frame", command=self.verify_nick_frame).pack(
+            side="left", padx=7)
         self.table.trace_add("write", lambda *_: self.on_table_change())
 
         self.canvas = tk.Canvas(self, width=VIEW_W, height=VIEW_H, background="#181818",
@@ -405,12 +477,12 @@ class GUI(tk.Tk):
 
         table_frame = ttk.Frame(self)
         table_frame.pack(fill="both", expand=True, padx=8, pady=4)
-        columns = ("inicio", "fim", "mesa", "perda", "status", "conferido")
+        columns = ("inicio", "fim", "mesa", "perda", "nick_status", "status", "conferido")
         self.grid = ttk.Treeview(table_frame, columns=columns, show="headings", height=4)
         for col, label, width in [
             ("inicio", "Inicio", 92), ("fim", "Fim", 92), ("mesa", "Mesa", 55),
-            ("perda", "Perda BB estimada", 130), ("status", "Resultado OCR", 370),
-            ("conferido", "Conferido", 90)]:
+            ("perda", "Perda BB estimada", 130), ("nick_status", "Nick OCR", 105),
+            ("status", "Resultado OCR", 300), ("conferido", "Conferido", 90)]:
             self.grid.heading(col, text=label)
             self.grid.column(col, width=width)
         self.grid.pack(fill="both", expand=True)
@@ -540,10 +612,10 @@ class GUI(tk.Tk):
         else:
             self.canvas.create_line(VIEW_W//2, 0, VIEW_W//2, VIEW_H, fill="#f7cd46", width=2)
             self.canvas.create_line(0, VIEW_H//2, VIEW_W, VIEW_H//2, fill="#f7cd46", width=2)
-        colors = {"hole": "#00ff91", "stack": "#00cfff"}
+        colors = {"hole": "#00ff91", "stack": "#00cfff", "nick": "#ec8fff"}
         for table in TABLES:
             data = self.cfg[str(table)]
-            for key in ("hole", "stack"):
+            for key in ("hole", "stack", "nick"):
                 rect = data.get(key)
                 if rect:
                     x1, y1, x2, y2 = rect
@@ -581,13 +653,47 @@ class GUI(tk.Tk):
             messagebox.showwarning("Mesa", f"Esse retangulo parece estar na mesa {inferred}; voce selecionou a mesa {table}.")
             self.draw()
             return
-        key = "hole" if self.field.get() == "cartas" else "stack"
+        key = {"cartas": "hole", "saldo": "stack", "nick": "nick"}[self.field.get()]
         self.cfg[str(table)][key] = rect
         if key == "hole":
             self.cfg[str(table)].pop("reference", None)
         self.cfg[str(table)]["detector"] = "bright"
         self.tell(f"Mesa {table}: regiao {key} ajustada. Nao precisa referencia sem cartas.")
         self.draw()
+
+    def verify_nick_frame(self):
+        if self.frame is None:
+            messagebox.showwarning("Nick", "Carregue um video e clique em Mostrar frame.")
+            return
+        nick = self.nick.get().strip()
+        if not nick:
+            messagebox.showwarning("Nick", "Preencha o nick do jogador.")
+            return
+        table = int(self.table.get())
+        name_rect = self.cfg[str(table)].get("nick")
+        if not name_rect:
+            messagebox.showwarning("Nick", "Marque a regiao do nick da mesa selecionada.")
+            return
+        tesseract = resource("tesseract")
+        if not tesseract:
+            messagebox.showwarning("OCR", "Tesseract nao encontrado.")
+            return
+        try:
+            values = read_nickname(self.frame.crop(roi_tuple(name_rect)), tesseract)
+            verified = any(nickname_matches(value, nick) for value in values)
+            displayed = " / ".join(values) or "(nao legivel)"
+            if verified:
+                self.tell(f"Mesa {table}: nick {nick} confirmado neste frame.")
+                messagebox.showinfo("Nick reconhecido", f"Mesa {table}: {nick} confirmado.\nOCR: {displayed}")
+            else:
+                self.tell(f"Mesa {table}: OCR do nick inconclusivo. Ajuste a area roxa se necessario.")
+                messagebox.showwarning(
+                    "Nick nao confirmado",
+                    f"Mesa {table}: o OCR nao confirmou {nick}.\nLeitura: {displayed}\n\n"
+                    "Tente outro frame com o nome legivel ou ajuste a regiao roxa. "
+                    "A analise por cartas continua disponivel.")
+        except Exception as exc:
+            messagebox.showerror("OCR de nick", str(exc))
 
     def set_empty(self):
         table = int(self.table.get())
@@ -619,8 +725,9 @@ class GUI(tk.Tk):
     def save_cfg(self):
         path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("Configuracao", "*.json")])
         if path:
-            Path(path).write_text(json.dumps({"layout": self.layout.get(), "tables": self.cfg},
-                                             indent=2), encoding="utf-8")
+            Path(path).write_text(json.dumps(
+                {"layout": self.layout.get(), "nick": self.nick.get().strip(), "tables": self.cfg},
+                indent=2), encoding="utf-8")
             self.tell("Configuracao salva.")
 
     def load_cfg(self):
@@ -630,6 +737,7 @@ class GUI(tk.Tk):
                 data = json.loads(Path(path).read_text(encoding="utf-8"))
                 settings = data.get("tables", data)
                 self.cfg = {str(i): settings[str(i)] for i in TABLES}
+                self.nick.set(data.get("nick", "~Pulgar~"))
                 self.layout.set(data.get("layout", "2 por 2" if "tables" not in data else "4 lado a lado"))
                 self.on_table_change()
                 self.draw()
@@ -647,7 +755,8 @@ class GUI(tk.Tk):
             start = 0
         self.candidates.append(Candidate(start, min(start + 60, self.total),
                                          int(self.table.get()), None, None, None,
-                                         "ADICIONADA MANUALMENTE - REVISAR"))
+                                         "ADICIONADA MANUALMENTE - REVISAR",
+                                         nick=self.nick.get().strip()))
         self.refresh()
         self.grid.selection_set(str(len(self.candidates)-1))
         self.grid.see(str(len(self.candidates)-1))
@@ -662,6 +771,7 @@ class GUI(tk.Tk):
             return
         payload = {"version": 2, "videos": [asdict(v) for v in self.videos],
                    "layout": self.layout.get(), "config": self.cfg, "threshold": self.threshold.get(),
+                   "nick": self.nick.get().strip(),
                    "candidates": [asdict(c) for c in self.candidates]}
         try:
             Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -685,6 +795,7 @@ class GUI(tk.Tk):
             self.candidates = [Candidate(**entry) for entry in data["candidates"]]
             self.cfg = data.get("config", self.cfg)
             self.layout.set(data.get("layout", "2 por 2"))
+            self.nick.set(data.get("nick", "~Pulgar~"))
             self.threshold.set(str(data.get("threshold", 30)))
             self.info.configure(text=f"{len(videos)} arquivo(s) | {fmt(self.total)}")
             self.on_table_change()
@@ -704,6 +815,8 @@ class GUI(tk.Tk):
             threshold = float(self.threshold.get().replace(",", "."))
             if threshold <= 0:
                 raise ValueError("Limite BB precisa ser positivo.")
+            if not self.nick.get().strip():
+                raise ValueError("Preencha o nick do jogador principal.")
             for table in TABLES:
                 data = self.cfg[str(table)]
                 for key in ("hole", "stack"):
@@ -727,7 +840,8 @@ class GUI(tk.Tk):
         def worker():
             try:
                 results = scan_videos(videos, cfg, threshold,
-                                      lambda msg: self.after(0, lambda m=msg: self.tell(m)))
+                                      lambda msg: self.after(0, lambda m=msg: self.tell(m)),
+                                      hero_nick=self.nick.get().strip())
                 self.after(0, lambda: self.finished(results))
             except Exception as exc:
                 self.after(0, lambda e=str(exc): self.failed(e))
@@ -756,6 +870,7 @@ class GUI(tk.Tk):
             self.grid.insert("", "end", iid=str(i), values=(
                 fmt(c.start), fmt(c.end), c.table,
                 f"{c.loss_bb:.2f}" if c.loss_bb is not None else "?",
+                "OK" if c.nick_verified else "Revisar",
                 c.status, "SIM" if c.confirmed else "NAO"))
 
     def selected(self):
@@ -834,8 +949,10 @@ class GUI(tk.Tk):
                                 resource("ffmpeg"), layout=self.layout_id())
                 except Exception as exc:
                     status = "ERRO: " + str(exc)[-180:]
-                logs.append({"arquivo": filename, "mesa": c.table, "inicio": fmt(c.start),
-                             "fim": fmt(c.end), "perda_bb_conferida": c.loss_bb, "status": status})
+                logs.append({"arquivo": filename, "nick": c.nick or self.nick.get().strip(),
+                             "nick_ocr_confirmado": c.nick_verified, "mesa": c.table,
+                             "inicio": fmt(c.start), "fim": fmt(c.end),
+                             "perda_bb_conferida": c.loss_bb, "status": status})
                 self.after(0, lambda j=i, s=status: self.tell(f"Exportado {j}/{len(eligible)}: {s}"))
             with open(Path(folder)/"indice_das_maos.csv", "w", encoding="utf-8-sig", newline="") as fh:
                 writer = csv.DictWriter(fh, fieldnames=list(logs[0]), delimiter=";")
