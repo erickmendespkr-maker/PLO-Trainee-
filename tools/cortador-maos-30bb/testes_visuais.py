@@ -5,7 +5,8 @@ from unittest.mock import patch
 from PIL import Image, ImageDraw
 from analise_video import (parse_stack, changed_fraction, HandState, bright_fraction,
                            screenshot_profile, normalize_nick, nickname_matches,
-                           replicate_horizontal_rect, stack_median)
+                           replicate_horizontal_rect, stack_median,
+                           net_loss_bb, loss_reaches_threshold)
 
 
 class VisualTests(unittest.TestCase):
@@ -34,6 +35,18 @@ class VisualTests(unittest.TestCase):
         self.assertEqual(GUI.infer_table(dummy, 239, 200), 1)
         self.assertEqual(GUI.infer_table(dummy, 240, 200), 2)
         self.assertEqual(GUI.infer_table(dummy, 959, 539), 4)
+
+    def test_perda_inclusiva_e_stack_variavel(self):
+        # Stack inicial nao e fixo em 100 BB e perdas exatas de 30 entram.
+        for before, after in ((100, 70), (150, 120), (200, 170), (75, 45)):
+            loss = net_loss_bb(before, after, 1)
+            self.assertEqual(loss, 30)
+            self.assertTrue(loss_reaches_threshold(loss, 30))
+        self.assertFalse(loss_reaches_threshold(net_loss_bb(200, 170.1, 1), 30))
+        self.assertTrue(loss_reaches_threshold(net_loss_bb(200, 160, 1), 30))
+        self.assertFalse(loss_reaches_threshold(net_loss_bb(150, 175, 1), 30))
+        # Quando stack e exibido em fichas, converte para BB.
+        self.assertTrue(loss_reaches_threshold(net_loss_bb(200, 140, 2), 30))
 
     def test_copiar_area_do_saldo_entre_quatro_mesas(self):
         regions = replicate_horizontal_rect([95, 480, 152, 502], 1)
