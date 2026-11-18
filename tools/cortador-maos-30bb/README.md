@@ -158,3 +158,19 @@ A nova versão modifica o processo:
 **Proteções:** valores de saldo acima de **5.000 BB** são tratados como suspeitos e rejeitados pelo detector automático para evitar erros grosseiros do OCR; isso NÃO é uma referência de stack inicial (100 BB jamais é assumido). É um limite de segurança de leitura, sujeito a ajuste futuro para jogos com stacks excepcionalmente profundos. O critério de perda continua **30 BB inclusivos**, independentemente do saldo com que o jogador começou a mão.
 
 **Estado da validação:** código atualizado e testes novos adicionados, porém os testes ainda não foram executados no Windows do usuário nem contra o vídeo completo real. OCR pode produzir falso positivo mesmo com duas leituras semelhantes. Revise os MP4 gerados antes de enviar ao instrutor. Para diagnosticar erros, envie o arquivo \`relatorio_analise.csv\` e uma captura onde as caixas azuis apareçam sobre os saldos.
+
+## Testar saldo com a resolução original — correção de OCR
+
+Se a região azul estiver correta e o programa ainda mostrar **Saldo não reconhecido**, a causa pode ser a redução da gravação para 960×540 usada pela varredura visual. Os números do stack ficam pequenos demais para o Tesseract, e aumentar uma imagem já reduzida não recupera os pixels perdidos.
+
+Na versão atualizada:
+
+1. Com o vídeo carregado e a região de saldo marcada, clique **Mostrar frame** no momento em que o saldo estiver legível.
+2. Selecione a mesa e pressione **Testar saldo**. Agora o programa extrai somente aquela área diretamente do MP4 **na resolução original**, sem reduzir o quadro completo.
+3. Uma janela de diagnóstico apresenta o **recorte original ampliado**, o saldo reconhecido (se houver) e as **leituras brutas** de várias preparações de imagem e modos do Tesseract.
+4. Se o número continuar ilegível, pressione **Salvar recorte PNG** na janela e envie o arquivo `saldo_mesa_1.png` com um print das leituras brutas. Assim poderemos corrigir o filtro de reconhecimento específico do texto da gravação sem pedir o vídeo inteiro.
+5. Durante a análise longa, se a leitura dos saldos na versão reduzida falhar, o programa tenta novamente os momentos anteriores e posteriores à mão com os **pixels originais da gravação**. Essa etapa extra só roda em trechos com OCR ausente/fraco, para não sobrecarregar todas as mãos.
+
+O retângulo correto precisa mostrar **somente o número do saldo, e a unidade BB se estiver na mesma linha**. Se a janela ampliada revelar nick, aposta, cartas, ícones, saldo de outro jogador, ou um texto cortado, redesenhe a região de saldo e repita o teste.
+
+**Observação:** o fallback em resolução original melhora a chance de reconhecimento, mas exige leitura adicional do vídeo e pode aumentar o tempo total. Não há garantia de identificação de todas as perdas: o programa ainda rejeita OCR duvidoso e não gera MP4 automaticamente a partir de números não verificados.
