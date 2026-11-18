@@ -1594,8 +1594,9 @@ class GUI(tk.Tk):
                     "Disposicao", "O layout 2x2 precisa recalibrar as caixas. Continuar?"):
                 self.layout.set(LAYOUT_LABELS[0])
                 return
-            self.cfg = {str(t): {"bb": "1", "detector": "bright",
-                                "bright_cutoff": 165, "min_bright": .18} for t in TABLES}
+            # Nao apagar os perfis de 1-4 mesas ao visualizar um layout 2x2.
+            self.tell("Layout 2x2 selecionado. Ajuste manualmente as regioes "
+                      "se necessario; os perfis lado a lado ficam intactos.")
         elif not all(self.cfg[str(t)].get("hole") for t in TABLES):
             self.cfg = screenshot_profile()
         self.on_table_change()
@@ -1902,7 +1903,8 @@ class GUI(tk.Tk):
             return
         try:
             values = read_nickname(
-                self.frame.crop(layout_rect(name_rect, table, self.layout_id())), tesseract)
+                self.frame.crop(layout_roi(self.cfg[str(table)], table,
+                                           self.layout_id(), "nick")), tesseract)
             verified = any(nickname_matches(value, nick) for value in values)
             displayed = " / ".join(values) or "(nao legivel)"
             if verified:
@@ -1928,7 +1930,7 @@ class GUI(tk.Tk):
                                    f"Na mesa {table}, a regiao marcada das cartas do jogador esta VAZIA neste frame?"):
             return
         data["reference"] = image_png(
-            self.frame.crop(layout_rect(data["hole"], table, self.layout_id())).convert("L"))
+            self.frame.crop(layout_roi(data, table, self.layout_id(), "hole")).convert("L"))
         data["detector"] = "reference"
         self.tell(f"Mesa {table}: referencia SEM cartas registrada.")
         self.draw()
