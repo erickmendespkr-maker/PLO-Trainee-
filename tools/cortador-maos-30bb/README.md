@@ -305,3 +305,17 @@ A barra de comandos agora inclui **AUTOAJUSTAR MARCACOES NESTE VIDEO**. Se estiv
 A calibracao automatica usa heuristicas de brilho, por isso nao garante encontrar corretamente todas as mesas/temas de poker. **Antes de iniciar uma analise de horas, clique em Testar saldo e compare o numero lido com a gravacao.** O Gemini pode ajudar a ler saldos, mas nao corrige uma ROI sobre outro jogador.
 
 As regioes geradas automaticamente sao salvas em `%LOCALAPPDATA%\CortadorPLO\marcacoes_padrao.json`. Regioes manuais permanecem prioritarias ate voce usar o botao de autoajuste e confirmar sua substituicao. Uma gravacao onde o jogador ainda nao recebeu cartas pode requerer navegar ate uma mao com cartas visiveis e clicar Mostrar frame.
+
+## Correcao: OCR mostra 990 BB, mas saldo real e 99,0 BB
+
+No diagnostico real do HUD da mesa 1, o nick `~Pulgar~` foi reconhecido, e o recorte verde completo mostrou saldo **99,0 BB**. No entanto, a busca detalhada retornou `990BB` na regiao esquerda e `99.0 BB` na regiao central, produzindo "OCR NAO RECONHECEU O SALDO" por divergencia. As marcacoes ja estavam corretas.
+
+Foi alterado `hud_recognition.py`:
+
+- O OCR consulta primeiro `hud_centro_inferior`, onde o Tesseract identificou `99.0 BB` corretamente.
+- No diagnostico completo, se um recorte mostra **99.0** com virgula/ponto EXPLICITO e o outro mostra **990** com os mesmos digitos, a leitura **99.0** pode prevalecer. Isso nao significa dividir qualquer 990 BB por 10.
+- Se nao houver separador decimal em nenhum recorte, o algoritmo exige concordancia de pelo menos duas regioes para aceitar o valor inteiro. Conflitos que nao se explicam por pontuacao permanecem inconclusivos e nao sao exportados como perdas confirmadas.
+- O nick nao precisa ser calibrado novamente: no print ele foi confirmado pelo OCR. O limite de perdas continua ser de pelo menos **30 BB liquidos**, com saldo inicial variavel.
+
+**Como testar:** atualize o programa sem apagar `%LOCALAPPDATA%\CortadorPLO\marcacoes_padrao.json`, selecione a mesa 1 no mesmo frame e clique **Testar saldo**. O resultado esperado para a imagem enviada e **99,0 BB**. O arquivo `VERIFICAR_PROGRAMA.bat` executa `testes_hud.py` com o texto OCR real `990BB` versus `99.0 BB`. Os testes no Windows e o video real ainda nao foram validados no ambiente do desenvolvedor.
+
