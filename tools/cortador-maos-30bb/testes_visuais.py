@@ -9,7 +9,8 @@ from unittest.mock import patch
 from PIL import Image, ImageDraw
 from analise_video import (parse_stack, changed_fraction, HandState, bright_fraction,
                            screenshot_profile, normalize_nick, nickname_matches,
-                           replicate_horizontal_rect, stack_median,
+                           replicate_horizontal_rect, stack_median, MAX_STACK_BB,
+                           Candidate, eligible_losses,
                            net_loss_bb, loss_reaches_threshold, layout_key, mode_at,
                            layout_count, layout_bounds, layout_rect,
                            unmap_layout_rect, table_visible,
@@ -18,6 +19,67 @@ from cortador import Video, crop_filter
 
 
 class VisualTests(unittest.TestCase):
+    def test_ocr_nao_junta_numeros_separados(self):
+        # O bug anterior transformava "154 020" em 154020 e inventava perdas.
+        self.assertNotEqual(parse_stack("154 020"), 154020)
+        self.assertEqual(parse_stack("114,0"), 114)
+        self.assertEqual(parse_stack("200,00"), 200)
+
+    def test_rejeitar_valor_absurdo_sem_usar_stack_fixo(self):
+        images = [Image.new("L", (30, 15), 20) for _ in range(3)]
+        with patch("analise_video.ocr_stack", side_effect=[154020.0, 154020.0]):
+            val, count = stack_median(images[:2], "unused", quick=True, bb=1)
+            self.assertIsNone(val)
+            self.assertEqual(count, 0)
+        with patch("analise_video.ocr_stack", side_effect=[200.0, 200.0]):
+            val, count = stack_median(images[:2], "unused", quick=True, bb=1)
+            self.assertEqual(val, 200)
+            self.assertEqual(count, 2)
+        self.assertGreater(MAX_STACK_BB, 200)
+
+    def test_auto_verificacao_da_perda_sem_confundir_aposta(self):
+        images = [Image.new("L", (30, 15), 20) for _ in range(3)]
+        state = HandState()
+        state.pending = {"start": 10, "end": 40,
+                         "before": images, "after": images}
+        with patch("analise_video.stack_median",
+                   side_effect=[(150., 2), (120., 2)]):
+            state.finish(1, 1, 30, "unused", quick=False)
+        self.assertEqual(len(state.results), 1)
+        self.assertTrue(state.results[0].auto_verified)
+        self.assertEqual(state.results[0].loss_bb, 30)
+        # Jogador apostou e recuperou: saldo final maior, nao e perda.
+        won = HandState()
+        won.pending = {"start": 40, "end": 80,
+                       "before": images, "after": images}
+        with patch("analise_video.stack_median",
+                   side_effect=[(100., 2), (160., 2)]):
+            won.finish(1, 1, 30, "unused", quick=False)
+        self.assertEqual(won.results, [])
+
+    def test_exportacao_exige_ocr_consistente_ou_confirmacao_manual(self):
+        a = Candidate(0, 25, 1, 30, 100, 70, "PERDA", auto_verified=True)
+        b = Candidate(25, 50, 2, 44, 150, 106, "OCR FRACO")
+        c = Candidate(50, 75, 3, None, None, None, "INCONCLUSIVO")
+        d = Candidate(75, 100, 4, 42, 200, 158, "MANUAL", confirmed=True)
+        e = Candidate(100, 120, 1, 10, 80, 70, "PERDA", auto_verified=True)
+        self.assertEqual(eligible_losses([a, b, c, d, e], 30, True), [a])
+        self.assertEqual(eligible_losses([a, b, c, d, e], 30), [a, d])
+        d.excluded = True
+        self.assertEqual(eligible_losses([a, b, c, d, e], 30), [a])
+
+    def test_ocr_fraco_nao_exporta_sem_conferencia(self):
+        images = [Image.new("L", (30, 15), 20) for _ in range(3)]
+        state = HandState()
+        state.pending = {"start": 2, "end": 18,
+                         "before": images, "after": images}
+        with patch("analise_video.stack_median",
+                   side_effect=[(200., 1), (160., 1)]):
+            state.finish(1, 1, 30, "unused", quick=False)
+        self.assertEqual(len(state.results), 1)
+        self.assertFalse(state.results[0].auto_verified)
+        self.assertEqual(eligible_losses(state.results, 30, True), [])
+
     def test_numeros(self):
         self.assertEqual(parse_stack("R$ 1.234,50"), 1234.5)
         self.assertEqual(parse_stack("1,234.50"), 1234.5)
