@@ -287,6 +287,71 @@ class GeminiClient:
                     for name in names))
         return interpret_stack_response(payload, bb, max_stack_bb)
 
+    def read_hand_context(self, overview, table_frames, hud_frames,
+                          expected_nick, threshold=30):
+        """Le mesa inteira ao longo da mao; nao apenas o stack do HUD.
+
+        A perda fica inconclusiva se a contribuicao do heroi ou o destino
+        do pote nao puderem ser confirmados em quadros visiveis.
+        """
+        from poker_contexto import validate_pot_result
+        if len(table_frames) != 8 or len(hud_frames) != 2:
+            raise GeminiError("A analise da mao exige 8 quadros da mesa e 2 HUDs.")
+        prompt = (
+            "Voce esta REVISANDO UMA GRAVACAO ENCERRADA de cash game PLO5. "
+            "Sua tarefa e identificar uma mao PERDIDA por um jogador. "
+            "Primeiro ha uma imagem da tela inteira para localizar a mesa; "
+            "em seguida oito imagens DA MESMA MESA em ordem cronologica "
+            "ao longo da mao e dois recortes do HUD do jogador. "
+            "O heroi joga na posicao inferior da mesa. "
+            f"Nick do heroi a encontrar VISUALMENTE: {expected_nick}. "
+            "Veja as cartas privativas (5 cartas), cartas comunitarias, "
+            "fichas apostas, pote total, vencedores e movimentacoes do pote. "
+            "CRITERIO: quanto O PROPRIO HEROI INVESTIU NO POTE NESTA MAO, "
+            "na unidade BB, e se a integralidade desse investimento foi "
+            "PERDIDA porque outro jogador recebeu o pote. "
+            "Um pote de 60BB NAO prova que o heroi investiu 60BB. "
+            "O heroi pode jogar 40BB e recuperar parte do investimento em "
+            "side pot: nesse caso hero_won_any_pot=true. "
+            "O jogador usa REBUY AUTOMATICO e pode voltar a 100BB logo "
+            "apos perder. Essa recarga NAO e um ganho nem prova perda, e "
+            "NUNCA deve ser usada como stack inicial fixo de 100BB. "
+            "So informe hero_invested_bb quando conseguir IDENTIFICAR "
+            "o valor acumulado contribuido pelo heroi, por apostas/"
+            "contribuicoes visiveis e fases da mao; caso contrario use null. "
+            "So marque investment_visibly_verified=true quando o valor "
+            "foi sustentado pelas imagens, nao estimado pelo pote total. "
+            "Se nao conseguir ver a transferencia do pote PARA OUTRO "
+            "JOGADOR, pot_awarded_to_opponent=null. "
+            "Se nao conseguir identificar um vencedor com nome, "
+            "winner_nick=null; nao invente. "
+            "Se nao conseguir confirmar se o heroi ganhou um side pot, "
+            "hero_won_any_pot=null, nao false. "
+            "same_hand e hand_finished so devem ser true quando evidentes. "
+            "Nao assuma informacoes que nao estao visiveis. "
+            "Retorne APENAS JSON com exatamente estes campos: "
+            '{"hero_nick":"~Pulgar~","same_hand":true,'
+            '"hand_finished":true,"hero_invested_bb":40.0,'
+            '"investment_visibly_verified":true,'
+            '"pot_awarded_to_opponent":true,"winner_nick":"adversario",'
+            '"hero_won_any_pot":false,"auto_rebuy_seen":true,'
+            '"evidence":"jogador apostou 40 BB e o pote foi para adversario"}. '
+            "Use null para quaisquer campos inseguros. "
+        )
+        parts = [{"text": prompt}, {"text": "VISÃO GERAL DA TELA DA GRAVACAO:"},
+                 {"inline_data": {"mime_type": "image/png",
+                                  "data": _image_png(overview)}}]
+        for i, image in enumerate(table_frames):
+            parts.append({"text": f"MESA COMPLETA, MOMENTO {i+1}/8 EM ORDEM:"})
+            parts.append({"inline_data": {
+                "mime_type": "image/png", "data": _image_png(image)}})
+        for i, image in enumerate(hud_frames):
+            parts.append({"text": f"HUD DO HEROI, REFERENCIA {i+1}/2:"})
+            parts.append({"inline_data": {
+                "mime_type": "image/png", "data": _image_png(image)}})
+        payload = self._request(parts, max_output=780)
+        return validate_pot_result(payload, expected_nick, threshold=threshold)
+
     def read_hud_fields(self, image, bb=1.0, max_stack_bb=5000.0,
                         expected_nick=None):
         """Le NICK e SALDO do HUD completo na mesma chamada da API."""
