@@ -17,7 +17,8 @@ from analise_video import (parse_stack, changed_fraction, HandState, bright_frac
                            save_markings_file, load_markings_file, validated_markings,
                            net_loss_bb, loss_reaches_threshold, layout_key, mode_at,
                            layout_count, layout_bounds, layout_rect,
-                           unmap_layout_rect, table_visible,
+                           layout_roi, store_layout_roi, unmap_layout_rect,
+                           table_visible,
                            infer_horizontal_layout, AutoLayoutTracker)
 from cortador import Video, crop_filter
 
@@ -315,6 +316,56 @@ class VisualTests(unittest.TestCase):
             self.assertEqual(mode, "horizontal3")
             self.assertTrue(safe)
             self.assertEqual(status, "alterado")
+
+    def test_marcacao_de_tres_mesas_nao_move_a_de_quatro(self):
+        config = screenshot_profile()
+        original_four = [
+            {key: value[:] for key, value in config[str(t)].items()
+             if key in ("hole", "stack", "nick")}
+            for t in range(1, 5)]
+        # O usuario selecionou uma gravacao nova com tres mesas.
+        store_layout_roi(config, 1, "horizontal3", "stack",
+                         [126, 475, 184, 494])
+        self.assertEqual(
+            layout_roi(config["1"], 1, "horizontal3", "stack"),
+            (126, 475, 184, 494))
+        self.assertEqual(
+            layout_roi(config["2"], 2, "horizontal3", "stack"),
+            (446, 475, 504, 494))
+        self.assertEqual(
+            layout_roi(config["3"], 3, "horizontal3", "stack"),
+            (766, 475, 824, 494))
+        # As regioes no video original de quatro mesas continuam intocadas.
+        for t in range(1, 5):
+            for key, value in original_four[t-1].items():
+                self.assertEqual(config[str(t)][key], value)
+        self.assertEqual(
+            layout_roi(config["1"], 1, "horizontal4", "stack"),
+            tuple(original_four[0]["stack"]))
+        # Ao salvar o perfil, layouts diferentes sobrevivem ao restart.
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "padrao.json"
+            save_markings_file(output, config, "~Pulgar~",
+                               "Automatico (1 a 4 mesas)")
+            new = load_markings_file(output)["tables"]
+            self.assertEqual(
+                layout_roi(new["2"], 2, "horizontal3", "stack"),
+                (446, 475, 504, 494))
+            self.assertEqual(new["1"]["stack"], original_four[0]["stack"])
+
+    def test_reposicionar_cartas_e_nick_em_uma_disposicao(self):
+        config = screenshot_profile()
+        store_layout_roi(config, 2, "horizontal3", "hole",
+                         [440, 431, 516, 479])
+        store_layout_roi(config, 2, "horizontal3", "nick",
+                         [446, 478, 507, 498])
+        self.assertEqual(layout_roi(config["1"], 1, "horizontal3", "hole"),
+                         (120, 431, 196, 479))
+        self.assertEqual(layout_roi(config["3"], 3, "horizontal3", "nick"),
+                         (766, 478, 827, 498))
+        # O layout quatro conserva as coordenadas de fabrica.
+        self.assertEqual(layout_roi(config["2"], 2, "horizontal4", "hole"),
+                         tuple(config["2"]["hole"]))
 
     def test_layout_variavel_de_uma_a_quatro_mesas(self):
         self.assertEqual(layout_key("Auto (ate 4, slots fixos)"), "auto4")
