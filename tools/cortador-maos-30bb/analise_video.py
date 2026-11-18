@@ -130,7 +130,7 @@ def vertical_seam_strength(frame, x):
     """Fração de alturas com borda vertical perto de um separador entre mesas."""
     if not (10 <= x <= W - 10):
         return 0.
-    img = frame.convert("L")
+    img = frame if frame.mode == "L" else frame.convert("L")
     px = img.load()
     evidence = 0
     sampled = 0
@@ -153,6 +153,7 @@ def infer_horizontal_layout(frame, previous=None):
     gray = frame.convert("L")
     scores = {}
     seams_by_mode = {}
+    seam_cache = {}
     for count in (2, 3, 4):
         mode = f"horizontal{count}"
         slots = []
@@ -164,9 +165,12 @@ def infer_horizontal_layout(frame, previous=None):
             if ImageStat.Stat(part).stddev[0] < 7:
                 continue
             slots.append((table, part))
-        boundary_scores = [
-            vertical_seam_strength(gray, round(W * index / count))
-            for index in range(1, count)]
+        boundary_scores = []
+        for index in range(1, count):
+            separator = round(W * index / count)
+            if separator not in seam_cache:
+                seam_cache[separator] = vertical_seam_strength(gray, separator)
+            boundary_scores.append(seam_cache[separator])
         seam = statistics.mean(boundary_scores)
         seams_by_mode[mode] = seam
         if len(slots) < 2:
