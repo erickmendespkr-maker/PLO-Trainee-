@@ -1174,6 +1174,11 @@ def recheck_candidates_with_gemini(videos, config, candidates, threshold,
 DEFAULT_MARKINGS_FILE = "marcacoes_padrao.json"
 
 
+def latest_review_path():
+    """Ultima revisao fora do ZIP para reusar sem repetir a varredura."""
+    return default_markings_path().parent / "ultima_revisao.json"
+
+
 def default_markings_path():
     """Persiste fora da pasta ZIP, para nao perder calibracao ao atualizar."""
     base = os.environ.get("LOCALAPPDATA")
@@ -1389,6 +1394,8 @@ class GUI(tk.Tk):
         review_ai.pack(fill="x", padx=8)
         ttk.Button(review_ai, text="REANALISAR MAOS INCONCLUSIVAS COM GEMINI",
                    command=self.recheck_inconclusive).pack(side="left", pady=3)
+        ttk.Button(review_ai, text="Abrir ultima revisao",
+                   command=self.load_latest_review).pack(side="left", padx=8)
         ttk.Label(review_ai, text="Usa os horarios da revisao salva, sem ler o video inteiro.",
                   foreground="#696969").pack(side="left", padx=8)
         self.status = ttk.Label(self, text="Aguardando videos e calibracao de cada mesa.")
@@ -2016,6 +2023,38 @@ class GUI(tk.Tk):
         self.grid.see(str(len(self.candidates)-1))
         self.select_candidate()
 
+    def review_payload(self):
+        return {"version": 5, "videos": [asdict(v) for v in self.videos],
+                "layout": self.layout.get(), "config": self.cfg,
+                "threshold": self.threshold.get(),
+                "nick": self.nick.get().strip(), "quick": self.quick.get(),
+                "auto_export": self.auto_export.get(),
+                "use_gemini": self.use_gemini.get(),
+                "gemini_model": self.gemini_model.get(),
+                "gemini_limit": self.gemini_limit.get(),
+                "timeline": self.timeline,
+                "detected_timeline": self.detected_timeline,
+                "candidates": [asdict(c) for c in self.candidates]}
+
+    def autosave_review(self):
+        if not self.videos:
+            return False
+        target = latest_review_path()
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temp = target.with_name(target.name + ".tmp")
+            try:
+                temp.write_text(json.dumps(
+                    self.review_payload(), ensure_ascii=False, indent=2),
+                    encoding="utf-8")
+                os.replace(temp, target)
+            finally:
+                temp.unlink(missing_ok=True)
+            return True
+        except (OSError, TypeError, ValueError) as exc:
+            self.tell("AVISO: nao foi possivel salvar a ultima revisao no Windows.")
+            return False
+
     def save_scan(self):
         if not self.videos:
             return
@@ -2023,24 +2062,27 @@ class GUI(tk.Tk):
                                             filetypes=[("Revisao visual", "*.json")])
         if not path:
             return
-        payload = {"version": 4, "videos": [asdict(v) for v in self.videos],
-                   "layout": self.layout.get(), "config": self.cfg, "threshold": self.threshold.get(),
-                   "nick": self.nick.get().strip(), "quick": self.quick.get(),
-                   "auto_export": self.auto_export.get(),
-                   "use_gemini": self.use_gemini.get(),
-                   "gemini_model": self.gemini_model.get(),
-                   "gemini_limit": self.gemini_limit.get(),
-                   "timeline": self.timeline,
-                   "detected_timeline": self.detected_timeline,
-                   "candidates": [asdict(c) for c in self.candidates]}
         try:
-            Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            Path(path).write_text(json.dumps(
+                self.review_payload(), ensure_ascii=False, indent=2),
+                encoding="utf-8")
             self.tell("Revisao e recortes salvos em " + path)
         except Exception as exc:
             messagebox.showerror("Salvar", str(exc))
 
-    def load_scan(self):
-        path = filedialog.askopenfilename(filetypes=[("Revisao visual", "*.json")])
+    def load_latest_review(self):
+        path = latest_review_path()
+        if not path.is_file():
+            messagebox.showwarning(
+                "Sem revisao automatica",
+                "Nenhuma analise finalizada nesta versao foi salva no Windows. "
+                "Use Abrir revisao se salvou um JSON em outra pasta.")
+            return
+        self.load_scan(str(path))
+
+    def load_scan(self, path=None):
+        if path is None:
+            path = filedialog.askopenfilename(filetypes=[("Revisao visual", "*.json")])
         if not path:
             return
         try:
@@ -2148,6 +2190,7 @@ class GUI(tk.Tk):
                     self.candidates = revised
                     self.busy = False
                     self.refresh()
+                    saved = self.autosave_review()
                     remaining = sum(
                         not c.excluded and not c.confirmed and
                         not c.auto_verified and not c.gemini_checked and
@@ -2300,12 +2343,15 @@ class GUI(tk.Tk):
         self.detected_timeline = sorted(detections or [], key=lambda e: e["start"])
         self.busy = False
         self.refresh()
+        saved_review = self.autosave_review()
         verified = sum(c.auto_verified and not c.excluded for c in results)
         unresolved = sum(c.loss_bb is None for c in results)
         weak = len(results) - verified - unresolved
         self.tell(f"Analise: {verified} perdas consistentes; "
                   f"{weak} perdas fracas; {unresolved} leituras inconclusivas. "
-                  f"{ai_summary}")
+                  f"{ai_summary}. "
+                  + ("Revisao automatica salva." if saved_review else
+                     "ATENCAO: revisao automatica nao foi salva."))
         if self.auto_export_folder:
             # Gera apenas os MP4 com leitura repetida confiavel, sem clique manual.
             self.export(folder=self.auto_export_folder, automatic_only=True)
