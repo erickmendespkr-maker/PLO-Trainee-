@@ -2757,8 +2757,8 @@ class GUI(tk.Tk):
                     videos, cfg, results, threshold,
                     lambda msg: self.after(0, lambda m=msg: self.tell(m)))
                 self.after(0, lambda: self.tell(
-                    f"Fase 3/3: identificando FOLD ou vencedor do pote "
-                    f"em {priority} maos com aporte >= {threshold:g} BB..."))
+                    "Fase 3/3: procurando FOLD em TODAS as maos; "
+                    f"verificando o pote nas {priority} suspeitas sem fold..."))
                 decisions, verified, losses = confirm_candidates_by_pot_offline(
                     videos, cfg, estimates, threshold,
                     lambda msg: self.after(0, lambda m=msg: self.tell(m)))
@@ -2792,7 +2792,9 @@ class GUI(tk.Tk):
                   f"aporte potencial, {confirmed} perdas confirmadas. "
                   + ("Revisao salva." if saved else
                      "AVISO: nao foi possivel salvar revisao.") + " " + summary)
-        if auto_export_losses and self.auto_export.get() and confirmed:
+        if auto_export_losses and self.auto_export.get():
+            # Salvar relatorio mesmo quando OCR nao confirmou perdas.
+            # O CSV diagnostica separadamente FOLD e leituras de saldo.
             self.export(automatic_only=True)
         elif export_review and self.auto_export.get() and results:
             self.export_review_candidates(confirm=False)
@@ -2931,6 +2933,7 @@ class GUI(tk.Tk):
                                    "Nao ha maos candidatas para exportar.")
             return
         candidates.sort(key=lambda c: (
+            not c.fold_seen,
             c.hero_invested_bb is None,
             -(c.hero_invested_bb or 0),
             c.start))
