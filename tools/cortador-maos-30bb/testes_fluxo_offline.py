@@ -9,6 +9,9 @@ from types import SimpleNamespace
 
 from analise_local import times_for_hand, assess_stacks, offline_review_decision
 from desfecho_local import parse_table_lines, evaluate_pot_transfer
+from limites_maos import estender_ate_proxima_distribuicao
+from fold_local import has_fold_label, fold_overlay_roi, fold_overlay_confirmed
+from analise_local import confirmed_fold_investment
 
 
 class TesteTriagemOffline(unittest.TestCase):
@@ -31,6 +34,68 @@ class TesteTriagemOffline(unittest.TestCase):
         self.assertTrue(estimate["rebuy_possible"])
         self.assertFalse(offline_review_decision(
             estimate["invested_estimate_bb"], 30, "incerto"))
+
+
+class TesteLimitesEFold(unittest.TestCase):
+    def _hand(self, table, start, vanish, segment_end=200):
+        return SimpleNamespace(
+            table=table, layout="horizontal4",
+            start=max(0, start - 5), end=vanish + 5,
+            hand_start=start, hand_end=vanish,
+            next_deal_at=None, segment_end=segment_end)
+
+    def test_fold_nao_termina_o_mp4(self):
+        primeira = self._hand(1, 10, 20)
+        segunda = self._hand(1, 70, 80)
+        estender_ate_proxima_distribuicao([primeira, segunda], 200)
+        self.assertAlmostEqual(primeira.end, 69.85)
+        self.assertEqual(primeira.hand_end, 20)
+        self.assertEqual(primeira.next_deal_at, 70)
+
+    def test_proxima_mao_de_outra_mesa_nao_encerra_o_corte(self):
+        primeira = self._hand(1, 10, 20)
+        outra_mesa = self._hand(2, 25, 36)
+        segunda = self._hand(1, 70, 75)
+        estender_ate_proxima_distribuicao(
+            [primeira, outra_mesa, segunda], 200)
+        self.assertAlmostEqual(primeira.end, 69.85)
+
+    def test_ultima_mao_acompanha_ate_fim_do_video(self):
+        primeira = self._hand(1, 10, 25)
+        estender_ate_proxima_distribuicao([primeira], 145)
+        self.assertEqual(primeira.end, 145)
+        self.assertIsNone(primeira.next_deal_at)
+
+    def test_fold_escrito_no_avatar(self):
+        self.assertTrue(has_fold_label("FOLD"))
+        self.assertTrue(has_fold_label("Fold"))
+        self.assertFalse(has_fold_label("FOLDER"))
+        self.assertFalse(has_fold_label("adversario venceu"))
+
+    def test_crop_inclui_texto_acima_da_foto(self):
+        roi = fold_overlay_roi((120, 405, 240, 528), (0, 0, 320, 540))
+        self.assertLess(roi[1], 405)
+        self.assertLessEqual(roi[2], 240)
+        self.assertGreater(roi[3], 405)
+
+    def test_fold_em_um_frame_forte_ou_dois_medios(self):
+        self.assertTrue(fold_overlay_confirmed([-1, 83]))
+        self.assertTrue(fold_overlay_confirmed([60, -1, 55]))
+        self.assertFalse(fold_overlay_confirmed([60, -1, 20]))
+
+    def test_aporte_confirmado_por_duas_leituras_e_fold(self):
+        valor = confirmed_fold_investment(
+            before=[100], during=[95, 62, 61, 60, 60.5],
+            bb=1, threshold=30)
+        self.assertIsNotNone(valor)
+        self.assertGreaterEqual(valor, 30)
+        self.assertTrue(offline_review_decision(valor, 30, "hero_fold"))
+
+    def test_nao_confirmar_aporte_por_um_unico_ocr_errado(self):
+        valor = confirmed_fold_investment(
+            before=[100], during=[99, 97, 20, 96],
+            bb=1, threshold=30)
+        self.assertIsNone(valor)
 
 
 class TesteDestinoPote(unittest.TestCase):
