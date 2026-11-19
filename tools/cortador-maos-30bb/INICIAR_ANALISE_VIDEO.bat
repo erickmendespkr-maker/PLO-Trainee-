@@ -67,6 +67,16 @@ if errorlevel 1 (
     exit /b 1
   )
 )
+echo Conferindo detector visual de FOLD (OpenCV)...
+"%PYTHONEXE%" %PYTHONARGS% -c "import cv2, numpy" >nul 2>&1
+if errorlevel 1 (
+  echo Instalando OpenCV (primeira execucao, pode precisar de internet)...
+  "%PYTHONEXE%" %PYTHONARGS% -m pip install --user "opencv-python-headless>=4.8,<5"
+  if errorlevel 1 (
+    echo AVISO: OpenCV indisponivel. O analisador continua com OCR do Tesseract.
+    echo Para habilitar a identificacao visual, rode INSTALAR_TUDO_WINDOWS.bat.
+  )
+)
 echo Verificando sintaxe do analisador...
 "%PYTHONEXE%" %PYTHONARGS% -m py_compile "%~dp0analise_video.py" "%~dp0hud_recognition.py" "%~dp0pasta_saida.py" "%~dp0analise_local.py" "%~dp0desfecho_local.py" "%~dp0cortador.py"
 if errorlevel 1 (
