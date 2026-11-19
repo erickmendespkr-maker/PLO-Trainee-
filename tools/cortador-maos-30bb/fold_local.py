@@ -41,48 +41,8 @@ def fold_overlay_roi(hero_hud, table_box):
 
 _BANNER_SIZE = (43, 15)
 # Referencia visual do aviso Fold fornecida pelo usuario.
-_BANNER_B85 = "c# -*- coding: utf-8 -*-
-"""Deteccao offline de 'FOLD' sobre o avatar do heroi, sem IA ou internet.
+_BANNER_B85 = "c$`hr*>0mS7zN<F=}p?S(o~vC>10X@HkcI0;0*^z9Bi|+egDT9XCdh)gslG@7J=*Db^V23xM3WIe(3x0t2?gFbI%T<J~gIp=WF9QxNfkcKXv1^>Uz2DopH|k!`cH)3C^AEK5fQb-(%wZb?1A#u2RmnzGbX2=0Ff-%(Q-luyY!v#vZkv)}?B7YuYotiT2uv@Ga3FSfTd>Yki4Yr@7RPp41<!C}x0EE0*FkY2s|ZpE9%OwBFWDQ=jZmMDsFW6+lUrCN)TRyZT~RvAj~-iON9TlmLm<CQcC)VcIlPR&N;=N?s+2P~`>&P(n!HGREpg5W>X~pNO&)q7YIlKV-K+$gH3R{fXr{<B~C!bIyvNHiiG_SH6(rTogH{jB--klDt?`NfHoxkq01z0Fi8VcQ^Yre@#KK{1+FS_3!6DFN;WN#fg6$JH3xrIz7L?pFPZ9Vo6C7E&_~Smv6!Qx*1G+@c-0UzX_c4TjcBe@!|35={ew?Z6twz7buBAxTc5y9&C<v\""
 
-Texto em qualquer outro assento NAO prova o fold do heroi.
-A ROI e obtida da marcacao do HUD do heroi, com extensao acima do avatar.
-"""
-from __future__ import annotations
-
-import base64
-import re
-import subprocess
-import zlib
-import tempfile
-from pathlib import Path
-
-from PIL import Image, ImageOps
-
-
-_FOLD_WORD = re.compile(r"(?<![A-Z0-9])F[O0]LD(?![A-Z0-9])")
-
-
-def has_fold_label(text):
-    """Evita confundir FOLD com FOLDER e nomes de jogadores."""
-    return bool(_FOLD_WORD.search(str(text).upper()))
-
-
-def fold_overlay_roi(hero_hud, table_box):
-    """Retangulo 960x540 centrado na foto do heroi, incluindo area acima."""
-    x1, y1, x2, y2 = hero_hud
-    left, top, right, bottom = table_box
-    width, height = x2 - x1, y2 - y1
-    if width < 30 or height < 30:
-        return None
-    # O aviso Fold fica acima/esquerda do avatar, fora da ROI antiga.
-    box = (max(left, round(x1 - .27 * width)),
-           max(top, round(y1 - .95 * height)),
-           min(right, round(x1 + .65 * width)),
-           min(bottom, round(y1 + .61 * height)))
-    return box if box[2] - box[0] >= 12 and box[3] - box[1] >= 12 else None
-
-
-hr*>0mS7zN<F=}p?S(o~vC>10X@HkcI0;0*^z9Bi|+egDT9XCdh)gslG@7J=*Db^V23xM3WIe(3x0t2?gFbI%T<J~gIp=WF9QxNfkcKXv1^>Uz2DopH|k!`cH)3C^AEK5fQb-(%wZb?1A#u2RmnzGbX2=0Ff-%(Q-luyY!v#vZkv)}?B7YuYotiT2uv@Ga3FSfTd>Yki4Yr@7RPp41<!C}x0EE0*FkY2s|ZpE9%OwBFWDQ=jZmMDsFW6+lUrCN)TRyZT~RvAj~-iON9TlmLm<CQcC)VcIlPR&N;=N?s+2P~`>&P(n!HGREpg5W>X~pNO&)q7YIlKV-K+$gH3R{fXr{<B~C!bIyvNHiiG_SH6(rTogH{jB--klDt?`NfHoxkq01z0Fi8VcQ^Yre@#KK{1+FS_3!6DFN;WN#fg6$JH3xrIz7L?pFPZ9Vo6C7E&_~Smv6!Qx*1G+@c-0UzX_c4TjcBe@!|35={ew?Z6twz7buBAxTc5y9&C<v"
 
 def fold_template_score(image):
     """Compara o banner real em varias escalas; opcional sem OpenCV."""
