@@ -1,5 +1,6 @@
 """Validate and persist unverified offline review ledgers without overwriting files."""
 import json
+import math
 import os
 import tempfile
 from pathlib import Path
@@ -31,7 +32,7 @@ def validate_ledger(ledger):
         if e['video_sha256'] != sha or type(e['table_id']) is not int or not 1 <= e['table_id'] <= 4:
             raise ValueError('invalid provenance or table')
         a, b = e['start_observed_seconds'], e['end_observed_seconds']
-        if any(type(x) not in (int, float) for x in (a, b)) or not (0 <= a < b <= duration):
+        if any(type(x) not in (int, float) or not math.isfinite(x) for x in (a, b)) or not (0 <= a < b <= duration):
             raise ValueError('invalid timestamps')
         if (e['review_status'] != 'pending_human_review' or e['hand_verified'] is not False
                 or e['clip_export_allowed'] is not False or any(e[k] is not None for k in ('loss_bb', 'equity', 'ev'))):
