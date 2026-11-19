@@ -37,7 +37,7 @@ pause
 exit /b 1
 
 :check
-"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "analise_local.py" "desfecho_local.py" "fold_local.py" "limites_maos.py" "hud_recognition.py" "pasta_saida.py" "testes_contexto.py" "testes_hud.py" "testes_pasta_saida.py" "testes_fase_final.py" "testes_fluxo_offline.py"
+"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "analise_local.py" "desfecho_local.py" "fold_local.py" "limites_maos.py" "rastreador_eventos.py" "hud_recognition.py" "pasta_saida.py" "testes_contexto.py" "testes_hud.py" "testes_pasta_saida.py" "testes_fase_final.py" "testes_fluxo_offline.py" "testes_rastreador_eventos.py" "testes_fusao_visual.py"
 if errorlevel 1 (
   echo.
   echo ERRO: a verificacao de sintaxe falhou.
@@ -91,7 +91,7 @@ if errorlevel 1 (
 )
 echo.
 echo Conferindo o FOLD independentemente da leitura inicial de BB:
-"%PYEXE%" %PYARGS% -m unittest -v testes_fase_final testes_fluxo_offline
+"%PYEXE%" %PYARGS% -m unittest -v testes_fase_final testes_fluxo_offline testes_rastreador_eventos testes_fusao_visual
 if errorlevel 1 (
   echo.
   echo ERRO: os testes da confirmacao final falharam.
