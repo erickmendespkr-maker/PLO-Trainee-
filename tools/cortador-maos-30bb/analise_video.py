@@ -1422,15 +1422,24 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
                     if fold_roi is not None else None)
         best_fold = -1.
         detected_fold_at = None
-        if fold_box is not None and c.hand_end is not None:
+        if fold_box is not None and c.hand_start is not None:
             scores = []
-            # O banner pode durar menos de 1 segundo no video. Procurar
-            # nos segundos que cercam o sumico das cartas do heroi.
-            offsets = (-3, -2.5, -2, -1.5, -1, -.5, 0, .5, 1, 1.5, 2)
-            for delta in offsets:
-                at = round(finish + delta, 2)
-                if not (start + .1 <= at < hard_end):
-                    continue
+            # O aviso FOLD aparece quando o jogador desiste, muitas vezes
+            # com as cartas ainda visiveis. Seu desaparecimento NAO marca
+            # necessariamente o momento do fold. Buscar desde a distribuicao
+            # ate as cartas sumirem, nunca somente ao redor de hand_end.
+            #
+            # Primeiro passe em 1 FPS: adequado ao video ja amostrado pelo
+            # detector de maos. Se o sinal de OCR for fraco mas plausivel,
+            # conferir quadros intermediarios ao redor desse instante.
+            search_end = min(finish + 2., hard_end)
+            first_pass = []
+            at = start + .5
+            while at < search_end:
+                first_pass.append(round(at, 2))
+                at += 1.
+            best_time = None
+            for at in first_pass:
                 try:
                     frame = native_stack_crop(videos, at, fold_box, ffmpeg)
                     score = read_fold_score(frame, tesseract)
@@ -1438,10 +1447,29 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
                         subprocess.SubprocessError):
                     continue
                 scores.append(score)
-                best_fold = max(best_fold, score)
+                if score > best_fold:
+                    best_fold, best_time = score, at
                 if fold_overlay_confirmed(scores):
                     detected_fold_at = at
                     break
+            # Repassar com meio segundo de intervalo somente quando houve
+            # texto semelhante a FOLD (OCR >=20) para conter custo de CPU.
+            if detected_fold_at is None and best_time is not None and best_fold >= 20:
+                for delta in (-.75, -.5, -.25, .25, .5, .75):
+                    at = round(best_time + delta, 2)
+                    if not (start + .1 <= at < search_end):
+                        continue
+                    try:
+                        frame = native_stack_crop(videos, at, fold_box, ffmpeg)
+                        score = read_fold_score(frame, tesseract)
+                    except (OSError, RuntimeError, ValueError,
+                            subprocess.SubprocessError):
+                        continue
+                    scores.append(score)
+                    best_fold = max(best_fold, score)
+                    if fold_overlay_confirmed(scores):
+                        detected_fold_at = at
+                        break
         c.fold_ocr_score = best_fold
         c.fold_seen = detected_fold_at is not None
         c.fold_detected_at = detected_fold_at
