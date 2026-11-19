@@ -3079,9 +3079,9 @@ class GUI(tk.Tk):
                 self.tell(f"Nenhum pote perdido >= {threshold:g} BB confirmado. "
                           f"{pending} maos ainda pendentes de verificacao.")
                 messagebox.showwarning(
-                    "Nenhum pote confirmado para exportar",
+                    "Nenhuma perda confirmada para exportar",
                     "Nenhuma mao foi confirmada como perda de pelo menos "
-                    f"{threshold:g} BB com aporte do heroi e pote ao adversario.\n\n"
+                    f"{threshold:g} BB por FOLD ou resultado do pote.\n\n"
                     "O saldo voltar para 100 BB com rebuy nao prova perda.\n"
                     "O fold e analisado independentemente do saldo.\n"
                     "Nao foram exportados cortes incertos.\n\n"
