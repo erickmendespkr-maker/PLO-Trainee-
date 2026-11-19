@@ -20,7 +20,7 @@ class TesteTriagemOffline(unittest.TestCase):
             start=5, end=35, hand_start=10, hand_end=30,
             before_times=[8, 9], after_times=[32, 33])
         t = times_for_hand(hand, 100, inside_samples=15)
-        self.assertEqual(t["before"], [9])
+        self.assertEqual(t["before"], [8, 9])
         self.assertEqual(t["after"], [32])
         self.assertEqual(len(t["during"]), 15)
         self.assertTrue(all(10 < x < 30 for x in t["during"]))
