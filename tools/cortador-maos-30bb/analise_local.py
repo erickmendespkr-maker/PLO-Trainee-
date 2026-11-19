@@ -93,6 +93,44 @@ def assess_stacks(before, during, after, bb, threshold):
     return result
 
 
+
+def confirmed_fold_investment(before, during, bb, threshold):
+    """Perda minima comprovavel no fold por DUAS leituras de stack baixas.
+
+    Um unico OCR muito baixo pode ser erro. Nao inferir rebuy nem
+    premiacao: no fold o heroi abandona todas as fichas colocadas no pote.
+    Caso faltem leituras coerentes, devolve None para revisao.
+    """
+    if not isinstance(bb, (int, float)) or not math.isfinite(bb) or bb <= 0:
+        return None
+    before_values = [float(v) for v in before
+                     if isinstance(v, (int, float)) and not isinstance(v, bool)
+                     and math.isfinite(v) and 0 <= v / bb <= 5000]
+    during_values = [float(v) for v in during
+                     if isinstance(v, (int, float)) and not isinstance(v, bool)
+                     and math.isfinite(v) and 0 <= v / bb <= 5000]
+    if not before_values or len(during_values) < 3:
+        return None
+    baseline = statistics.median(before_values)
+    # Para confirmar a perda, procurar dois saldos apos investimento
+    # com leitura coerente. O valor seguro e o menor aporte dos dois,
+    # em vez de um pico isolado de OCR.
+    qualified = [v for v in during_values
+                 if (baseline - v) / bb + 1e-6 >= threshold]
+    if len(qualified) < 2:
+        return None
+    qualified.sort()
+    tolerance = max(2 * bb, baseline * .04)
+    pairs = [(low, high) for i, low in enumerate(qualified)
+             for high in qualified[i + 1:]
+             if high - low <= tolerance]
+    if not pairs:
+        return None
+    # Maior perda minima confirmada por duas leituras semelhantes.
+    committed = max((baseline - high) / bb for low, high in pairs)
+    return round(committed, 2) if committed >= threshold else None
+
+
 def offline_review_decision(amount_bb, threshold, pot_destination):
     """Apenas confirmacao humana explicita aprova clip como PERDA.
 
