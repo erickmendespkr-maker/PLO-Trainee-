@@ -40,37 +40,65 @@ def _parse_amount(text):
 
 
 def parse_table_lines(lines, width, height):
-    """lines: [(texto, centro_x, centro_y), ...] em coordenadas de pixels.
+    """Le stacks e pote da mesa, inclusive quando o OCR separa a legenda POT.
 
-    A identificacao do pote so e aceita com palavra POT/POTE/TOTAL perto
-    do centro. Saldos em outras posicoes podem representar stacks.
+    So aceita numeros soltos em uma regiao plausivel; nunca confunde o
+    numero do relogio, das cartas ou de uma aposta com premio confirmado.
     """
-    seats = []
-    pots = []
-    winner_messages = []
+    seats, pots, winner_messages = [], [], []
     side_pot = False
+    normalized = []
     for raw, cx, cy in lines:
-        text = raw.strip()
+        entry = (str(raw).strip(), cx / max(1, width), cy / max(1, height))
+        normalized.append(entry)
+        side_pot |= bool(SIDE_POT_WORDS.search(entry[0]))
+        if WINNER_WORDS.search(entry[0]):
+            winner_messages.append(entry[0])
+
+    pot_labels = [(x, y) for text, x, y in normalized
+                  if POT_WORDS.search(text) and not SIDE_POT_WORDS.search(text)]
+    isolated_amount = re.compile(r"^\\s*(\\d{1,5}(?:[,.]\\d{1,2})?)\\s*$")
+    bare_amount = re.compile(r"(?<![a-z0-9])\\d{1,5}(?:[,.]\\d{1,2})?(?![a-z0-9])",
+                             re.IGNORECASE)
+
+    for text, x, y in normalized:
         if not text:
             continue
-        side_pot = side_pot or bool(SIDE_POT_WORDS.search(text))
-        if WINNER_WORDS.search(text):
-            winner_messages.append(text)
-        matches = list(AMOUNT.finditer(text))
-        for m in matches:
-            amount = _parse_amount(m.group(1))
+        explicit = AMOUNT.findall(text)
+        in_table_middle = .20 <= x <= .80 and .25 <= y <= .73
+        near_pot_label = in_table_middle and any(
+            abs(x - px) <= .22 and abs(y - py) <= .13
+            for px, py in pot_labels)
+        labelled_pot = bool(POT_WORDS.search(text)) and in_table_middle
+        if explicit:
+            amounts = explicit
+        elif labelled_pot:
+            amounts = bare_amount.findall(text)
+        elif near_pot_label:
+            amount = isolated_amount.fullmatch(text)
+            amounts = [amount.group(1)] if amount else []
+        elif not in_table_middle:
+            # Um stack isolado pode vir sem 'BB' no layout da sala.
+            # Exigir separador decimal evita ler blinds, timers e nomes.
+            amount = isolated_amount.fullmatch(text)
+            amounts = [amount.group(1)] if (
+                amount and ("," in text or "." in text)) else []
+        else:
+            amounts = []
+        for raw_amount in amounts:
+            amount = _parse_amount(raw_amount)
             if amount is None:
                 continue
-            normalized_x = cx / max(1, width)
-            normalized_y = cy / max(1, height)
-            if POT_WORDS.search(text) and .20 <= normalized_x <= .80:
+            # Alguns layouts exibem apenas '180 BB' no centro do feltro;
+            # isso pode ser o pote. A confirmacao ainda exige seu sumico
+            # e o crescimento estavel de um OUTRO jogador.
+            central_pot = bool(explicit) and .29 <= x <= .71 and .32 <= y <= .66
+            if labelled_pot or near_pot_label or central_pot:
                 pots.append(amount)
             else:
-                seats.append((round(normalized_x, 3),
-                              round(normalized_y, 3), amount))
+                seats.append((round(x, 3), round(y, 3), amount))
     return {"seats": seats, "pots": pots, "winner_labels": winner_messages,
             "side_pot": side_pot}
-
 
 def read_table_ocr(frame, tesseract):
     """Tesseract TSV: agrupa palavras pela linha, preservando posicoes."""
