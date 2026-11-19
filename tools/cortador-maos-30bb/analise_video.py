@@ -1265,7 +1265,7 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
 
 
 def estimate_candidates_offline(videos, config, candidates, threshold,
-                                progress=lambda msg: None, sample_count=7):
+                                progress=lambda msg: None, sample_count=15):
     """Triagem de possivel investimento >=30 BB pelo stack DURANTE cada mao.
 
     Nunca classifica automaticamente perda apenas pela queda do stack, porque
@@ -1382,35 +1382,63 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
             if other.table == c.table and other.layout == c.layout
             and other.hand_start is not None
             and other.hand_start > finish]
+        # As cartas do heroi somem ao dar fold, mas os adversarios podem
+        # continuar disputando o pote por dezenas de segundos. A busca so
+        # termina antes da PROXIMA mao do heroi na mesma mesa.
         hard_end = min(duration - .15,
-                       min(next_starts) - .2 if next_starts else finish + 14)
-        after_candidates = [finish + offset for offset in (.75, 2.0, 4.0,
-                                                            7.0, 11.0)]
-        after_candidates = [t for t in after_candidates if t < hard_end]
-        if len(after_candidates) < 2:
+                       min(next_starts) - .2 if next_starts else finish + 65)
+        offsets = (-2.0, -.4, .5, 1.5, 3, 5, 7.5, 10.5,
+                   14.5, 19, 25, 32, 41, 52, 64)
+        moments = sorted(set(round(t, 3) for t in (
+            max(start + .1, finish + offset) for offset in offsets)
+            if start < t < hard_end))
+        if len(moments) < 3:
             c.status = "PENDENTE - PREMIACAO NAO OBSERVAVEL"
             continue
         table_box = layout_bounds(mode, c.table)
+
         def snap(moment):
             return read_table_ocr(
                 native_stack_crop(videos, moment, table_box, ffmpeg),
                 tesseract)
+
+        outcome = None
+        snapshots = []
         try:
             before = snap(max(.02, start - 1.0))
-            pot_before = snap(max(start + .1, finish - 1.5))
-            last = None
-            outcome = None
-            # 2 quadros sequenciais apos a transferencia, para confirmar
-            # que o ganho do adversario nao e uma animacao transitoria.
-            for moment in after_candidates:
+            for moment in moments:
                 current = snap(moment)
-                if last is not None:
-                    outcome = evaluate_pot_transfer(
-                        before, pot_before, last, current,
+                snapshots.append((moment, current))
+                if len(snapshots) < 3:
+                    continue
+                # Procurar pote em mais de um instante anterior: quando o
+                # heroi ja saiu da mao, o pote continua crescendo na mesa.
+                # Duas leituras posteriores sem pote devem coincidir com
+                # aumento persistente de stack no MESMO assento adversario.
+                after_a = snapshots[-2][1]
+                after_b = snapshots[-1][1]
+                for _earlier_at, previous in reversed(snapshots[:-2]):
+                    if not previous.get("pots"):
+                        continue
+                    trial = evaluate_pot_transfer(
+                        before, previous, after_a, after_b,
                         c.hero_invested_bb, threshold)
-                    if outcome["confirmed"]:
+                    if trial["confirmed"]:
+                        outcome = trial
+                        # O corte precisa acompanhar a premiacao, inclusive
+                        # quando a carta do heroi sumiu varios segundos antes.
+                        c.end = min(hard_end, moment + 1.5)
                         break
-                last = current
+                    outcome = trial
+                if outcome is not None and outcome["confirmed"]:
+                    break
+            if outcome is None:
+                outcome = {
+                    "confirmed": False,
+                    "reason": ("Pote central nao legivel nos quadros da mesa"
+                               if not any(item.get("pots") for _, item in snapshots)
+                               else "Transferencia do pote nao demonstrada"),
+                }
         except (OSError, RuntimeError, ValueError,
                 subprocess.SubprocessError) as exc:
             c.status = "PENDENTE - OCR DA MESA INTEIRA FALHOU"
