@@ -41,6 +41,23 @@ class BatchClipTests(unittest.TestCase):
     def test_unsafe_id(self):
         self.obj['clip_plans'][0]['hand_id']='../bad';self.write()
         with self.assertRaises(ValueError): export_reviewed_clips(self.video,self.plan,self.base/'out')
+    def test_existing_manifest_does_not_export_clips(self):
+        out=self.base/'out';out.mkdir();(out/'clip_manifest.json').write_text('{}')
+        with self.assertRaises(FileExistsError): export_reviewed_clips(self.video,self.plan,out)
+        self.assertEqual(list(out.glob('*.mp4')),[])
+    def test_later_existing_clip_does_not_export_first(self):
+        second=dict(self.obj['clip_plans'][0]);second['hand_id']='h2'
+        self.obj['clip_plans'].append(second);self.write()
+        out=self.base/'out';out.mkdir();(out/'table1_h2.mp4').write_bytes(b'keep')
+        with self.assertRaises(FileExistsError): export_reviewed_clips(self.video,self.plan,out)
+        self.assertFalse((out/'table1_h1.mp4').exists())
+        self.assertEqual((out/'table1_h2.mp4').read_bytes(),b'keep')
+    def test_duplicate_filename_rejected_before_export(self):
+        second=dict(self.obj['clip_plans'][0]);second['table_id']=2
+        self.obj['clip_plans'].append(second);self.write()
+        # Duplicate hand IDs are already rejected by the handoff validator.
+        with self.assertRaises(ValueError): export_reviewed_clips(self.video,self.plan,self.base/'out')
+        self.assertFalse((self.base/'out').exists())
     def test_no_overwrite(self):
         export_reviewed_clips(self.video,self.plan,self.base/'out')
         with self.assertRaises(FileExistsError): export_reviewed_clips(self.video,self.plan,self.base/'out')
