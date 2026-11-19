@@ -37,7 +37,7 @@ pause
 exit /b 1
 
 :check
-"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "analise_local.py" "hud_recognition.py" "pasta_saida.py" "testes_contexto.py" "testes_hud.py" "testes_pasta_saida.py"
+"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "analise_local.py" "desfecho_local.py" "hud_recognition.py" "pasta_saida.py" "testes_contexto.py" "testes_hud.py" "testes_pasta_saida.py"
 if errorlevel 1 (
   echo.
   echo ERRO: a verificacao de sintaxe falhou.
@@ -77,6 +77,15 @@ echo Testando aporte intra-mao e rebuy sem API:
 if errorlevel 1 (
   echo.
   echo ERRO nos testes de rebuy e leitura contextual do pote.
+  pause
+  exit /b 1
+)
+echo.
+echo Testando premiacao de pote na mesa inteira (sem API):
+"%PYEXE%" %PYARGS% "testes_desfecho.py"
+if errorlevel 1 (
+  echo.
+  echo ERRO nos testes do destino do pote.
   pause
   exit /b 1
 )
