@@ -835,6 +835,10 @@ class Candidate:
     fold_confirmed: bool = False
     fold_investment_bb: float | None = None
     fold_ocr_score: float | None = None
+    fold_seen: bool = False
+    fold_detected_at: float | None = None
+    stack_before_trace: list[list] = field(default_factory=list)
+    stack_trace: list[list] = field(default_factory=list)
     pot_verified: bool = False
     hero_invested_bb: float | None = None
     winner_nick: str = ""
@@ -1329,6 +1333,12 @@ def estimate_candidates_offline(videos, config, candidates, threshold,
                 except (OSError, RuntimeError, ValueError,
                         subprocess.SubprocessError):
                     samples[kind].append(None)
+        candidate.stack_before_trace = [
+            [round(at, 3), value] for at, value
+            in zip(times["before"], samples["before"])]
+        candidate.stack_trace = [
+            [round(at, 3), value] for at, value
+            in zip(times["during"], samples["during"])]
         # Preservar saldos de referencia no relatorio para diagnostico.
         # Nao interpretar a diferenca inicio/fim como perda: o rebuy pode
         # restaurar a pilha antes do frame posterior a mao.
@@ -1384,9 +1394,6 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
     for index, c in enumerate(result):
         if c.excluded or c.confirmed:
             continue
-        if c.hero_invested_bb is None or not loss_reaches_threshold(
-                c.hero_invested_bb, threshold):
-            continue
         mode = layout_key(c.layout)
         if mode == "auto4" or c.table > layout_count(mode):
             c.status = "PENDENTE - MESA NAO IDENTIFICADA"
@@ -1407,6 +1414,99 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
                         else duration),
                        c.segment_end if c.segment_end is not None
                        else duration)
+        table_box = layout_bounds(mode, c.table)
+        # Primeira prova INDEPENDENTE do investimento: FOLD sobre o avatar.
+        # Nao deixar OCR incompleto do stack bloquear a identificacao do fold.
+        fold_roi = layout_roi(config[str(c.table)], c.table, mode, "hero_hud")
+        fold_box = (fold_overlay_roi(fold_roi, table_box)
+                    if fold_roi is not None else None)
+        best_fold = -1.
+        detected_fold_at = None
+        if fold_box is not None and c.hand_end is not None:
+            scores = []
+            # O banner pode durar menos de 1 segundo no video. Procurar
+            # nos segundos que cercam o sumico das cartas do heroi.
+            offsets = (-3, -2.5, -2, -1.5, -1, -.5, 0, .5, 1, 1.5, 2)
+            for delta in offsets:
+                at = round(finish + delta, 2)
+                if not (start + .1 <= at < hard_end):
+                    continue
+                try:
+                    frame = native_stack_crop(videos, at, fold_box, ffmpeg)
+                    score = read_fold_score(frame, tesseract)
+                except (OSError, RuntimeError, ValueError,
+                        subprocess.SubprocessError):
+                    continue
+                scores.append(score)
+                best_fold = max(best_fold, score)
+                if fold_overlay_confirmed(scores):
+                    detected_fold_at = at
+                    break
+        c.fold_ocr_score = best_fold
+        c.fold_seen = detected_fold_at is not None
+        c.fold_detected_at = detected_fold_at
+
+        if c.fold_seen:
+            # A perda por fold independe de quem recebeu o pote. Reaproveitar
+            # amostras do primeiro passe e reler apenas perto do fold se
+            # necessario, antes de qualquer rebuy automatico.
+            bb = float(config[str(c.table)].get("bb", 1))
+            before_values = [entry[1] for entry in c.stack_before_trace
+                             if len(entry) == 2 and entry[1] is not None]
+            if not before_values and c.stack_before is not None:
+                before_values.append(c.stack_before)
+            during_values = [entry[1] for entry in c.stack_trace
+                             if len(entry) == 2 and entry[1] is not None
+                             and entry[0] <= detected_fold_at + .5]
+            verified_bb = confirmed_fold_investment(
+                before_values, during_values, bb, threshold)
+            if verified_bb is None and fold_roi is not None:
+                for dt in (-2.5, -2, -1.5, -1, -.5, 0, .25):
+                    at = round(detected_fold_at + dt, 3)
+                    if not (start + .1 < at < hard_end):
+                        continue
+                    try:
+                        image = native_stack_crop(videos, at, fold_roi, ffmpeg)
+                        value = ocr_stack(image, tesseract, quick=False)
+                        if value is not None and 0 <= value / bb <= MAX_STACK_BB:
+                            during_values.append(value)
+                    except (OSError, RuntimeError, ValueError,
+                            subprocess.SubprocessError):
+                        continue
+                verified_bb = confirmed_fold_investment(
+                    before_values, during_values, bb, threshold)
+            c.fold_investment_bb = verified_bb
+            evaluated += 1
+            if verified_bb is not None:
+                c.fold_confirmed = True
+                c.auto_verified = True
+                c.pot_verified = False
+                c.loss_bb = verified_bb
+                c.hero_invested_bb = max(c.hero_invested_bb or 0, verified_bb)
+                c.status = "PERDA >= LIMITE CONFIRMADA POR FOLD E SALDO"
+                c.source = "OCR offline: FOLD do heroi + saldos"
+                c.reliability = (
+                    f"Fold aos {detected_fold_at:.2f}s, "
+                    f"saldo inicial {len(before_values)} leituras, "
+                    f"durante {len(during_values)} leituras coerentes")
+                approved += 1
+            else:
+                c.status = "PENDENTE - FOLD ENCONTRADO, APORTE >= LIMITE NAO COMPROVADO"
+                c.reliability = (
+                    f"FOLD detectado aos {detected_fold_at:.2f}s "
+                    f"(OCR {best_fold:.0f}); "
+                    f"saldo inicial {len(before_values)} leitura(s), "
+                    f"durante {len(during_values)} leitura(s); "
+                    "revisar valor investido no video")
+            # Fold confirmado visualmente: nao exigir OCR do vencedor do pote.
+            continue
+
+        if c.hero_invested_bb is None or not loss_reaches_threshold(
+                c.hero_invested_bb, threshold):
+            # Sem evidencias de fold ou de aporte suficiente:
+            # manter pendente em vez de alegar que nao houve perda.
+            continue
+
         scan_from = max(start + .2, finish - 3)
         if hard_end <= scan_from + .6:
             c.status = "PENDENTE - PREMIACAO NAO OBSERVAVEL"
@@ -1419,48 +1519,6 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
         if len(moments) < 3:
             c.status = "PENDENTE - PREMIACAO NAO OBSERVAVEL"
             continue
-        table_box = layout_bounds(mode, c.table)
-        # FOLD e escrito acima do avatar do heroi. Nao confiar no
-        # desaparecimento das cartas: pode ser showdown ou fim da mao.
-        # Exigir OCR dentro da regiao do avatar E dois saldos baixos
-        # coerentes protege contra falsos folds/perdas de 30BB+.
-        fold_roi = layout_roi(config[str(c.table)], c.table, mode,
-                              "hero_hud")
-        fold_box = (fold_overlay_roi(fold_roi, table_box)
-                    if fold_roi is not None else None)
-        if (fold_box is not None and c.hand_end is not None
-                and c.fold_investment_bb is not None
-                and loss_reaches_threshold(c.fold_investment_bb, threshold)):
-            fold_scores = []
-            # A faixa fica visivel por pouco tempo ao desistir.
-            instants = sorted(set(round(c.hand_end + dt, 2) for dt in
-                                  (-2.0, -1.5, -1.0, -.5, 0, .5,
-                                   1.0, 1.5, 2.0)))
-            for at in instants:
-                if not (start + .1 <= at < hard_end):
-                    continue
-                try:
-                    frame = native_stack_crop(videos, at, fold_box, ffmpeg)
-                    fold_scores.append(read_fold_score(frame, tesseract))
-                except (OSError, RuntimeError, ValueError,
-                        subprocess.SubprocessError):
-                    continue
-                if fold_overlay_confirmed(fold_scores):
-                    c.fold_confirmed = True
-                    c.auto_verified = True
-                    c.pot_verified = False
-                    c.loss_bb = c.fold_investment_bb
-                    c.status = "PERDA POR FOLD CONFIRMADA - OCR DO AVATAR"
-                    c.source = "OCR offline do FOLD + saldos repetidos"
-                    c.reliability = (
-                        "FOLD no avatar do heroi; aporte confirmado "
-                        "por 2 leituras de saldo. MP4 ate novas cartas.")
-                    approved += 1
-                    evaluated += 1
-                    break
-            c.fold_ocr_score = max(fold_scores, default=-1.)
-            if c.fold_confirmed:
-                continue
 
         def snap(moment):
             return read_table_ocr(
@@ -1529,8 +1587,10 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
         if evaluated % 3 == 0:
             progress(f"Vencedor do pote: {evaluated} maos examinadas; "
                      f"{approved} perdas >= {threshold:g} BB confirmadas.")
-    progress(f"Resultado offline: {approved} perdas confirmadas por "
-             f"transferencia do pote; {evaluated} suspeitas verificadas.")
+    folds_seen = sum(c.fold_seen for c in result)
+    progress(f"Resultado offline: {approved} perdas confirmadas; "
+             f"{folds_seen} folds encontrados; "
+             f"{evaluated} desfechos examinados.")
     return result, evaluated, approved
 
 
@@ -2983,7 +3043,8 @@ class GUI(tk.Tk):
                                  "confiabilidade", "aporte_heroi_bb",
                                  "vencedor_pote", "pote_confirmado", "rebuy_visto",
                                  "fold_conferido", "proxima_distribuicao", "cartas_sumiram",
-                                 "aporte_fold_confirmado_bb", "fold_ocr_melhor_confianca"])
+                                 "aporte_fold_confirmado_bb", "fold_ocr_melhor_confianca",
+                                 "fold_encontrado", "instante_fold"])
                 for c in self.candidates:
                     writer.writerow([fmt(c.start), fmt(c.end), c.table, c.layout,
                                      c.nick, c.stack_before, c.stack_after,
@@ -2996,7 +3057,10 @@ class GUI(tk.Tk):
                                      fmt(c.next_deal_at) if c.next_deal_at is not None else "",
                                      fmt(c.hand_end) if c.hand_end is not None else "",
                                      c.fold_investment_bb,
-                                     c.fold_ocr_score])
+                                     c.fold_ocr_score,
+                                     "SIM" if c.fold_seen else "NAO",
+                                     fmt(c.fold_detected_at)
+                                     if c.fold_detected_at is not None else ""])
         except OSError as exc:
             messagebox.showerror("Relatorio", str(exc))
             return
@@ -3013,6 +3077,7 @@ class GUI(tk.Tk):
                     "Nenhuma mao foi confirmada como perda de pelo menos "
                     f"{threshold:g} BB com aporte do heroi e pote ao adversario.\n\n"
                     "O saldo voltar para 100 BB com rebuy nao prova perda.\n"
+                    "O fold e analisado independentemente do saldo.\n"
                     "Nao foram exportados cortes incertos.\n\n"
                     f"Relatorio: {report}\n"
                     "Para revisar as jogadas, use EXPORTAR PARA REVISAO "
