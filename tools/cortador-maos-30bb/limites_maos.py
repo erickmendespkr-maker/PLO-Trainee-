@@ -35,11 +35,13 @@ def estender_ate_proxima_distribuicao(candidates, duration):
                 None)
             hand.next_deal_at = following
             if following is None:
-                # Sem novas cartas nao temos limite final confiavel.
-                # Preservar o recorte preliminar, sinalizando o fato.
-                continue
-            # Pequena folga para nao incluir as cartas da mao seguinte.
-            new_end = min(segment_end, following - .15)
+                # Se a proxima distribuicao nao aparece na gravacao,
+                # acompanhar a mesa ate terminar o video/segmento. O
+                # campo next_deal_at=None permite sinalizar fim incompleto.
+                new_end = min(duration, segment_end)
+            else:
+                # Nao incluir o primeiro quadro da mao seguinte.
+                new_end = min(segment_end, following - .15)
             if new_end > hand.start and (
                     hand.hand_end is None or new_end >= hand.hand_end):
                 hand.end = new_end
