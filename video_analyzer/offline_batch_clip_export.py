@@ -41,6 +41,16 @@ def export_reviewed_clips(video_path,plan_path,output_dir):
         if not SAFE_ID.fullmatch(item['hand_id']): raise ValueError('unsafe hand id')
         if item['end_seconds']>duration+0.001: raise ValueError('interval exceeds video')
         if crop['x']+crop['width']>width or crop['y']+crop['height']>height: raise ValueError('crop exceeds frame')
+    # Preflight every output before invoking FFmpeg: never create partial batches
+    # merely because a later clip or the manifest already exists.
+    names=[f"table{item['table_id']}_{item['hand_id']}.mp4" for item in requests]
+    if len(names)!=len(set(names)):
+        raise ValueError('duplicate output clip filename')
+    if (out/'clip_manifest.json').exists():
+        raise FileExistsError('will not overwrite manifest')
+    for name in names:
+        if (out/name).exists():
+            raise FileExistsError(f'will not overwrite {out/name}')
     out.mkdir(parents=True,exist_ok=True)
     results=[]
     for item in requests:
