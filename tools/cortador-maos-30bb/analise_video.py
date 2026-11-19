@@ -834,6 +834,7 @@ class Candidate:
     segment_end: float | None = None  # fim de mesa ou mudanca de layout
     fold_confirmed: bool = False
     fold_investment_bb: float | None = None
+    fold_ocr_score: float | None = None
     pot_verified: bool = False
     hero_invested_bb: float | None = None
     winner_nick: str = ""
@@ -1457,6 +1458,7 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
                     approved += 1
                     evaluated += 1
                     break
+            c.fold_ocr_score = max(fold_scores, default=-1.)
             if c.fold_confirmed:
                 continue
 
@@ -2978,7 +2980,7 @@ class GUI(tk.Tk):
                                  "confiabilidade", "aporte_heroi_bb",
                                  "vencedor_pote", "pote_confirmado", "rebuy_visto",
                                  "fold_conferido", "proxima_distribuicao", "cartas_sumiram",
-                                 "aporte_fold_confirmado_bb"])
+                                 "aporte_fold_confirmado_bb", "fold_ocr_melhor_confianca"])
                 for c in self.candidates:
                     writer.writerow([fmt(c.start), fmt(c.end), c.table, c.layout,
                                      c.nick, c.stack_before, c.stack_after,
@@ -2990,7 +2992,8 @@ class GUI(tk.Tk):
                                      "SIM" if c.fold_confirmed else "NAO",
                                      fmt(c.next_deal_at) if c.next_deal_at is not None else "",
                                      fmt(c.hand_end) if c.hand_end is not None else "",
-                                     c.fold_investment_bb])
+                                     c.fold_investment_bb,
+                                     c.fold_ocr_score])
         except OSError as exc:
             messagebox.showerror("Relatorio", str(exc))
             return
