@@ -11,7 +11,7 @@ echo Instala tres componentes gratuitos:
 echo   1. Python 3.12 (Python Software Foundation)
 echo   2. FFmpeg (Gyan)
 echo   3. Tesseract OCR (UB Mannheim)
-echo Tambem instala a biblioteca Pillow para mostrar imagens.
+echo Tambem instala Pillow e OpenCV para reconhecer a imagem FOLD.
 echo.
 echo O processo usa o gerenciador WinGet da Microsoft.
 echo Os downloads sao feitos pelos pacotes de seus fornecedores.
@@ -55,7 +55,7 @@ if not defined PYEXE (
     if not errorlevel 1 set "PYEXE=python"
 )
 if not defined PYEXE goto sem_python
-"%PYEXE%" %PYARGS% -m pip install --user "Pillow>=10,<13"
+"%PYEXE%" %PYARGS% -m pip install --user "Pillow>=10,<13" "opencv-python-headless>=4.8,<5"
 if errorlevel 1 goto sem_pillow
 
 echo.
