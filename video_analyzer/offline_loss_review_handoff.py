@@ -5,10 +5,17 @@ from .offline_review_priority import build_review_queue
 def build_loss_review_handoff(proposals, evidence, *, limit=200):
     if type(limit) is not int or not 1 <= limit <= 1000:
         raise ValueError("invalid limit")
-    queue = build_review_queue(proposals, limit=1000)
-    if not isinstance(evidence, list):
-        raise ValueError("evidence must be list")
-    identities = {(p["hand_id"], p["table_id"]) for p in proposals}
+    if not isinstance(proposals, list) or not isinstance(evidence, list):
+        raise ValueError("proposals and evidence must be lists")
+    # The queue helper caps each invocation at 1000 entries. Process every
+    # chunk before global ranking to avoid losing late hands in long sessions.
+    entries = []
+    for offset in range(0, len(proposals), 1000):
+        entries.extend(build_review_queue(proposals[offset:offset + 1000], limit=1000)["review_queue"])
+    if len({p["hand_id"] for p in entries}) != len(entries):
+        raise ValueError("duplicate hand ID across batches")
+    queue = {"review_queue": entries}
+    identities = {(p["hand_id"], p["table_id"]) for p in entries}
     by_key = {}
     for raw in evidence:
         result = classify_hand_evidence(raw)
