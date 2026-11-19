@@ -80,8 +80,8 @@ class TesteLimitesEFold(unittest.TestCase):
 
     def test_fold_em_um_frame_forte_ou_dois_medios(self):
         self.assertTrue(fold_overlay_confirmed([-1, 83]))
-        self.assertTrue(fold_overlay_confirmed([60, -1, 55]))
-        self.assertFalse(fold_overlay_confirmed([60, -1, 20]))
+        self.assertTrue(fold_overlay_confirmed([81, -1, 82]))
+        self.assertFalse(fold_overlay_confirmed([79, -1, 20]))
 
     def test_aporte_confirmado_por_duas_leituras_e_fold(self):
         valor = confirmed_fold_investment(
