@@ -29,6 +29,7 @@ from cortador import Clip, export_clip, file_at, fmt, parse_time, probe, resourc
 from hud_recognition import is_full_hud, read_hud_stack, read_hud_nick
 from analise_local import times_for_hand, assess_stacks, offline_review_decision
 from desfecho_local import read_table_ocr, evaluate_pot_transfer
+from limites_maos import estender_ate_proxima_distribuicao
 from pasta_saida import load_export_folder, save_export_folder, valid_export_folder
 
 W, H = 960, 540
@@ -826,7 +827,10 @@ class Candidate:
     before_times: list[float] = field(default_factory=list)
     after_times: list[float] = field(default_factory=list)
     hand_start: float | None = None
-    hand_end: float | None = None
+    hand_end: float | None = None  # cartas desapareceram; NAO e o fim do pote
+    next_deal_at: float | None = None  # proxima distribuicao na mesma mesa
+    segment_end: float | None = None  # fim de mesa ou mudanca de layout
+    fold_confirmed: bool = False
     pot_verified: bool = False
     hero_invested_bb: float | None = None
     winner_nick: str = ""
@@ -1111,6 +1115,7 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
         for candidate in state.results:
             candidate.start = max(candidate.start, segment_start)
             candidate.end = min(candidate.end, end_time)
+            candidate.segment_end = end_time
             if candidate.end > candidate.start:
                 collected.append(candidate)
         if state.active:
@@ -1261,7 +1266,8 @@ def scan_videos(videos, config, threshold, progress, hero_nick="~Pulgar~",
             candidate.status += " | NICK NAO CONFIRMADO"
     progress(f"Video completo: {len(collected)} candidatas/pendencias. "
              "Fechamentos e mudancas de layout exigem revisao.")
-    return sorted(collected, key=lambda item: (item.start, item.table))
+    collected = sorted(collected, key=lambda item: (item.start, item.table))
+    return estender_ate_proxima_distribuicao(collected, total)
 
 
 def estimate_candidates_offline(videos, config, candidates, threshold,
@@ -1385,22 +1391,24 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
         if not (1.0 <= start < finish < duration - 1):
             c.status = "PENDENTE - MAO SEM INICIO OU FIM CONFIAVEL"
             continue
-        # Nao misturar o resultado de outra mao da mesma mesa.
-        next_starts = [
-            other.hand_start for other in result[index + 1:]
-            if other.table == c.table and other.layout == c.layout
-            and other.hand_start is not None
-            and other.hand_start > finish]
-        # As cartas do heroi somem ao dar fold, mas os adversarios podem
-        # continuar disputando o pote por dezenas de segundos. A busca so
-        # termina antes da PROXIMA mao do heroi na mesma mesa.
+        # A mao so muda quando o heroi recebe novas cartas NA MESMA mesa.
+        # Depois do fold, o pote pode continuar em disputa. Buscar a
+        # premiacao ate esse limite, nao ate o desaparecimento das cartas.
         hard_end = min(duration - .15,
-                       min(next_starts) - .2 if next_starts else finish + 65)
-        offsets = (-2.0, -.4, .5, 1.5, 3, 5, 7.5, 10.5,
-                   14.5, 19, 25, 32, 41, 52, 64)
-        moments = sorted(set(round(t, 3) for t in (
-            max(start + .1, finish + offset) for offset in offsets)
-            if start < t < hard_end))
+                       c.end - .01,
+                       (c.next_deal_at - .15 if c.next_deal_at is not None
+                        else duration),
+                       c.segment_end if c.segment_end is not None
+                       else duration)
+        scan_from = max(start + .2, finish - 3)
+        if hard_end <= scan_from + .6:
+            c.status = "PENDENTE - PREMIACAO NAO OBSERVAVEL"
+            continue
+        span = hard_end - scan_from
+        samples = min(32, max(7, int(span / 2.5) + 1))
+        moments = sorted(set(round(scan_from + span * i / samples, 3)
+                             for i in range(samples + 1)))
+        moments = [t for t in moments if start < t <= hard_end]
         if len(moments) < 3:
             c.status = "PENDENTE - PREMIACAO NAO OBSERVAVEL"
             continue
@@ -1434,9 +1442,8 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
                         c.hero_invested_bb, threshold)
                     if trial["confirmed"]:
                         outcome = trial
-                        # O corte precisa acompanhar a premiacao, inclusive
-                        # quando a carta do heroi sumiu varios segundos antes.
-                        c.end = min(hard_end, moment + 1.5)
+                        # NAO encurtar o MP4 ao momento do premio: o usuario
+                        # quer ver o desenrolar ate a proxima distribuicao.
                         break
                     outcome = trial
                 if outcome is not None and outcome["confirmed"]:
@@ -1760,7 +1767,8 @@ class GUI(tk.Tk):
         ttk.Entry(edit, textvariable=self.loss_edit, width=9).pack(side="left", padx=3)
         ttk.Label(edit, text="Pote:").pack(side="left", padx=4)
         ttk.Combobox(edit, textvariable=self.pot_choice,
-                     values=["Nao sei", "Adversario levou tudo",
+                     values=["Nao sei", "Heroi deu fold (conferido)",
+                             "Adversario levou tudo",
                              "Heroi ganhou parte", "Heroi ganhou"],
                      state="readonly", width=22).pack(side="left")
         ttk.Button(edit, text="Conferir/Salvar", command=self.confirm).pack(side="left", padx=6)
@@ -1770,7 +1778,7 @@ class GUI(tk.Tk):
         ttk.Button(edit, text="EXPORTAR PERDAS", command=self.export).pack(side="right")
         ttk.Button(edit, text="EXPORTAR PARA REVISAO",
                    command=self.export_review_candidates).pack(side="right", padx=5)
-        ttk.Label(self, text="100% offline. Aporte estimado nao prova derrota: confirme destino do pote para classificar perdas.",
+        ttk.Label(self, text="100% offline. Fold comprovado com >=30 BB liquidos e perda; cortes seguem ate a proxima mao.",
                   foreground="#9b571a").pack(padx=8, pady=2)
 
     def effective_layout_at(self, when):
@@ -2721,6 +2729,7 @@ class GUI(tk.Tk):
         self.end_edit.set(fmt(c.end))
         self.loss_edit.set("" if c.loss_bb is None else str(c.loss_bb))
         self.pot_choice.set(
+            "Heroi deu fold (conferido)" if c.fold_confirmed else
             "Adversario levou tudo" if c.confirmed else "Nao sei")
 
     def preview_edge(self, field):
@@ -2744,12 +2753,13 @@ class GUI(tk.Tk):
             loss = float(self.loss_edit.get().replace(",", "."))
             choice = self.pot_choice.get()
             if not offline_review_decision(loss, threshold,
-                                           "oponente_tudo" if choice == "Adversario levou tudo"
+                                           "hero_fold" if choice == "Heroi deu fold (conferido)"
+                                           else "oponente_tudo" if choice == "Adversario levou tudo"
                                            else "hero_parte_liquido_conferido"
                                            if choice == "Heroi ganhou parte" else "incerto"):
                 raise ValueError(
                     f"Para exportar, confirme que perdeu pelo menos {threshold:g} BB "
-                    "LIQUIDOS e selecione um destino do pote compativel. "
+                    "LIQUIDOS e confirme fold ou o desfecho do pote. "
                     "A estimativa de aporte nao e perda confirmada.")
             if not (0 <= st < en <= self.total):
                 raise ValueError("Confira inicio e fim da mao.")
@@ -2761,12 +2771,18 @@ class GUI(tk.Tk):
                 raise ValueError("Mesa nao existe no trecho selecionado.")
             c.layout = "horizontal4" if mode_start == "auto4" else mode_start
             c.start, c.end, c.loss_bb = st, en, loss
-            c.status = "PERDA LIQUIDA CONFERIDA MANUALMENTE"
+            c.fold_confirmed = (choice == "Heroi deu fold (conferido)")
+            c.status = ("PERDA POR FOLD CONFERIDA MANUALMENTE"
+                        if c.fold_confirmed else
+                        "PERDA LIQUIDA CONFERIDA MANUALMENTE")
             c.confirmed = True
             c.auto_verified = False
-            c.pot_verified = True
+            c.pot_verified = not c.fold_confirmed
             c.source = "Revisao manual offline"
-            c.reliability = "Usuario conferiu o desfecho no video; resultado e BB fornecidos manualmente."
+            c.reliability = ("Fold e investimento liquido conferidos; "
+                             "corte preservado ate proxima distribuicao."
+                             if c.fold_confirmed else
+                             "Usuario conferiu desfecho e perda liquida no video.")
             self.refresh()
             self.autosave_review()
             self.tell(f"Perda confirmada manualmente: {loss:g} BB, mesa {c.table}. "
@@ -2913,7 +2929,8 @@ class GUI(tk.Tk):
                                  "saldo_antes", "saldo_depois", "perda_bb",
                                  "leitura_consistente", "origem", "status",
                                  "confiabilidade", "aporte_heroi_bb",
-                                 "vencedor_pote", "pote_confirmado", "rebuy_visto"])
+                                 "vencedor_pote", "pote_confirmado", "rebuy_visto",
+                                 "fold_conferido", "proxima_distribuicao", "cartas_sumiram"])
                 for c in self.candidates:
                     writer.writerow([fmt(c.start), fmt(c.end), c.table, c.layout,
                                      c.nick, c.stack_before, c.stack_after,
@@ -2921,7 +2938,10 @@ class GUI(tk.Tk):
                                      c.source, c.status, c.reliability,
                                      c.hero_invested_bb, c.winner_nick,
                                      "SIM" if c.pot_verified else "NAO",
-                                     c.auto_rebuy_seen])
+                                     c.auto_rebuy_seen,
+                                     "SIM" if c.fold_confirmed else "NAO",
+                                     fmt(c.next_deal_at) if c.next_deal_at is not None else "",
+                                     fmt(c.hand_end) if c.hand_end is not None else ""])
         except OSError as exc:
             messagebox.showerror("Relatorio", str(exc))
             return
