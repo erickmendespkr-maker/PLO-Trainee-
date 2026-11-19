@@ -37,7 +37,7 @@ pause
 exit /b 1
 
 :check
-"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "analise_local.py" "desfecho_local.py" "hud_recognition.py" "pasta_saida.py" "testes_contexto.py" "testes_hud.py" "testes_pasta_saida.py"
+"%PYEXE%" %PYARGS% -m py_compile "analise_video.py" "cortador.py" "diagnostico_mesas.py" "analise_local.py" "desfecho_local.py" "fold_local.py" "limites_maos.py" "hud_recognition.py" "pasta_saida.py" "testes_contexto.py" "testes_hud.py" "testes_pasta_saida.py" "testes_fase_final.py" "testes_fluxo_offline.py"
 if errorlevel 1 (
   echo.
   echo ERRO: a verificacao de sintaxe falhou.
@@ -86,6 +86,15 @@ echo Testando premiacao de pote na mesa inteira (sem API):
 if errorlevel 1 (
   echo.
   echo ERRO nos testes do destino do pote.
+  pause
+  exit /b 1
+)
+echo.
+echo Conferindo o FOLD independentemente da leitura inicial de BB:
+"%PYEXE%" %PYARGS% -m unittest -v testes_fase_final testes_fluxo_offline
+if errorlevel 1 (
+  echo.
+  echo ERRO: os testes da confirmacao final falharam.
   pause
   exit /b 1
 )
