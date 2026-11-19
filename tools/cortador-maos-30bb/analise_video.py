@@ -27,9 +27,11 @@ except ImportError as exc:
 
 from cortador import Clip, export_clip, file_at, fmt, parse_time, probe, resource
 from hud_recognition import is_full_hud, read_hud_stack, read_hud_nick
-from analise_local import times_for_hand, assess_stacks, offline_review_decision
+from analise_local import (times_for_hand, assess_stacks, offline_review_decision,
+                          confirmed_fold_investment)
 from desfecho_local import read_table_ocr, evaluate_pot_transfer
 from limites_maos import estender_ate_proxima_distribuicao
+from fold_local import fold_overlay_roi, read_fold_score, fold_overlay_confirmed
 from pasta_saida import load_export_folder, save_export_folder, valid_export_folder
 
 W, H = 960, 540
@@ -831,6 +833,7 @@ class Candidate:
     next_deal_at: float | None = None  # proxima distribuicao na mesma mesa
     segment_end: float | None = None  # fim de mesa ou mudanca de layout
     fold_confirmed: bool = False
+    fold_investment_bb: float | None = None
     pot_verified: bool = False
     hero_invested_bb: float | None = None
     winner_nick: str = ""
@@ -845,7 +848,7 @@ def eligible_losses(candidates, threshold, automatic_only=False,
         if c.excluded or not loss_reaches_threshold(c.loss_bb, threshold):
             continue
         trusted_auto = c.auto_verified and (
-            not require_pot_evidence or c.pot_verified)
+            not require_pot_evidence or c.pot_verified or c.fold_confirmed)
         if automatic_only:
             if trusted_auto:
                 chosen.append(c)
@@ -1338,6 +1341,8 @@ def estimate_candidates_offline(videos, config, candidates, threshold,
             samples["before"], samples["during"], samples["after"],
             bb, threshold)
         candidate.hero_invested_bb = estimate["invested_estimate_bb"]
+        candidate.fold_investment_bb = confirmed_fold_investment(
+            samples["before"], samples["during"], bb, threshold)
         candidate.auto_rebuy_seen = (
             True if estimate["rebuy_possible"] else None)
         candidate.source = "Triagem local - OCR"
@@ -1361,10 +1366,11 @@ def estimate_candidates_offline(videos, config, candidates, threshold,
 
 def confirm_candidates_by_pot_offline(videos, config, candidates,
                                       threshold, progress=lambda msg: None):
-    """Passo 3/3: seguir pote e stacks da MESA inteira apos a mao.
+    """Passo 3/3: detectar FOLD do heroi ou transferencia do pote.
 
-    Nao basta stack do heroi cair; so MP4 automaticamente se uma
-    transferencia de fichas a outro assento for confirmada.
+    Fold visual do heroi com aporte >= limite confirmado por saldos
+    repetidos prova perda sem precisar identificar quem venceu o pote.
+    A duracao do clip independe disso: vai ate a proxima distribuicao.
     """
     result = [Candidate(**asdict(c)) for c in candidates]
     ffmpeg = resource("ffmpeg")
@@ -1413,6 +1419,46 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
             c.status = "PENDENTE - PREMIACAO NAO OBSERVAVEL"
             continue
         table_box = layout_bounds(mode, c.table)
+        # FOLD e escrito acima do avatar do heroi. Nao confiar no
+        # desaparecimento das cartas: pode ser showdown ou fim da mao.
+        # Exigir OCR dentro da regiao do avatar E dois saldos baixos
+        # coerentes protege contra falsos folds/perdas de 30BB+.
+        fold_roi = layout_roi(config[str(c.table)], c.table, mode,
+                              "hero_hud")
+        fold_box = (fold_overlay_roi(fold_roi, table_box)
+                    if fold_roi is not None else None)
+        if (fold_box is not None and c.hand_end is not None
+                and c.fold_investment_bb is not None
+                and loss_reaches_threshold(c.fold_investment_bb, threshold)):
+            fold_scores = []
+            # A faixa fica visivel por pouco tempo ao desistir.
+            instants = sorted(set(round(c.hand_end + dt, 2) for dt in
+                                  (-2.0, -1.5, -1.0, -.5, 0, .5,
+                                   1.0, 1.5, 2.0)))
+            for at in instants:
+                if not (start + .1 <= at < hard_end):
+                    continue
+                try:
+                    frame = native_stack_crop(videos, at, fold_box, ffmpeg)
+                    fold_scores.append(read_fold_score(frame, tesseract))
+                except (OSError, RuntimeError, ValueError,
+                        subprocess.SubprocessError):
+                    continue
+                if fold_overlay_confirmed(fold_scores):
+                    c.fold_confirmed = True
+                    c.auto_verified = True
+                    c.pot_verified = False
+                    c.loss_bb = c.fold_investment_bb
+                    c.status = "PERDA POR FOLD CONFIRMADA - OCR DO AVATAR"
+                    c.source = "OCR offline do FOLD + saldos repetidos"
+                    c.reliability = (
+                        "FOLD no avatar do heroi; aporte confirmado "
+                        "por 2 leituras de saldo. MP4 ate novas cartas.")
+                    approved += 1
+                    evaluated += 1
+                    break
+            if c.fold_confirmed:
+                continue
 
         def snap(moment):
             return read_table_ocr(
@@ -2676,8 +2722,9 @@ class GUI(tk.Tk):
         priorities = sum(
             c.hero_invested_bb is not None and
             c.hero_invested_bb >= threshold for c in results)
-        confirmed = sum(c.pot_verified and c.auto_verified and
-                        loss_reaches_threshold(c.loss_bb, threshold)
+        confirmed = sum((c.pot_verified or c.fold_confirmed)
+                        and c.auto_verified
+                        and loss_reaches_threshold(c.loss_bb, threshold)
                         for c in results)
         self.tell(f"Analise offline: {len(results)} maos; {priorities} com "
                   f"aporte potencial, {confirmed} perdas confirmadas. "
@@ -2692,7 +2739,7 @@ class GUI(tk.Tk):
                 "Analise offline concluida",
                 f"{len(results)} maos encontradas.\n"
                 f"{priorities} com aporte potencial >= limite.\n"
-                f"{confirmed} perdas com destino de pote confirmado.\n\n"
+                f"{confirmed} perdas confirmadas (fold ou pote).\n\n"
                 "Somente perdas confirmadas geram MP4 automaticamente. "
                 "Para casos duvidosos, use EXPORTAR PARA REVISAO.")
 
@@ -2930,7 +2977,8 @@ class GUI(tk.Tk):
                                  "leitura_consistente", "origem", "status",
                                  "confiabilidade", "aporte_heroi_bb",
                                  "vencedor_pote", "pote_confirmado", "rebuy_visto",
-                                 "fold_conferido", "proxima_distribuicao", "cartas_sumiram"])
+                                 "fold_conferido", "proxima_distribuicao", "cartas_sumiram",
+                                 "aporte_fold_confirmado_bb"])
                 for c in self.candidates:
                     writer.writerow([fmt(c.start), fmt(c.end), c.table, c.layout,
                                      c.nick, c.stack_before, c.stack_after,
@@ -2941,7 +2989,8 @@ class GUI(tk.Tk):
                                      c.auto_rebuy_seen,
                                      "SIM" if c.fold_confirmed else "NAO",
                                      fmt(c.next_deal_at) if c.next_deal_at is not None else "",
-                                     fmt(c.hand_end) if c.hand_end is not None else ""])
+                                     fmt(c.hand_end) if c.hand_end is not None else "",
+                                     c.fold_investment_bb])
         except OSError as exc:
             messagebox.showerror("Relatorio", str(exc))
             return
