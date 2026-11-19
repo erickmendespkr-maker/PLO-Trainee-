@@ -12,7 +12,7 @@ import statistics
 
 
 def times_for_hand(candidate, video_duration, inside_samples=7):
-    """Uma leitura antes, ate 7 durante e uma apos a mao; custo limitado."""
+    """Ate tres leituras antes, amostras durante e uma apos a mao."""
     if not 1 <= inside_samples <= 15:
         raise ValueError("Quantidade de amostras invalida.")
     start = (candidate.hand_start if candidate.hand_start is not None
@@ -23,15 +23,15 @@ def times_for_hand(candidate, video_duration, inside_samples=7):
         return None
     before = sorted(t for t in candidate.before_times if 0 <= t < start)
     after = sorted(t for t in candidate.after_times if end < t < video_duration)
-    before_time = before[-1] if before else max(0.01, start - 1.5)
-    if before_time >= start:
+    before_times = before[-3:] if before else [max(0.01, start - 1.5)]
+    if any(t >= start for t in before_times):
         return None
     points = [start + (end - start) * (i + .5) / inside_samples
               for i in range(inside_samples)]
     after_time = after[0] if after else min(video_duration - .01, end + 1.5)
     if after_time <= end:
         return None
-    return {"before": [before_time], "during": points, "after": [after_time]}
+    return {"before": before_times, "during": points, "after": [after_time]}
 
 
 def assess_stacks(before, during, after, bb, threshold):
