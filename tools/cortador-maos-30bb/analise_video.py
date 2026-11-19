@@ -2697,14 +2697,14 @@ class GUI(tk.Tk):
                     videos, cfg, results, threshold,
                     lambda msg: self.after(0, lambda m=msg: self.tell(m)))
                 self.after(0, lambda: self.tell(
-                    f"Fase 3/3: verificando quem recebeu o pote "
+                    f"Fase 3/3: identificando FOLD ou vencedor do pote "
                     f"em {priority} maos com aporte >= {threshold:g} BB..."))
                 decisions, verified, losses = confirm_candidates_by_pot_offline(
                     videos, cfg, estimates, threshold,
                     lambda msg: self.after(0, lambda m=msg: self.tell(m)))
                 summary = (f"{analyzed} maos, {priority} com aporte potencial; "
-                           f"{verified} destinos de pote analisados, "
-                           f"{losses} perdas confirmadas")
+                           f"{verified} desfechos avaliados, "
+                           f"{losses} perdas confirmadas por fold/pote")
                 self.after(0, lambda: self.finished(
                     decisions, detections, summary, export_review=False,
                     auto_export_losses=True))
@@ -2758,7 +2758,10 @@ class GUI(tk.Tk):
                 continue
             self.grid.insert("", "end", iid=str(i), values=(
                 fmt(c.start), fmt(c.end), c.table,
-                (f"PERDA {c.loss_bb:.1f}" if c.confirmed else
+                (f"PERDA {c.loss_bb:.1f}" if
+                 (c.confirmed or (c.auto_verified and
+                                  (c.fold_confirmed or c.pot_verified)))
+                 and c.loss_bb is not None else
                  (f"APORTE ~{c.hero_invested_bb:.1f}" if
                   c.hero_invested_bb is not None else "Sem leitura")),
                 "OK" if c.nick_verified else "Revisar",
@@ -3036,8 +3039,11 @@ class GUI(tk.Tk):
                 destination = dest / filename
                 status = "OK"
                 try:
-                    clip = Clip(c.start, c.end, c.table, c.loss_bb, "Pote confirmado",
-                                "Offline", "", True)
+                    clip = Clip(
+                        c.start, c.end, c.table, c.loss_bb,
+                        "Fold confirmado" if c.fold_confirmed
+                        else "Pote confirmado",
+                        "Offline", "", True)
                     export_clip(videos, clip, destination,
                                 resource("ffmpeg"), layout=c.layout)
                 except Exception as exc:
@@ -3049,8 +3055,11 @@ class GUI(tk.Tk):
                 logs.append({"arquivo": filename, "nick": c.nick or hero_nick,
                              "nick_ocr_confirmado": c.nick_verified,
                              "classificacao": (
-                                 "Perda liquida confirmada manualmente" if c.confirmed
-                                 else "Revisar"),
+                                 "Perda por fold confirmada" if c.fold_confirmed
+                                 else "Perda liquida confirmada manualmente"
+                                 if c.confirmed else
+                                 "Perda automatica - pote confirmado"
+                                 if c.pot_verified else "Revisar"),
                              "origem": c.source,
                              "mesa": c.table, "disposicao": c.layout,
                              "inicio": fmt(c.start), "fim": fmt(c.end),
@@ -3059,6 +3068,8 @@ class GUI(tk.Tk):
                              "aporte_heroi_bb": c.hero_invested_bb,
                              "vencedor_pote": c.winner_nick,
                              "pote_confirmado": c.pot_verified,
+                             "fold_confirmado": c.fold_confirmed,
+                             "fold_ocr_score": c.fold_ocr_score,
                              "rebuy_visto": c.auto_rebuy_seen,
                              "perda_bb": c.loss_bb, "status": status})
                 self.after(0, lambda j=i, st=status:
