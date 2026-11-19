@@ -32,6 +32,7 @@ from analise_local import (times_for_hand, assess_stacks, offline_review_decisio
 from desfecho_local import read_table_ocr, evaluate_pot_transfer
 from limites_maos import estender_ate_proxima_distribuicao
 from fold_local import fold_overlay_roi, read_fold_score, fold_overlay_confirmed
+from rastreador_eventos import perda_por_fold
 from pasta_saida import load_export_folder, save_export_folder, valid_export_folder
 
 W, H = 960, 540
@@ -839,6 +840,8 @@ class Candidate:
     fold_detected_at: float | None = None
     stack_before_trace: list[list] = field(default_factory=list)
     stack_trace: list[list] = field(default_factory=list)
+    eventos_stack: list[dict] = field(default_factory=list)
+    motivo_perda_bb: str = ""
     pot_verified: bool = False
     hero_invested_bb: float | None = None
     winner_nick: str = ""
@@ -1475,58 +1478,72 @@ def confirm_candidates_by_pot_offline(videos, config, candidates,
         c.fold_detected_at = detected_fold_at
 
         if c.fold_seen:
-            # A perda por fold independe de quem recebeu o pote. Reaproveitar
-            # amostras do primeiro passe e reler apenas perto do fold se
-            # necessario, antes de qualquer rebuy automatico.
+            # Fusao funcional: detector visual encontra o FOLD e o rastreador
+            # independente reconstrui variacoes de stack em quadros estaveis.
+            # NAO se pode deduzir perda por simples retorno a 100BB.
             bb = float(config[str(c.table)].get("bb", 1))
-            before_values = [entry[1] for entry in c.stack_before_trace
-                             if len(entry) == 2 and entry[1] is not None]
-            if not before_values and c.stack_before is not None:
-                before_values.append(c.stack_before)
-            during_values = [entry[1] for entry in c.stack_trace
-                             if len(entry) == 2 and entry[1] is not None
-                             and entry[0] <= detected_fold_at + .5]
-            verified_bb = confirmed_fold_investment(
-                before_values, during_values, bb, threshold)
-            if verified_bb is None and fold_roi is not None:
-                for dt in (-2.5, -2, -1.5, -1, -.5, 0, .25):
-                    at = round(detected_fold_at + dt, 3)
-                    if not (start + .1 < at < hard_end):
+            before_trace = [entry for entry in c.stack_before_trace
+                            if len(entry) == 2 and entry[1] is not None]
+            if not before_trace and c.stack_before is not None:
+                before_trace = [[start - 1., c.stack_before]]
+            during_trace = [entry for entry in c.stack_trace
+                            if len(entry) == 2 and entry[1] is not None
+                            and entry[0] <= detected_fold_at + .15]
+            financial = perda_por_fold(before_trace, during_trace, bb,
+                                       threshold, detected_fold_at)
+            if not financial.confirmado and fold_roi is not None:
+                # So gastar OCR extra nas maos em que a decisao de FOLD
+                # ja foi estabelecida visualmente.
+                retry_times = sorted(set(round(detected_fold_at + dt, 2)
+                    for dt in (-4., -3.5, -3., -2.5, -2., -1.5, -1.,
+                               -.75, -.5, -.25, 0)))
+                for at in retry_times:
+                    if not (start + .1 < at <= detected_fold_at
+                            and at < hard_end):
                         continue
                     try:
                         image = native_stack_crop(videos, at, fold_roi, ffmpeg)
                         value = ocr_stack(image, tesseract, quick=False)
                         if value is not None and 0 <= value / bb <= MAX_STACK_BB:
-                            during_values.append(value)
+                            during_trace.append([at, value])
                     except (OSError, RuntimeError, ValueError,
                             subprocess.SubprocessError):
                         continue
-                verified_bb = confirmed_fold_investment(
-                    before_values, during_values, bb, threshold)
-            c.fold_investment_bb = verified_bb
+                financial = perda_por_fold(before_trace, during_trace, bb,
+                                           threshold, detected_fold_at)
+            c.eventos_stack = [asdict(item) for item in financial.eventos]
+            c.motivo_perda_bb = financial.motivo
+            c.fold_investment_bb = financial.investimento_bb
+            c.auto_rebuy_seen = (c.auto_rebuy_seen or
+                                 financial.rebuy_possivel)
             evaluated += 1
-            if verified_bb is not None:
+            if financial.confirmado:
                 c.fold_confirmed = True
                 c.auto_verified = True
                 c.pot_verified = False
-                c.loss_bb = verified_bb
-                c.hero_invested_bb = max(c.hero_invested_bb or 0, verified_bb)
-                c.status = "PERDA >= LIMITE CONFIRMADA POR FOLD E SALDO"
-                c.source = "OCR offline: FOLD do heroi + saldos"
+                c.loss_bb = financial.perda_bb
+                c.hero_invested_bb = max(
+                    c.hero_invested_bb or 0, financial.perda_bb)
+                c.status = "PERDA >= LIMITE CONFIRMADA POR FOLD E EVENTOS"
+                c.source = "OCR FOLD + rastreador offline de eventos"
                 c.reliability = (
-                    f"Fold aos {detected_fold_at:.2f}s, "
-                    f"saldo inicial {len(before_values)} leituras, "
-                    f"durante {len(during_values)} leituras coerentes")
+                    f"Fold aos {detected_fold_at:.2f}s; "
+                    f"{financial.amostras_validas} quadros de saldo; "
+                    f"{len(financial.eventos)} eventos; "
+                    f"confianca {financial.confianca}. "
+                    + financial.motivo)
                 approved += 1
             else:
-                c.status = "PENDENTE - FOLD ENCONTRADO, APORTE >= LIMITE NAO COMPROVADO"
+                c.status = ("PENDENTE - FOLD COM REBUY/DEVOLUCAO INCERTOS"
+                            if financial.rebuy_possivel else
+                            "PENDENTE - FOLD, APORTE NAO COMPROVADO")
                 c.reliability = (
-                    f"FOLD detectado aos {detected_fold_at:.2f}s "
+                    f"FOLD aos {detected_fold_at:.2f}s "
                     f"(OCR {best_fold:.0f}); "
-                    f"saldo inicial {len(before_values)} leitura(s), "
-                    f"durante {len(during_values)} leitura(s); "
-                    "revisar valor investido no video")
-            # Fold confirmado visualmente: nao exigir OCR do vencedor do pote.
+                    f"{financial.amostras_validas} leituras. "
+                    + financial.motivo)
+            # Desfecho financeiro do FOLD pode ser concluido antes do pote;
+            # o trecho MP4 continua completo ate a proxima distribuicao.
             continue
 
         if c.hero_invested_bb is None or not loss_reaches_threshold(
@@ -3078,7 +3095,8 @@ class GUI(tk.Tk):
                                  "vencedor_pote", "pote_confirmado", "rebuy_visto",
                                  "fold_conferido", "proxima_distribuicao", "cartas_sumiram",
                                  "aporte_fold_confirmado_bb", "fold_ocr_melhor_confianca",
-                                 "fold_encontrado", "instante_fold"])
+                                 "fold_encontrado", "instante_fold",
+                                 "eventos_stack_json", "motivo_perda_bb"])
                 for c in self.candidates:
                     writer.writerow([fmt(c.start), fmt(c.end), c.table, c.layout,
                                      c.nick, c.stack_before, c.stack_after,
@@ -3094,7 +3112,9 @@ class GUI(tk.Tk):
                                      c.fold_ocr_score,
                                      "SIM" if c.fold_seen else "NAO",
                                      fmt(c.fold_detected_at)
-                                     if c.fold_detected_at is not None else ""])
+                                     if c.fold_detected_at is not None else "",
+                                     json.dumps(c.eventos_stack, ensure_ascii=False),
+                                     c.motivo_perda_bb])
         except OSError as exc:
             messagebox.showerror("Relatorio", str(exc))
             return
