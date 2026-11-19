@@ -1319,6 +1319,15 @@ def estimate_candidates_offline(videos, config, candidates, threshold,
                 except (OSError, RuntimeError, ValueError,
                         subprocess.SubprocessError):
                     samples[kind].append(None)
+        # Preservar saldos de referencia no relatorio para diagnostico.
+        # Nao interpretar a diferenca inicio/fim como perda: o rebuy pode
+        # restaurar a pilha antes do frame posterior a mao.
+        valid_before = [v for v in samples["before"] if v is not None]
+        valid_after = [v for v in samples["after"] if v is not None]
+        candidate.stack_before = (round(statistics.median(valid_before), 2)
+                                  if valid_before else None)
+        candidate.stack_after = (round(statistics.median(valid_after), 2)
+                                 if valid_after else None)
         estimate = assess_stacks(
             samples["before"], samples["during"], samples["after"],
             bb, threshold)
