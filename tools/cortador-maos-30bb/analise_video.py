@@ -2788,8 +2788,10 @@ class GUI(tk.Tk):
                         and c.auto_verified
                         and loss_reaches_threshold(c.loss_bb, threshold)
                         for c in results)
-        self.tell(f"Analise offline: {len(results)} maos; {priorities} com "
-                  f"aporte potencial, {confirmed} perdas confirmadas. "
+        seen_folds = sum(c.fold_seen for c in results)
+        self.tell(f"Analise offline: {len(results)} maos; {seen_folds} folds "
+                  f"visuais; {priorities} com aporte potencial, "
+                  f"{confirmed} perdas confirmadas. "
                   + ("Revisao salva." if saved else
                      "AVISO: nao foi possivel salvar revisao.") + " " + summary)
         if auto_export_losses and self.auto_export.get():
@@ -2802,6 +2804,7 @@ class GUI(tk.Tk):
             messagebox.showinfo(
                 "Analise offline concluida",
                 f"{len(results)} maos encontradas.\n"
+                f"{seen_folds} avisos FOLD encontrados.\n"
                 f"{priorities} com aporte potencial >= limite.\n"
                 f"{confirmed} perdas confirmadas (fold ou pote).\n\n"
                 "Somente perdas confirmadas geram MP4 automaticamente. "
