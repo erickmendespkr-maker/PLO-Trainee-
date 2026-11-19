@@ -57,8 +57,8 @@ def parse_table_lines(lines, width, height):
 
     pot_labels = [(x, y) for text, x, y in normalized
                   if POT_WORDS.search(text) and not SIDE_POT_WORDS.search(text)]
-    isolated_amount = re.compile(r"^\\s*(\\d{1,5}(?:[,.]\\d{1,2})?)\\s*$")
-    bare_amount = re.compile(r"(?<![a-z0-9])\\d{1,5}(?:[,.]\\d{1,2})?(?![a-z0-9])",
+    isolated_amount = re.compile(r"^\s*(\d{1,5}(?:[,.]\d{1,2})?)\s*$")
+    bare_amount = re.compile(r"(?<![a-z0-9])\d{1,5}(?:[,.]\d{1,2})?(?![a-z0-9])",
                              re.IGNORECASE)
 
     for text, x, y in normalized:
