@@ -1668,7 +1668,7 @@ class GUI(tk.Tk):
         ttk.Entry(controls, textvariable=self.threshold, width=7).pack(side="left", padx=5)
         ttk.Button(controls, text="Salvar configuracao", command=self.save_cfg).pack(side="left")
         ttk.Button(controls, text="Abrir configuracao", command=self.load_cfg).pack(side="left", padx=5)
-        ttk.Button(controls, text="ANALISAR VIDEO(S)", command=self.analyze).pack(side="left", padx=9)
+        ttk.Button(controls, text="ANALISAR E GERAR MP4", command=self.analyze).pack(side="left", padx=9)
         ttk.Button(controls, text="Salvar revisao", command=self.save_scan).pack(side="left")
         ttk.Button(controls, text="Abrir revisao", command=self.load_scan).pack(side="left", padx=4)
         ttk.Button(controls, text="Adicionar mao", command=self.add_manual).pack(side="left")
