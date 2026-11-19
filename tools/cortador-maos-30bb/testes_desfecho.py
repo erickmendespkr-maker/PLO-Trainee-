@@ -62,6 +62,18 @@ class EndOfHandTests(unittest.TestCase):
         self.assertFalse(event["confirmed"])
         self.assertIn("side pot", event["reason"])
 
+    def test_heroi_recebeu_fichas_e_automatico_fica_pendente(self):
+        # Mesmo com outro jogador ganhando, se o heroi tambem recebeu
+        # fichas o valor liquido nao equivale ao aporte bruto.
+        result = evaluate_pot_transfer(
+            snapshot(opponent=140, hero=100),
+            snapshot(pot=120, opponent=110, hero=65),
+            snapshot(opponent=185, hero=118),
+            snapshot(opponent=185, hero=118),
+            35, 30)
+        self.assertFalse(result["confirmed"])
+        self.assertIn("Heroi tambem ganhou", result["reason"])
+
     def test_jogador_sem_stack_pos_nao_e_falso_positivo(self):
         result = evaluate_pot_transfer(
             snapshot(opponent=140), snapshot(pot=110),
