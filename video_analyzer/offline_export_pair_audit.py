@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-HEX = re.compile(r'[0-9a-f]{64}\\Z')
+HEX = re.compile(r'[0-9a-f]{64}\Z')
 
 def sha256(path):
     h = hashlib.sha256()
