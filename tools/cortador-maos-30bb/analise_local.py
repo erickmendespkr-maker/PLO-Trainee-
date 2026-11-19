@@ -96,9 +96,11 @@ def assess_stacks(before, during, after, bb, threshold):
 def offline_review_decision(amount_bb, threshold, pot_destination):
     """Apenas confirmacao humana explicita aprova clip como PERDA.
 
-    pot_destination: 'oponente_tudo', 'hero_parte', 'hero_tudo', 'incerto'.
+    pot_destination: 'hero_fold' (confirmado visualmente e aporte liquido
+    conferido), 'oponente_tudo', 'hero_parte_liquido_conferido', 'incerto'.
+    O fold comprovado encerra o RESULTADO financeiro, nao o video da mao.
     """
-    if pot_destination not in ("oponente_tudo",
+    if pot_destination not in ("hero_fold", "oponente_tudo",
                                "hero_parte_liquido_conferido"):
         return False
     if isinstance(amount_bb, bool) or not isinstance(amount_bb, (int, float)):
