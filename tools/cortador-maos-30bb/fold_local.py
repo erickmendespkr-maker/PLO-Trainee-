@@ -118,6 +118,11 @@ def read_fold_score(image, tesseract):
     template_conf = fold_template_score(image)
     if template_conf >= 90:
         return template_conf
+    # Em gravacoes longas, economizar milhares de execucoes do OCR:
+    # um quadro visualmente muito diferente nao tem o banner conhecido.
+    # Sem OpenCV (valor -1), manter OCR tradicional sem bloqueios.
+    if 0 <= template_conf < 48:
+        return template_conf
     gray = image.convert("L")
     scale = min(5, max(2, round(620 / max(1, gray.width))))
     enlarged = ImageOps.autocontrast(gray.resize(
