@@ -2,6 +2,7 @@
 import hashlib
 import json
 import math
+from offline_visible_card_contract import validate_fields
 
 FIELDS = ('table_id', 'hand_id', 'start_seconds', 'end_seconds',
           'hero_cards', 'board_cards', 'action', 'pot', 'call_cost')
@@ -37,6 +38,8 @@ def evaluate(evidence, *, duration, video_sha256, audit=None):
         if type(values['hand_id']) is not str or not values['hand_id'].strip():
             raise ValueError('invalid hand ID')
     reviewed = not missing and not unverified
+    if reviewed:
+        validate_fields(values)
     audited = bool(audit and audit.get('ev_arithmetic_verified') is True
                    and type(audit.get('sample_hashes_verified')) is int
                    and audit['sample_hashes_verified'] > 0)
