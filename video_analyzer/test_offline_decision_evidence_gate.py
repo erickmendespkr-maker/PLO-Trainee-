@@ -63,5 +63,21 @@ class EvidenceGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             evaluate(data, duration=60, video_sha256=SHA)
 
+    def test_duplicate_visible_cards_block_review(self):
+        data = fixture()
+        data['board_cards']['value'] = ['As', '3d', '4h']
+        with self.assertRaises(ValueError):
+            evaluate(data, duration=60, video_sha256=SHA)
+    def test_invalid_pot_blocks_review(self):
+        data = fixture()
+        data['pot']['value'] = -1
+        with self.assertRaises(ValueError):
+            evaluate(data, duration=60, video_sha256=SHA)
+    def test_unreviewed_cards_remain_pending(self):
+        data = fixture()
+        data['hero_cards']['value'] = None
+        data['hero_cards']['human_verified'] = False
+        self.assertEqual(evaluate(data, duration=60, video_sha256=SHA)['status'], 'REVIEW_REQUIRED')
+
 if __name__ == '__main__':
     unittest.main()
