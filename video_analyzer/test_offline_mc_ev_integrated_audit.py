@@ -1,7 +1,8 @@
 """Regression tests for the offline conditional report integration."""
 import copy
 import unittest
-from offline_mc_ev_integrated_audit import build_and_audit_conditional_report
+from offline_mc_ev_integrated_audit import (build_and_audit_conditional_report,
+    audit_report_monetary_assumptions)
 from offline_mc_sample_provenance_audit import audit_sample_provenance
 from offline_mc_ev_arithmetic_audit import audit_mc_ev_arithmetic
 
@@ -51,6 +52,38 @@ class IntegratedAuditTests(unittest.TestCase):
             audit_mc_ev_arithmetic(report,
                 {k: v["shares"] for k, v in self.kw["scenarios"].items()},
                 pot_before_call=100, call_cost=50)
+
+
+    def test_monetary_binding_present(self):
+        result = build_and_audit_conditional_report(**self.kw)
+        self.assertTrue(result["audit"]["monetary_assumptions_integrity_verified"])
+        self.assertFalse(result["audit"]["monetary_values_video_verified"])
+        self.assertEqual(result["report"]["monetary_binding"]["assumptions"]["call_cost"], 50.0)
+
+    def test_monetary_binding_rejects_different_cost(self):
+        report = build_and_audit_conditional_report(**self.kw)["report"]
+        with self.assertRaises(ValueError):
+            audit_report_monetary_assumptions(report, pot_before_call=100, call_cost=51)
+
+    def test_monetary_binding_rejects_tampered_hash(self):
+        report = build_and_audit_conditional_report(**self.kw)["report"]
+        report["monetary_binding"]["sha256"] = "0" * 64
+        with self.assertRaises(ValueError):
+            audit_report_monetary_assumptions(report, pot_before_call=100, call_cost=50)
+
+    def test_monetary_binding_rejects_missing_record(self):
+        report = build_and_audit_conditional_report(**self.kw)["report"]
+        del report["monetary_binding"]
+        with self.assertRaises(ValueError):
+            audit_report_monetary_assumptions(report, pot_before_call=100, call_cost=50)
+
+    def test_monetary_binding_unit_mismatch(self):
+        report = build_and_audit_conditional_report(**self.kw, currency_unit="bb")["report"]
+        with self.assertRaises(ValueError):
+            audit_report_monetary_assumptions(report, pot_before_call=100, call_cost=50, currency_unit="chips")
+        self.assertTrue(audit_report_monetary_assumptions(
+            report, pot_before_call=100, call_cost=50, currency_unit="bb")[
+                "monetary_assumptions_integrity_verified"])
 
 
 if __name__ == "__main__":
