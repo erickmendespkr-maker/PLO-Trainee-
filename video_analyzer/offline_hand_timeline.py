@@ -21,6 +21,8 @@ def propose_intervals(observations: Iterable[Observation], duration: float) -> l
         raise ValueError("duration must be finite and positive")
     grouped: dict[str, list[Observation]] = {}
     for obs in observations:
+        if not isinstance(obs, Observation):
+            raise ValueError("observation must be an Observation")
         if not isinstance(obs.table_id, str) or not obs.table_id.strip() or not isinstance(obs.street, str) or obs.street not in STREETS:
             raise ValueError("invalid table or street")
         if isinstance(obs.timestamp, bool) or not isinstance(obs.timestamp, (int, float)) or not math.isfinite(obs.timestamp) or not 0 <= obs.timestamp <= duration:
