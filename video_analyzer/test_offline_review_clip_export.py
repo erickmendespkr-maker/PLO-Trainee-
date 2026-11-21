@@ -65,6 +65,18 @@ class ExportTests(unittest.TestCase):
         with self.assertRaises(ClipExportError):
             export_review_clip(self.source, dst, self.record)
 
+    def test_reject_symlink_source_without_artifacts(self):
+        link = self.root / 'linked.mp4'
+        try:
+            link.symlink_to(self.source)
+        except (OSError, NotImplementedError):
+            self.skipTest('symlink creation unavailable')
+        destination = self.root / 'linked_review.mp4'
+        with self.assertRaises(ClipExportError):
+            export_review_clip(link, destination, self.record)
+        self.assertFalse(destination.exists())
+        self.assertFalse(destination.with_suffix('.json').exists())
+
     def test_reject_same_source(self):
         with self.assertRaises(ClipExportError):
             export_review_clip(self.source, self.source, self.record)
