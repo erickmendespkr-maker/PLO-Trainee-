@@ -44,6 +44,18 @@ def audit_review_export(clip, *, source=None, ffprobe='ffprobe', timeout=30):
         raise ValueError('invalid evidence gate')
     if type(gate.get('table_id')) is not int or gate['table_id'] not in (1, 2, 3, 4) or manifest.get('table_id') != gate['table_id']:
         raise ValueError('table mismatch')
+    status = gate.get('status')
+    allowed = {'REVIEW_REQUIRED', 'INSUFFICIENT_MODEL', 'APPROVED_CONDITIONAL'}
+    if status not in allowed:
+        raise ValueError('invalid evidence status')
+    missing = gate.get('missing_evidence')
+    if not isinstance(missing, list) or any(not isinstance(x, str) or not x for x in missing):
+        raise ValueError('invalid missing evidence')
+    approved = status == 'APPROVED_CONDITIONAL'
+    if gate.get('can_attach_conditional_ev') is not approved:
+        raise ValueError('conditional EV flag contradicts evidence status')
+    if (approved and missing) or (not approved and not missing):
+        raise ValueError('evidence status contradicts missing fields')
     interval = manifest.get('requested_interval_seconds')
     duration = manifest.get('source_duration_seconds')
     if not isinstance(interval, list) or len(interval) != 2 or any(type(x) not in (int, float) or not math.isfinite(x) for x in interval):
