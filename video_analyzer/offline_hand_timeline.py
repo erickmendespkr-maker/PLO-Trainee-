@@ -17,17 +17,17 @@ class Observation:
 
 def propose_intervals(observations: Iterable[Observation], duration: float) -> list[dict]:
     """Return review-only intervals. Street reset is a candidate boundary, never a confirmed hand."""
-    if not math.isfinite(duration) or duration <= 0:
+    if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration <= 0:
         raise ValueError("duration must be finite and positive")
     grouped: dict[str, list[Observation]] = {}
     for obs in observations:
-        if not obs.table_id or obs.street not in STREETS:
+        if not isinstance(obs.table_id, str) or not obs.table_id.strip() or not isinstance(obs.street, str) or obs.street not in STREETS:
             raise ValueError("invalid table or street")
-        if not math.isfinite(obs.timestamp) or not 0 <= obs.timestamp <= duration:
+        if isinstance(obs.timestamp, bool) or not isinstance(obs.timestamp, (int, float)) or not math.isfinite(obs.timestamp) or not 0 <= obs.timestamp <= duration:
             raise ValueError("timestamp outside video")
-        if not math.isfinite(obs.confidence) or not 0 <= obs.confidence <= 1:
+        if isinstance(obs.confidence, bool) or not isinstance(obs.confidence, (int, float)) or not math.isfinite(obs.confidence) or not 0 <= obs.confidence <= 1:
             raise ValueError("invalid confidence")
-        if len(obs.board) not in {0, 3, 4, 5}:
+        if not isinstance(obs.board, tuple) or len(obs.board) not in {0, 3, 4, 5} or any(not isinstance(card, str) or not card.strip() for card in obs.board):
             raise ValueError("invalid board length")
         grouped.setdefault(obs.table_id, []).append(obs)
     output = []
