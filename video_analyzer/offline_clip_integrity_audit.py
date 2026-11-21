@@ -50,7 +50,8 @@ def audit_clip(clip, source=None):
     if (video.get('width'), video.get('height')) != (crop['width'], crop['height']):
         raise ValueError('clip dimensions mismatch')
     duration = float(decoded['format']['duration'])
-    if not math.isfinite(duration) or not 0 < duration <= end - start + 0.25:
+    expected = end - start
+    if not math.isfinite(duration) or not 0 < duration or abs(duration - expected) > 0.25:
         raise ValueError('clip duration mismatch')
     return {'verified': True, 'clip_sha256': digest(clip), 'source_checked': source is not None,
             'clip_duration_seconds': duration, 'strategic_analysis_verified': False}
