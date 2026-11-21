@@ -44,4 +44,24 @@ class RouterTests(unittest.TestCase):
     def test_invalid_observation_type(self):
         with self.assertRaises(ValueError): route_evidence([hand(1,'a')],[None])
 
+    def test_uppercase_video_hash_matches(self):
+        candidate = dict(hand(1, 'a'), video_sha256='A'*64)
+        observation = obs(1, 5)
+        result = route_evidence([candidate], [observation])
+        self.assertEqual(len(result['hands'][0]['stack_samples']), 1)
+
+    def test_uppercase_observation_hash_matches(self):
+        result = route_evidence([hand(1, 'a')], [obs(1, 5, video='A'*64)])
+        self.assertEqual(len(result['hands'][0]['stack_samples']), 1)
+
+    def test_unmatched_bad_stack_rejected(self):
+        with self.assertRaises(ValueError):
+            route_evidence([hand(1, 'a')], [obs(2, 5, float('nan'))])
+
+    def test_unmatched_missing_frame_rejected(self):
+        observation = obs(2, 5)
+        del observation['source_frame']
+        with self.assertRaises(ValueError):
+            route_evidence([hand(1, 'a')], [observation])
+
 if __name__=='__main__': unittest.main()
