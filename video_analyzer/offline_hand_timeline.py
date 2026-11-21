@@ -31,6 +31,11 @@ def propose_intervals(observations: Iterable[Observation], duration: float) -> l
             raise ValueError("invalid confidence")
         if not isinstance(obs.board, tuple) or len(obs.board) not in {0, 3, 4, 5} or any(not isinstance(card, str) or not card.strip() for card in obs.board):
             raise ValueError("invalid board length")
+        # A single visible board cannot contain the same physical card twice.
+        # Keep OCR uncertainty explicit; do not infer missing ranks or suits.
+        normalized_board = [card.strip().upper() for card in obs.board]
+        if len(normalized_board) != len(set(normalized_board)):
+            raise ValueError("duplicate board cards")
         grouped.setdefault(obs.table_id, []).append(obs)
     output = []
     for table, entries in sorted(grouped.items()):
