@@ -46,7 +46,7 @@ def audit_review_export(clip, *, source=None, ffprobe='ffprobe', timeout=30):
         raise ValueError('table mismatch')
     status = gate.get('status')
     allowed = {'REVIEW_REQUIRED', 'INSUFFICIENT_MODEL', 'APPROVED_CONDITIONAL'}
-    if status not in allowed:
+    if not isinstance(status, str) or status not in allowed:
         raise ValueError('invalid evidence status')
     missing = gate.get('missing_evidence')
     if not isinstance(missing, list) or any(not isinstance(x, str) or not x for x in missing):
