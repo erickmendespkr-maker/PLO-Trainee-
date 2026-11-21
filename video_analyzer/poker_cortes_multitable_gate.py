@@ -35,14 +35,14 @@ def route_evidence(candidates, observations, *, max_tables=4):
         hand = candidate.get('hand_id')
         if isinstance(table, bool) or not isinstance(table, int) or not 1 <= table <= max_tables:
             raise ValueError('invalid table')
-        if not isinstance(video, str) or len(video) != 64 or any(c not in '0123456789abcdef' for c in video):
+        if not isinstance(video, str) or len(video) != 64 or any(c not in '0123456789abcdefABCDEF' for c in video):
             raise ValueError('invalid video hash')
         if not isinstance(hand, str) or not hand.strip():
             raise ValueError('invalid hand id')
         start, end = _time(candidate.get('start_seconds')), _time(candidate.get('end_seconds'))
         if end <= start:
             raise ValueError('invalid hand interval')
-        key = (video, table, hand)
+        key = (video.lower(), table, hand)
         if key in indexed:
             raise ValueError('duplicate hand')
         indexed[key] = candidate
@@ -56,10 +56,10 @@ def route_evidence(candidates, observations, *, max_tables=4):
         video = obs.get('video_sha256')
         if isinstance(table, bool) or not isinstance(table, int) or not 1 <= table <= max_tables:
             raise ValueError('invalid observation table')
-        if not isinstance(video, str) or len(video) != 64 or any(c not in '0123456789abcdef' for c in video):
+        if not isinstance(video, str) or len(video) != 64 or any(c not in '0123456789abcdefABCDEF' for c in video):
             raise ValueError('invalid observation video hash')
-        matches = [key for key, hand in indexed.items()
-                   if key[0] == video and key[1] == table and
+        # Validate evidence even when no hand matches; malformed OCR is not a benign miss.\n        stack = obs.get('stack_bb')\n        frame = obs.get('source_frame')\n        if isinstance(stack, bool) or not isinstance(stack, (int, float)) or not math.isfinite(stack) or stack < 0:\n            raise ValueError('invalid observation stack')\n        if not isinstance(frame, str) or not frame.strip():\n            raise ValueError('invalid observation frame')\n        matches = [key for key, hand in indexed.items()
+                   if key[0] == video.lower() and key[1] == table and
                    hand['start_seconds'] <= t <= hand['end_seconds']]
         if len(matches) != 1:
             unresolved.append({'table_id': table, 'time_seconds': t,
