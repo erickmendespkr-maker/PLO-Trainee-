@@ -22,7 +22,9 @@ class ReviewExportAuditTests(unittest.TestCase):
             'human_review_of_export':False,'table_id':2,
             'source_duration_seconds':3,
             'requested_interval_seconds':[1,2],
-            'evidence_gate':{'table_id':2,'start_pts':1,'end_pts':2,'can_label_error':False}}
+            'evidence_gate':{'table_id':2,'start_pts':1,'end_pts':2,'can_label_error':False,
+                'status':'REVIEW_REQUIRED','missing_evidence':['board_verified'],
+                'can_attach_conditional_ev':False}}
         self.save()
     def save(self):
         self.clip.with_suffix('.json').write_text(json.dumps(self.manifest),encoding='utf-8')
@@ -30,6 +32,33 @@ class ReviewExportAuditTests(unittest.TestCase):
         result = audit_review_export(self.clip)
         self.assertTrue(result['integrity_verified'])
         self.assertFalse(result['strategic_analysis_verified'])
+    def test_missing_gate_status(self):
+        self.manifest['evidence_gate'].pop('status')
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'status'):
+            audit_review_export(self.clip)
+    def test_false_conditional_approval(self):
+        self.manifest['evidence_gate']['can_attach_conditional_ev'] = True
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'conditional EV'):
+            audit_review_export(self.clip)
+    def test_approved_with_missing_fields(self):
+        self.manifest['evidence_gate'].update(status='APPROVED_CONDITIONAL',
+                                             can_attach_conditional_ev=True)
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'missing fields'):
+            audit_review_export(self.clip)
+    def test_valid_approved_conditional(self):
+        self.manifest['evidence_gate'].update(status='APPROVED_CONDITIONAL',
+                                             can_attach_conditional_ev=True,
+                                             missing_evidence=[])
+        self.save()
+        self.assertTrue(audit_review_export(self.clip)['integrity_verified'])
+    def test_invalid_missing_evidence_type(self):
+        self.manifest['evidence_gate']['missing_evidence'] = 'none'
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'missing evidence'):
+            audit_review_export(self.clip)
     def test_tamper(self):
         self.clip.write_bytes(self.clip.read_bytes()+b'tampered')
         with self.assertRaisesRegex(ValueError,'checksum'):
