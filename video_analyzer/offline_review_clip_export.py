@@ -25,6 +25,8 @@ def _sha256(path):
 def export_review_clip(source, destination, record, *, ffmpeg='ffmpeg', ffprobe='ffprobe', timeout=180):
     """Export a local recorded interval; preserve source and clip SHA in JSON."""
     src, dst = Path(source), Path(destination)
+    if src.is_symlink():
+        raise ClipExportError('source video symlink not allowed')
     if not src.is_file() or not src.stat().st_size:
         raise ClipExportError('source video missing or empty')
     if src.resolve() == dst.resolve():
