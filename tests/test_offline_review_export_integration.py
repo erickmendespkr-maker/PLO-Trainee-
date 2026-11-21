@@ -52,6 +52,24 @@ class OfflineReviewExportIntegration(unittest.TestCase):
         with self.assertRaises(ValueError):
             audit_review_export(self.destination, source=self.source)
 
+    def test_tampered_explanation_is_rejected(self):
+        self.export()
+        sidecar = self.destination.with_suffix(".json")
+        manifest = json.loads(sidecar.read_text(encoding="utf-8"))
+        manifest["explanation"] = "This hand is a proven GTO error."
+        sidecar.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "unverified clip explanation"):
+            audit_review_export(self.destination, source=self.source)
+
+    def test_malformed_source_digest_is_rejected_without_source(self):
+        self.export()
+        sidecar = self.destination.with_suffix(".json")
+        manifest = json.loads(sidecar.read_text(encoding="utf-8"))
+        manifest["source_sha256"] = "not-a-digest"
+        sidecar.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "invalid SHA-256"):
+            audit_review_export(self.destination)
+
     def test_tampered_clip_is_rejected(self):
         self.export()
         with self.destination.open("ab") as stream:
