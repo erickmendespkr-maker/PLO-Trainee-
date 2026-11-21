@@ -39,6 +39,14 @@ def audit_review_export(clip, *, source=None, ffprobe='ffprobe', timeout=30):
         raise ValueError('clip checksum mismatch')
     if manifest.get('ev_is_conditional') is not True or manifest.get('gto_solution') is not False or manifest.get('human_review_of_export') is not False:
         raise ValueError('invalid evidence disclaimers')
+    # The exporter's explanation is a fixed, non-strategic disclaimer.
+    # A matching MP4 checksum alone does not authenticate sidecar prose.
+    if manifest.get('explanation') != 'No hand-specific mathematical conclusion is embedded in this clip.':
+        raise ValueError('unverified clip explanation')
+    for key in ('source_sha256', 'clip_sha256'):
+        digest = manifest.get(key)
+        if not isinstance(digest, str) or len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest):
+            raise ValueError('invalid SHA-256 field')
     gate = manifest.get('evidence_gate')
     if not isinstance(gate, dict) or gate.get('can_label_error') is not False:
         raise ValueError('invalid evidence gate')
