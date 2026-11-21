@@ -69,6 +69,14 @@ def audit_review_export(clip, *, source=None, ffprobe='ffprobe', timeout=30):
         source = Path(source)
         if source.is_symlink() or not source.is_file() or manifest.get('source_sha256') != _hash(source):
             raise ValueError('source checksum mismatch')
+        source_probe = subprocess.run(
+            [ffprobe, '-v', 'error', '-show_entries', 'format=duration',
+             '-of', 'json', str(source)], capture_output=True, text=True,
+            check=True, timeout=timeout)
+        actual_source_duration = float(json.loads(source_probe.stdout)['format']['duration'])
+        if (not math.isfinite(actual_source_duration) or
+                abs(actual_source_duration - duration) > .01):
+            raise ValueError('source duration mismatch')
     proc = subprocess.run([ffprobe, '-v', 'error', '-show_entries', 'format=duration:stream=codec_type',
                            '-of', 'json', str(clip)], capture_output=True, text=True,
                           check=True, timeout=timeout)
