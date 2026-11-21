@@ -58,7 +58,14 @@ def route_evidence(candidates, observations, *, max_tables=4):
             raise ValueError('invalid observation table')
         if not isinstance(video, str) or len(video) != 64 or any(c not in '0123456789abcdefABCDEF' for c in video):
             raise ValueError('invalid observation video hash')
-        # Validate evidence even when no hand matches; malformed OCR is not a benign miss.\n        stack = obs.get('stack_bb')\n        frame = obs.get('source_frame')\n        if isinstance(stack, bool) or not isinstance(stack, (int, float)) or not math.isfinite(stack) or stack < 0:\n            raise ValueError('invalid observation stack')\n        if not isinstance(frame, str) or not frame.strip():\n            raise ValueError('invalid observation frame')\n        matches = [key for key, hand in indexed.items()
+        # Validate evidence even when no hand matches; malformed OCR is not a benign miss.
+        stack = obs.get('stack_bb')
+        frame = obs.get('source_frame')
+        if isinstance(stack, bool) or not isinstance(stack, (int, float)) or not math.isfinite(stack) or stack < 0:
+            raise ValueError('invalid observation stack')
+        if not isinstance(frame, str) or not frame.strip():
+            raise ValueError('invalid observation frame')
+        matches = [key for key, hand in indexed.items()
                    if key[0] == video.lower() and key[1] == table and
                    hand['start_seconds'] <= t <= hand['end_seconds']]
         if len(matches) != 1:
