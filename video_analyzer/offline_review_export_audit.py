@@ -76,7 +76,8 @@ def audit_review_export(clip, *, source=None, ffprobe='ffprobe', timeout=30):
     if not any(s.get('codec_type') == 'video' for s in probe.get('streams', [])):
         raise ValueError('video stream missing')
     clip_duration = float(probe['format']['duration'])
-    if not math.isfinite(clip_duration) or not 0 < clip_duration <= end - start + .25:
+    if (not math.isfinite(clip_duration) or
+            not max(0.0, end - start - .25) < clip_duration <= end - start + .25):
         raise ValueError('clip duration mismatch')
     return {'integrity_verified': True, 'source_checked': source is not None,
             'clip_sha256': manifest['clip_sha256'], 'clip_duration_seconds': clip_duration,
