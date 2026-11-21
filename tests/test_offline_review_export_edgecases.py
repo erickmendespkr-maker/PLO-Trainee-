@@ -67,6 +67,18 @@ class ExportAuditEdgeCases(unittest.TestCase):
         with self.assertRaises(ValueError):
             audit_review_export(self.clip)
 
+    def test_tampered_source_duration_rejected_even_with_matching_hash(self):
+        self._export()
+        self._edit(lambda m: m.update(source_duration_seconds=99.0))
+        with self.assertRaisesRegex(ValueError, "source duration mismatch"):
+            audit_review_export(self.clip, source=self.source)
+
+    def test_untampered_source_duration_accepted(self):
+        self._export()
+        result = audit_review_export(self.clip, source=self.source)
+        self.assertTrue(result["source_checked"])
+        self.assertTrue(result["integrity_verified"])
+
     def test_source_mismatch_rejected(self):
         self._export()
         other = self.root / "other.mp4"
