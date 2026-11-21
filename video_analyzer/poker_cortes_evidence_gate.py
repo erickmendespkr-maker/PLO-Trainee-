@@ -51,7 +51,7 @@ def join_financial_evidence(candidate, samples, *, tolerance_seconds=1.0):
             if abs(right['stack_bb'] - left['stack_bb']) > 200:
                 flags.append('LARGE_STACK_JUMP_RECHECK_OCR')
                 break
-    if candidate.get('rebuy_visto') in (True, 'SIM', 'sim', 'YES'):
+    if candidate.get('source_rebuy_seen', candidate.get('rebuy_visto')) in (True, 'SIM', 'sim', 'YES', 'YES ', 'Sim'):
         flags.append('REBUY_REQUIRES_RECONCILIATION')
     return {
         'source': 'poker_cortes_turbo33',
