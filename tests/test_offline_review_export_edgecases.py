@@ -61,6 +61,19 @@ class ExportAuditEdgeCases(unittest.TestCase):
         with self.assertRaises(ValueError):
             audit_review_export(self.clip)
 
+    def test_unhashable_status_rejected_as_value_error(self):
+        for malformed in ([], {}, ["APPROVED_CONDITIONAL"]):
+            with self.subTest(status=malformed):
+                # Export afresh each time: one immutable clip per test case.
+                clip = self.root / ("malformed_" + str(len(list(self.root.glob("malformed_*.mp4")))) + ".mp4")
+                export_review_clip(self.source, clip, {"table_id": 4, "start_pts": 0.5, "end_pts": 1.5})
+                sidecar = clip.with_suffix(".json")
+                manifest = json.loads(sidecar.read_text(encoding="utf-8"))
+                manifest["evidence_gate"]["status"] = malformed
+                sidecar.write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    audit_review_export(clip)
+
     def test_contradictory_approval_rejected(self):
         self._export()
         self._edit(lambda m: m["evidence_gate"].update(can_attach_conditional_ev=True))
