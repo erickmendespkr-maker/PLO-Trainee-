@@ -42,8 +42,6 @@ def review_gate(hand: Mapping, *, video_duration_s: float, variant: str) -> dict
 
     if "action" in hand and isinstance(hand["action"], str) and hand["action"].strip().lower() not in VALID_ACTIONS:
         invalid.append("action")
-    if "table_id" in hand and isinstance(hand["table_id"], str) and hand["table_id"].strip() not in {"1", "2", "3", "4", "mesa-1", "mesa-2", "mesa-3", "mesa-4"}:
-        invalid.append("table_id")
     cards = []
     for key, lengths in (("hero_cards", {5 if variant == "PLO5" else 6}),
                          ("board", {0, 3, 4, 5})):
@@ -65,8 +63,6 @@ def review_gate(hand: Mapping, *, video_duration_s: float, variant: str) -> dict
             any(not isinstance(item, str) for item in verified)):
         verified = ()
     unverified = [key for key in REQUIRED if key not in verified]
-    if "action" in hand and isinstance(hand["action"], str) and hand["action"].strip().lower() in {"fold", "check"} and hand.get("cost_to_call") not in (0, 0.0):
-        invalid.append("cost_to_call")
     ready = not (missing or invalid or unverified)
     return {
         "status": "READY_FOR_CONDITIONAL_ANALYSIS" if ready else "INSUFFICIENT_DATA",
