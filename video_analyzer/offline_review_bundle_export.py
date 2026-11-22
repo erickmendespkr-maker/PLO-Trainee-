@@ -52,6 +52,7 @@ def export_review_bundle(source, clip_path, analysis, *, clip_start_s, clip_end_
     if bundle['alignment']['status'] != 'TEMPORALLY_ALIGNED_ONLY':
         raise ValueError('hand interval not covered by requested clip')
     clip_created = False
+    report_created = False
     try:
         result = export_review_clip(source, clip_path, start_s=clip_start_s,
                                     end_s=clip_end_s, ffmpeg=ffmpeg, ffprobe=ffprobe)
@@ -63,13 +64,16 @@ def export_review_bundle(source, clip_path, analysis, *, clip_start_s, clip_end_
         report['clip']['visually_verified'] = False
         data = json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + '\n'
         report_path.parent.mkdir(parents=True, exist_ok=True)
+        # Track ownership immediately after exclusive creation. A concurrent
+        # writer's sidecar must never be removed by our exception handler.
         with open(report_path, 'x', encoding='utf-8') as output:
+            report_created = True
             output.write(data)
         return {'clip': str(clip_path), 'report': str(report_path),
                 'status': report['status'], 'visually_verified': False}
     except Exception:
         if clip_created and clip_path.exists():
             clip_path.unlink()
-        if report_path.exists():
+        if report_created and report_path.exists():
             report_path.unlink()
         raise
