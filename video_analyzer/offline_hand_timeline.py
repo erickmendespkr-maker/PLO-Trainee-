@@ -49,7 +49,7 @@ def propose_intervals(observations: Iterable[Observation], duration: float) -> l
             # formatting changes, not evidence of a different physical board.
             prev_board = tuple(card.strip().upper() for card in prev.board)
             curr_board = tuple(card.strip().upper() for card in curr.board)
-            changed = curr_board != prev_board
+            changed = set(curr_board) != set(prev_board)
             if reset or changed:
                 output.append({"table_id": table, "start_s": prev.timestamp,
                                "end_s": curr.timestamp, "reason": "street_reset" if reset else "board_change",
