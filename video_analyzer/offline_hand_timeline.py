@@ -36,7 +36,8 @@ def propose_intervals(observations: Iterable[Observation], duration: float) -> l
         normalized_board = [card.strip().upper() for card in obs.board]
         if len(normalized_board) != len(set(normalized_board)):
             raise ValueError("duplicate board cards")
-        grouped.setdefault(obs.table_id, []).append(obs)
+        # Whitespace around an OCR/layout table label does not identify a new table.
+        grouped.setdefault(obs.table_id.strip(), []).append(obs)
     output = []
     for table, entries in sorted(grouped.items()):
         entries.sort(key=lambda x: x.timestamp)
