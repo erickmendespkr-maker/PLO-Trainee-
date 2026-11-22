@@ -19,6 +19,8 @@ def export_review_clip(source, destination, *, start_s, end_s, ffmpeg='ffmpeg', 
         raise ValueError('source missing or destination equals source')
     if destination.suffix.lower() != '.mp4':
         raise ValueError('destination must be MP4')
+    if destination.exists():
+        raise FileExistsError('destination already exists')
     destination.parent.mkdir(parents=True, exist_ok=True)
     temp = destination.with_name(destination.stem + '.partial.mp4')
     if temp.exists():
@@ -33,7 +35,10 @@ def export_review_clip(source, destination, *, start_s, end_s, ffmpeg='ffmpeg', 
         actual = float(json.loads(result.stdout)['format']['duration'])
         if not math.isfinite(actual) or abs(actual - (end_s-start_s)) > 0.25:
             raise ValueError('exported duration outside 250ms tolerance')
-        temp.replace(destination)
+        # Fail closed if another process created the destination while encoding.
+        # An exclusive hard link publishes the complete MP4 without overwriting it.
+        import os
+        os.link(temp, destination)
         return {'status': 'EXPORTED_TEMPORAL_ONLY', 'path': str(destination), 'requested_start_s': start_s, 'requested_end_s': end_s, 'actual_duration_s': actual, 'visually_verified': False}
     finally:
         if temp.exists():
