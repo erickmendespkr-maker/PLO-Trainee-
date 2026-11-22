@@ -3,6 +3,10 @@
 This module does not calculate strategy or connect to live games.
 """
 import math
+import re
+
+CARD_PATTERN = re.compile(r"^(?:[2-9TJQKA][CDHS])$")
+VALID_ACTIONS = frozenset({"fold", "check", "call", "bet", "raise", "all_in"})
 from collections.abc import Mapping
 
 REQUIRED = ("table_id", "hand_id", "start_s", "end_s", "hero_cards", "board", "action", "pot_before", "cost_to_call")
@@ -36,6 +40,10 @@ def review_gate(hand: Mapping, *, video_duration_s: float, variant: str) -> dict
         if not 0 <= hand["start_s"] < hand["end_s"] <= video_duration_s:
             invalid.append("time_window")
 
+    if "action" in hand and isinstance(hand["action"], str) and hand["action"].strip().lower() not in VALID_ACTIONS:
+        invalid.append("action")
+    if "table_id" in hand and isinstance(hand["table_id"], str) and hand["table_id"].strip() not in {"1", "2", "3", "4", "mesa-1", "mesa-2", "mesa-3", "mesa-4"}:
+        invalid.append("table_id")
     cards = []
     for key, lengths in (("hero_cards", {5 if variant == "PLO5" else 6}),
                          ("board", {0, 3, 4, 5})):
@@ -45,7 +53,10 @@ def review_gate(hand: Mapping, *, video_duration_s: float, variant: str) -> dict
                     or any(not isinstance(card, str) or not card.strip() for card in value)):
                 invalid.append(key)
             else:
-                cards.extend(card.strip().upper() for card in value)
+                normalized = [card.strip().upper() for card in value]
+                if any(not CARD_PATTERN.fullmatch(card) for card in normalized):
+                    invalid.append(key)
+                cards.extend(normalized)
     if len(cards) != len(set(cards)):
         invalid.append("duplicate_cards")
 
@@ -54,6 +65,8 @@ def review_gate(hand: Mapping, *, video_duration_s: float, variant: str) -> dict
             any(not isinstance(item, str) for item in verified)):
         verified = ()
     unverified = [key for key in REQUIRED if key not in verified]
+    if "action" in hand and isinstance(hand["action"], str) and hand["action"].strip().lower() in {"fold", "check"} and hand.get("cost_to_call") not in (0, 0.0):
+        invalid.append("cost_to_call")
     ready = not (missing or invalid or unverified)
     return {
         "status": "READY_FOR_CONDITIONAL_ANALYSIS" if ready else "INSUFFICIENT_DATA",
