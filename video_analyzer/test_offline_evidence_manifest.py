@@ -105,5 +105,25 @@ class EvidenceManifestTests(unittest.TestCase):
             self.assertEqual(result["reviewed_count"], 2)
             self.assertTrue(all(x["status"] == "REVIEWED_EVIDENCE" for x in result["hands"]))
 
+    def test_invalid_reverse_interval_does_not_taint_valid_hand(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic.mp4"
+            path.write_bytes(b"synthetic-video")
+            invalid = dict(self.hand, hand_id="reversed", start_pts=4.0, end_pts=1.0)
+            result = build_manifest(path, [self.hand, invalid], duration_seconds=5)
+            self.assertEqual(result["hands"][0]["status"], "REVIEWED_EVIDENCE")
+            self.assertNotIn("OVERLAPPING_HAND_INTERVAL", result["hands"][0]["reasons"])
+            self.assertIn("PTS_OUT_OF_BOUNDS", result["hands"][1]["reasons"])
+
+    def test_out_of_duration_interval_does_not_taint_valid_hand(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic.mp4"
+            path.write_bytes(b"synthetic-video")
+            invalid = dict(self.hand, hand_id="too_long", start_pts=3.0, end_pts=6.0)
+            result = build_manifest(path, [self.hand, invalid], duration_seconds=5)
+            self.assertEqual(result["hands"][0]["status"], "REVIEWED_EVIDENCE")
+            self.assertIn("PTS_OUT_OF_BOUNDS", result["hands"][1]["reasons"])
+            self.assertNotIn("OVERLAPPING_HAND_INTERVAL", result["hands"][0]["reasons"])
+
 if __name__ == "__main__":
     unittest.main()
