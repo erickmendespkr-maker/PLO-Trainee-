@@ -65,8 +65,19 @@ class EvidenceManifestTests(unittest.TestCase):
             path = Path(directory) / "synthetic.mp4"
             path.write_bytes(b"synthetic-video")
             result = build_manifest(path, [self.hand, self.hand], duration_seconds=5)
-            self.assertEqual(result["reviewed_count"], 1)
-            self.assertIn("DUPLICATE_HAND_ID", result["hands"][1]["reasons"])
+            self.assertEqual(result["reviewed_count"], 0)
+            self.assertEqual([x["status"] for x in result["hands"]], ["INSUFFICIENT_DATA"] * 2)
+            for entry in result["hands"]:
+                self.assertIn("DUPLICATE_HAND_ID", entry["reasons"])
+
+    def test_same_hand_id_on_distinct_tables_is_allowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic.mp4"
+            path.write_bytes(b"synthetic-video")
+            other_table = dict(self.hand, table_id=2)
+            result = build_manifest(path, [self.hand, other_table], duration_seconds=5)
+            self.assertEqual(result["reviewed_count"], 2)
+            self.assertTrue(all(x["status"] == "REVIEWED_EVIDENCE" for x in result["hands"]))
 
 if __name__ == "__main__":
     unittest.main()
