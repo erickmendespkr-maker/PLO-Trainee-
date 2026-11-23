@@ -58,6 +58,23 @@ def build_manifest(video_path, hands, *, duration_seconds, expected_sha256=None)
         if counts[key] > 1:
             entry["status"] = "INSUFFICIENT_DATA"
             entry["reasons"].append("DUPLICATE_HAND_ID")
+    # Two reviewed hands cannot occupy overlapping intervals on the same table.
+    # A collision is an ambiguity, not evidence of a strategic mistake.
+    for i, left in enumerate(audited):
+        if left["table_id"] not in (1, 2, 3, 4):
+            continue
+        if left["start_pts"] is None or left["end_pts"] is None:
+            continue
+        for right in audited[i + 1:]:
+            if right["table_id"] != left["table_id"]:
+                continue
+            if right["start_pts"] is None or right["end_pts"] is None:
+                continue
+            if left["start_pts"] < right["end_pts"] and right["start_pts"] < left["end_pts"]:
+                for entry in (left, right):
+                    entry["status"] = "INSUFFICIENT_DATA"
+                    if "OVERLAPPING_HAND_INTERVAL" not in entry["reasons"]:
+                        entry["reasons"].append("OVERLAPPING_HAND_INTERVAL")
     return {"schema_version": 1, "video_sha256": sha,
             "duration_seconds": duration_seconds, "hands": audited,
             "reviewed_count": sum(x["status"] == "REVIEWED_EVIDENCE" for x in audited),
