@@ -51,10 +51,10 @@ def build_manifest(video_path, hands, *, duration_seconds, expected_sha256=None)
     # Otherwise the first duplicate would remain incorrectly approved.
     counts = {}
     for entry in audited:
-        key = (entry["table_id"], entry["hand_id"])
+        key = (entry["table_id"], entry["hand_id"].strip() if isinstance(entry["hand_id"], str) and entry["hand_id"].strip() else None)
         counts[key] = counts.get(key, 0) + 1
     for entry in audited:
-        key = (entry["table_id"], entry["hand_id"])
+        key = (entry["table_id"], entry["hand_id"].strip() if isinstance(entry["hand_id"], str) and entry["hand_id"].strip() else None)
         if counts[key] > 1:
             entry["status"] = "INSUFFICIENT_DATA"
             entry["reasons"].append("DUPLICATE_HAND_ID")
