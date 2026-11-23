@@ -63,12 +63,14 @@ def build_manifest(video_path, hands, *, duration_seconds, expected_sha256=None)
     for i, left in enumerate(audited):
         if left["table_id"] not in (1, 2, 3, 4):
             continue
-        if left["start_pts"] is None or left["end_pts"] is None:
+        if (left["start_pts"] is None or left["end_pts"] is None
+                or not 0 <= left["start_pts"] < left["end_pts"] <= duration_seconds):
             continue
         for right in audited[i + 1:]:
             if right["table_id"] != left["table_id"]:
                 continue
-            if right["start_pts"] is None or right["end_pts"] is None:
+            if (right["start_pts"] is None or right["end_pts"] is None
+                    or not 0 <= right["start_pts"] < right["end_pts"] <= duration_seconds):
                 continue
             if left["start_pts"] < right["end_pts"] and right["start_pts"] < left["end_pts"]:
                 for entry in (left, right):
