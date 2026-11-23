@@ -70,6 +70,32 @@ class EvidenceManifestTests(unittest.TestCase):
             for entry in result["hands"]:
                 self.assertIn("DUPLICATE_HAND_ID", entry["reasons"])
 
+    def test_overlapping_hands_same_table_block_both(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic.mp4"
+            path.write_bytes(b"synthetic-video")
+            second = dict(self.hand, hand_id="h2", start_pts=3.0, end_pts=4.5)
+            result = build_manifest(path, [self.hand, second], duration_seconds=5)
+            self.assertEqual(result["reviewed_count"], 0)
+            for entry in result["hands"]:
+                self.assertIn("OVERLAPPING_HAND_INTERVAL", entry["reasons"])
+
+    def test_adjacent_hands_same_table_allowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic.mp4"
+            path.write_bytes(b"synthetic-video")
+            second = dict(self.hand, hand_id="h2", start_pts=3.5, end_pts=4.5)
+            result = build_manifest(path, [self.hand, second], duration_seconds=5)
+            self.assertEqual(result["reviewed_count"], 2)
+
+    def test_simultaneous_hands_different_tables_allowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic.mp4"
+            path.write_bytes(b"synthetic-video")
+            second = dict(self.hand, hand_id="h2", table_id=2)
+            result = build_manifest(path, [self.hand, second], duration_seconds=5)
+            self.assertEqual(result["reviewed_count"], 2)
+
     def test_same_hand_id_on_distinct_tables_is_allowed(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "synthetic.mp4"
