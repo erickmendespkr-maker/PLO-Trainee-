@@ -125,5 +125,15 @@ class EvidenceManifestTests(unittest.TestCase):
             self.assertIn("PTS_OUT_OF_BOUNDS", result["hands"][1]["reasons"])
             self.assertNotIn("OVERLAPPING_HAND_INTERVAL", result["hands"][0]["reasons"])
 
+    def test_whitespace_equivalent_ids_are_ambiguous(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic.mp4"
+            path.write_bytes(b"synthetic-video")
+            second = dict(self.hand, hand_id=" h1 ", start_pts=3.5, end_pts=4.5)
+            result = build_manifest(path, [self.hand, second], duration_seconds=5)
+            self.assertEqual(result["reviewed_count"], 0)
+            for entry in result["hands"]:
+                self.assertIn("DUPLICATE_HAND_ID", entry["reasons"])
+
 if __name__ == "__main__":
     unittest.main()
