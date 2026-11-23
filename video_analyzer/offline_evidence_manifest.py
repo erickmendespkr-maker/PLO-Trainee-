@@ -47,14 +47,17 @@ def build_manifest(video_path, hands, *, duration_seconds, expected_sha256=None)
     if expected_sha256 is not None and expected_sha256 != sha:
         raise ValueError("video SHA-256 mismatch")
     audited = [validate_hand_evidence(hand, video_sha256=sha, duration_seconds=duration_seconds) for hand in hands]
-    seen = set()
+    # Reject every occurrence of an ambiguous (table, hand) identifier.
+    # Otherwise the first duplicate would remain incorrectly approved.
+    counts = {}
     for entry in audited:
         key = (entry["table_id"], entry["hand_id"])
-        if key in seen:
+        counts[key] = counts.get(key, 0) + 1
+    for entry in audited:
+        key = (entry["table_id"], entry["hand_id"])
+        if counts[key] > 1:
             entry["status"] = "INSUFFICIENT_DATA"
             entry["reasons"].append("DUPLICATE_HAND_ID")
-        else:
-            seen.add(key)
     return {"schema_version": 1, "video_sha256": sha,
             "duration_seconds": duration_seconds, "hands": audited,
             "reviewed_count": sum(x["status"] == "REVIEWED_EVIDENCE" for x in audited),
