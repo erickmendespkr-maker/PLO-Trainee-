@@ -39,6 +39,8 @@ def build_manifest(video_path, hands, *, duration_seconds, expected_sha256=None)
     """Stream SHA-256 of local footage; audit hands without inferring hidden information."""
     if not isinstance(hands, list):
         raise ValueError("hands must be a list")
+    if not _number(duration_seconds) or duration_seconds <= 0:
+        raise ValueError("duration_seconds must be positive and finite")
     digest = hashlib.sha256()
     with Path(video_path).open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -60,23 +62,21 @@ def build_manifest(video_path, hands, *, duration_seconds, expected_sha256=None)
             entry["reasons"].append("DUPLICATE_HAND_ID")
     # Two reviewed hands cannot occupy overlapping intervals on the same table.
     # A collision is an ambiguity, not evidence of a strategic mistake.
-    for i, left in enumerate(audited):
-        if left["table_id"] not in (1, 2, 3, 4):
-            continue
-        if (left["start_pts"] is None or left["end_pts"] is None
-                or not 0 <= left["start_pts"] < left["end_pts"] <= duration_seconds):
-            continue
-        for right in audited[i + 1:]:
-            if right["table_id"] != left["table_id"]:
-                continue
-            if (right["start_pts"] is None or right["end_pts"] is None
-                    or not 0 <= right["start_pts"] < right["end_pts"] <= duration_seconds):
-                continue
-            if left["start_pts"] < right["end_pts"] and right["start_pts"] < left["end_pts"]:
-                for entry in (left, right):
-                    entry["status"] = "INSUFFICIENT_DATA"
-                    if "OVERLAPPING_HAND_INTERVAL" not in entry["reasons"]:
-                        entry["reasons"].append("OVERLAPPING_HAND_INTERVAL")
+    # Sort by start time and retain the interval with the furthest end.
+    for table_id in (1, 2, 3, 4):
+        valid = [entry for entry in audited
+                 if entry["table_id"] == table_id
+                 and entry["start_pts"] is not None and entry["end_pts"] is not None
+                 and 0 <= entry["start_pts"] < entry["end_pts"] <= duration_seconds]
+        furthest = None
+        for entry in sorted(valid, key=lambda item: item["start_pts"]):
+            if furthest is not None and entry["start_pts"] < furthest["end_pts"]:
+                for collision in (furthest, entry):
+                    collision["status"] = "INSUFFICIENT_DATA"
+                    if "OVERLAPPING_HAND_INTERVAL" not in collision["reasons"]:
+                        collision["reasons"].append("OVERLAPPING_HAND_INTERVAL")
+            if furthest is None or entry["end_pts"] > furthest["end_pts"]:
+                furthest = entry
     return {"schema_version": 1, "video_sha256": sha,
             "duration_seconds": duration_seconds, "hands": audited,
             "reviewed_count": sum(x["status"] == "REVIEWED_EVIDENCE" for x in audited),
