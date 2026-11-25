@@ -1,7 +1,6 @@
 """Verified local SQLite snapshots, never overwriting an existing destination."""
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
 import sqlite3
@@ -46,14 +45,14 @@ def audit(db):
     for key, variant, context in db.execute('SELECT id,variant,context FROM scenarios'):
         if (key, context) != store.scenario_identity(variant, json.loads(context)):
             raise ValueError('Invalid scenario identity')
-    for key, source, scenario, payload, synthetic in db.execute('SELECT id,source_id,scenario_id,payload,synthetic FROM records'):
-        actions = json.loads(payload)
-        if (not isinstance(actions, dict) or not actions or
-                any(a not in ('fold', 'check', 'call', 'bet', 'raise', 'all_in') or
-                    type(p) not in (int, float) or not 0 <= p <= 1 for a, p in actions.items()) or
-                not math.isclose(sum(actions.values()), 1, rel_tol=0, abs_tol=1e-6) or
-                payload != store.canonical(actions) or synthetic != 1 or
-                key != store.digest([source, scenario, payload, True])):
+    for key, source, scenario, payload, synthetic, variant, context in db.execute(
+            'SELECT r.id,r.source_id,r.scenario_id,r.payload,r.synthetic,s.variant,s.context '
+            'FROM records r JOIN scenarios s ON r.scenario_id=s.id'):
+        try:
+            expected = store.prepare_record(source, variant, json.loads(context), json.loads(payload), synthetic=(synthetic == 1))
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ValueError('Invalid strategy record') from exc
+        if expected != ((scenario, variant, context), (key, source, scenario, payload)):
             raise ValueError('Invalid strategy record')
     return counts
 
