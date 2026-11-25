@@ -2,10 +2,8 @@
 
 No skipped observations, approximate matching, or confirmed hand inference.
 """
-from collections import OrderedDict
-from copy import deepcopy
+from plo5_singleflight import SingleFlight
 from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
 from PIL import Image
 from plo5_visual_calibration import LAYOUTS, present, read_money
 from plo5_financial_observations import read_gold_stack
@@ -16,7 +14,7 @@ from plo5_leak_review import need
 class ExactReader:
     def __init__(self, capacity=512):
         need(type(capacity) is int and 0<=capacity<=2048,'Invalid cache capacity')
-        self.capacity=capacity;self.cache=OrderedDict();self.lock=Lock();self.hits=0;self.misses=0
+        self.memo=SingleFlight(capacity)
 
     def read(self,image,field):
         need(image.mode=='RGB' and image.size in LAYOUTS and field in ('pot','stack','action'),'Invalid recognition region')
@@ -30,16 +28,7 @@ class ExactReader:
             x,y,x2,y2=rect;reader=lambda im:read_action(im,[x,y,x2-x,y2-y],.75)
         # Use bytes, not similarity or even a digest alone, as equality key.
         key=(image.size,field,rect,image.crop(rect).tobytes())
-        with self.lock:
-            if key in self.cache:
-                self.hits+=1;self.cache.move_to_end(key);return deepcopy(self.cache[key])
-            self.misses+=1
-        result=reader(image)
-        if self.capacity:
-            with self.lock:
-                self.cache[key]=deepcopy(result);self.cache.move_to_end(key)
-                while len(self.cache)>self.capacity:self.cache.popitem(last=False)
-        return result
+        return self.memo.get(key,lambda:reader(image))
 
     def scan(self,image):
         visible=present(image);result={'visible':visible,'pot':None,'stack':None,'action':None}
@@ -48,7 +37,7 @@ class ExactReader:
         return result
 
     def stats(self):
-        with self.lock:return {'hits':self.hits,'misses':self.misses,'entries':len(self.cache),'capacity':self.capacity,'key_pixel_bytes':sum(len(k[-1]) for k in self.cache)}
+        return self.memo.stats()
 
 
 def scan_paths(paths,*,capacity=512,workers=2):
