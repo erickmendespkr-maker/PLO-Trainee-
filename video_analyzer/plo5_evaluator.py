@@ -3,9 +3,11 @@ from fractions import Fraction
 from itertools import combinations
 
 if __package__:
-    from .offline_omaha_showdown import _cards, _five
+    from .offline_omaha_showdown import _cards
+    from .plo5_rank_cache import fast_five as _five
 else:
-    from offline_omaha_showdown import _cards, _five
+    from offline_omaha_showdown import _cards
+    from plo5_rank_cache import fast_five as _five
 
 CATEGORIES = ('high_card', 'one_pair', 'two_pair', 'three_of_a_kind',
               'straight', 'flush', 'full_house', 'four_of_a_kind', 'straight_flush')
