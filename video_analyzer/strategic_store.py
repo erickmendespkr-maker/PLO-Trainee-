@@ -5,6 +5,7 @@ import json
 import math
 import sqlite3
 import re
+import strategic_normalize as norm
 
 VERSION = 3
 SCHEMA = """
@@ -75,14 +76,22 @@ def scenario_identity(variant, scenario):
         raise ValueError('Invalid variant')
     if not isinstance(scenario, dict) or not scenario or any(type(k) is not str for k in scenario):
         raise ValueError('Invalid scenario')
+    if "schema" in scenario:
+        scenario = norm.normalize_scenario(variant, scenario)
     context = canonical(scenario)
     return digest([variant, context]), context
 
 
 def prepare_record(source, variant, scenario, actions, *, synthetic):
-    scenario_id, context = scenario_identity(variant, scenario)
     if synthetic is not True:
         raise ValueError('Real strategy writes disabled pending normalized import validation')
+    if isinstance(scenario, dict) and scenario.get("schema") == norm.SCHEMA:
+        scenario, actions = norm.normalize_record(variant, scenario, actions)
+        scenario_id, context = scenario_identity(variant, scenario)
+        payload = canonical(actions)
+        key = digest([source, scenario_id, payload, True])
+        return (scenario_id, variant, context), (key, source, scenario_id, payload)
+    scenario_id, context = scenario_identity(variant, scenario)
     if not isinstance(actions, dict) or not actions:
         raise ValueError('Invalid actions')
     for action, p in actions.items():
