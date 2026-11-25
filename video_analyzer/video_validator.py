@@ -3,7 +3,7 @@ from pathlib import Path
 from video_segments import probe_video
 
 ALLOWED_EXTENSIONS = {'.mp4', '.webm'}
-MAX_DURATION_SECONDS = 3600
+MAX_DURATION_SECONDS = 3660  # one minute of container tail tolerance
 MAX_SIZE_BYTES = 4 * 1024 ** 3
 
 def validate_recording(path, *, max_duration=MAX_DURATION_SECONDS, max_bytes=MAX_SIZE_BYTES):
