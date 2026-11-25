@@ -1,0 +1,97 @@
+"""Explicit, evidence-bound PLO5 model routing. No verified strategy promotion."""
+import argparse
+from fractions import Fraction
+import hashlib
+import json
+from pathlib import Path
+from contextlib import closing
+
+import plo5_decision_analysis as bridge
+from plo5_preflop_context import analyze as preflop
+from plo5_stackoff import analyze as stackoff
+from plo5_multiway_implied import analyze as multiway
+from plo5_river_solver import solve as river
+from plo5_ev_comparison import action_key
+from plo5_session_export import load, write
+from plo5_ingest_job import read_bound_evidence
+from offline_jobs import OfflineJobStore
+from offline_ingest_pts_audit import read_manifest
+from offline_video_ingest_probe import sha256
+from plo5_leak_review import need
+
+
+def digest(value):
+    return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest()
+
+
+def amount(value, bb, target):
+    return type(value) is int and Fraction(value,bb)==Fraction(target)
+
+
+def integrate(binding,manifest,drafts,review,dh,edb,sdb,extension,*,trials=2000,seed=0,iterations=10000):
+    need(type(extension) is dict and set(extension)=={'variant','review_digest','kind','scenario','seat_map'} and type(extension['variant']) is int and extension['variant']==5 and extension['review_digest']==digest(review),'Extension review mismatch')
+    kind=extension['kind'];s=extension['scenario'];mapping=extension['seat_map']
+    need(kind in ('none','preflop','stackoff','multiway','river') and type(mapping) is dict,'Unknown model extension')
+    need(kind=='none' or not review['hypotheses'],'Do not combine distinct model families')
+    base=bridge.analyze_review(binding,manifest,drafts,review,dh,edb,sdb,trials=trials,seed=seed)
+    result={'variant':5,'review_digest':digest(review),'extension_digest':digest(extension),'base_decision':base,'model_kind':kind,'model_status':'NOT_REQUESTED','extension_result':None,'chosen_conditional_model':None,'frequency':None,'ev_loss_bb':None,'financial_result_bb':None,'gto_solution':False,'video_verified':False,'strategic_error_established':False,'automatic_clip_selection_authorized':False}
+    if kind=='none':
+        need(s is None and not mapping,'Unexpected extension payload');return result
+    if base['status']=='INSUFFICIENT_DATA':
+        result['model_status']='INSUFFICIENT_DATA';return result
+    need(type(s) is dict and type(s.get('variant')) is int and s['variant']==5,'PLO5 scenario required')
+    c=base['context'];a,_=bridge.find_frames(binding,manifest,drafts,review);hero_seat=a['hero_seat_declared'];seats={x['seat'] for x in a['actions']};stacks=a['context']['remaining_stacks_bb'];chosen=action_key(review['chosen_action'])
+    def observed(seat):
+        value=stacks.get(str(seat),stacks.get(seat));need(value is not None,'Missing observed stack');return value
+    need(review['context']['amount_unit']=='chips','Extensions require explicit integer chip unit')
+    bb=s.get('bb',s.get('bb_chips'));need(type(bb) is int and bb>0 and Fraction(bb)==Fraction(review['context']['bb_size']),'Chip unit mismatch')
+    def common(pot,stack,call,rate,cap):
+        need(all(amount(v,bb,c[k]) for v,k in ((pot,'pot'),(stack,'stack'),(call,'to_call'),(cap,'rake_cap'))) and type(rate) is int and Fraction(rate,100)==Fraction(c['rake_percent']),'Monetary context mismatch')
+    def cards(h,b):
+        need(sorted(h)==c['hero'] and sorted(b[:3])+b[3:]==c['board'],'Card context mismatch')
+    if kind in ('preflop','stackoff'):
+        need(c['street']=='preflop' and s['position']==c['position'] and len(s['stacks'])==c['players'],'Preflop context mismatch');cards(s['hero'],[])
+        need(set(mapping)==set(s['stacks']) and all(type(x) is int for x in mapping.values()) and set(mapping.values())==seats and mapping[c['position']]==hero_seat,'Declared seat map mismatch')
+        # Calculate descriptive replay first; conditional models remain separate.
+        report=(preflop if kind=='preflop' else stackoff)(s,trials=trials,seed=seed)
+        remaining=report['remaining_stacks_chips'];common(report['pot_chips'],remaining[c['position']],report['to_call_chips'],s['rake_bps'],s['rake_cap'])
+        need(all(amount(remaining[p],bb,observed(seat)) for p,seat in mapping.items()),'Replay stack mismatch')
+        ch=s['chosen'];need((ch['action'],ch['amount']-report['to_call_chips'] if ch['action']=='raise' else 0)==chosen,'Chosen action/sizing mismatch')
+        result['model_status']=report.get('model_status',report.get('comparison',{}).get('status','NO_MATCH'))
+    elif kind=='multiway':
+        need(c['street']!='preflop' and c['players']>=3 and chosen[0] in ('fold','call'),'Multiway call/fold context required');cards(s['hero'],s['board'])
+        common(s['pot_chips'],s['hero_stack_chips'],s['call_chips'],s['rake_bps'],s['rake_cap_chips'])
+        # Index -> seat declaration. Existing common-pot model requires every dealt seat eligible.
+        need(set(mapping)=={str(i) for i in range(c['players']-1)} and all(type(x) is int for x in mapping.values()) and set(mapping.values())==seats-{hero_seat} and len(s['ranges'])==len(mapping) and len(s['opponent_stacks_chips'])==len(mapping),'Opponent roster mismatch')
+        need(all(amount(v,bb,observed(mapping[str(i)])) for i,v in enumerate(s['opponent_stacks_chips'])),'Opponent stack mismatch')
+        report=multiway(s,trials=trials,seed=seed);result['model_status']='CONDITIONAL_MODEL_ONLY'
+        result['chosen_conditional_model']={name:{'action':chosen[0],'ev_bb':r['ev_call_bb'] if chosen[0]=='call' else 0,'call_vs_fold':r['conditional_call_vs_fold']} for name,r in report['scenarios'].items()}
+    else:
+        need(c['street']=='river' and c['players']==2 and chosen[0] in ('check','bet') and Fraction(c['to_call'])==0,'Restricted river context required')
+        need(Fraction(c['rake_percent'])==0,'Restricted river solver excludes rake')
+        need(set(mapping)=={'opponent'} and type(mapping['opponent']) is int and {mapping['opponent']}==seats-{hero_seat},'Opponent seat mismatch')
+        need(sorted(s['board'][:3])+s['board'][3:]==c['board'] and amount(s['pot_chips'],bb,c['pot']) and amount(s['hero_stack_chips'],bb,c['stack']) and amount(s['opponent_stack_chips'],bb,observed(mapping['opponent'])),'River context mismatch')
+        need(chosen[0]=='check' or chosen[1]==s['bet_chips'],'Unmodeled bet sizing')
+        report=river(s,iterations=iterations);rows=[x for x in report['hero_strategy'] if sorted(x['cards'])==c['hero']];need(len(rows)==1,'Hero holding absent from legal range')
+        result['model_status']='RESTRICTED_RIVER_GAME_APPROXIMATION';result['chosen_conditional_model']=rows[0]
+    result['extension_result']=report
+    return result
+
+
+def run(database,job_id,drafts,review,equity_db,strategy_db,extension,**options):
+    b=read_bound_evidence(database,job_id);j=OfflineJobStore(database).get(job_id);m=read_manifest(Path(j['result_path']).parent/'evidence/ingest/manifest.json')
+    d,dh=load(drafts);r,rh=load(review);e,eh=load(extension)
+    need(sha256(equity_db)==bridge.EQUITY_DB_SHA256,'Unreviewed equity snapshot')
+    with closing(bridge.open_readonly(equity_db,immutable=True)) as edb,closing(bridge.open_readonly(strategy_db)) as sdb:
+        sdb.execute('BEGIN');out=integrate(b,m,d,r,dh,edb,sdb,e,**options)
+    need(read_bound_evidence(database,job_id)==b and all(sha256(p)==h for p,h in ((drafts,dh),(review,rh),(extension,eh),(equity_db,bridge.EQUITY_DB_SHA256))),'Inputs changed')
+    return {**out,'review_sha256':rh,'extension_sha256':eh,'equity_database_sha256':bridge.EQUITY_DB_SHA256}
+
+
+def main(argv=None):
+    p=argparse.ArgumentParser(description=__doc__)
+    for k in ('database','job_id','drafts','review','equity_db','strategy_db','extension','output'):p.add_argument(k)
+    a=p.parse_args(argv);out=Path(a.output);need(out.suffix=='.json' and not out.exists() and not out.is_symlink(),'New JSON output required');write(out,run(a.database,a.job_id,a.drafts,a.review,a.equity_db,a.strategy_db,a.extension));return 0
+
+
+if __name__=='__main__':raise SystemExit(main())
