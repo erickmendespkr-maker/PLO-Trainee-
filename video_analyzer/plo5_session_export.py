@@ -73,31 +73,36 @@ def command(args,timeout=180):
     need(p.returncode==0,'Media command failed: '+p.stderr[-500:]);return p.stdout
 
 
-def frame_hashes(path,filters=None):
+def frame_hashes(path,filters=None,*,max_frames=None):
     args=['ffmpeg','-v','error','-threads','1','-filter_threads','1','-i',str(path),'-map','0:v:0']
     if filters:args+=['-vf',filters]
     else:args+=['-vf','format=yuv420p']
+    if max_frames is not None:
+        need(type(max_frames) is int and max_frames>0,'Invalid source frame limit')
+        args+=['-frames:v',str(max_frames)]
     out=command(args+['-an','-fps_mode','passthrough','-f','framemd5','-'])
     return [line.split(',')[-1].strip() for line in out.splitlines() if line and not line.startswith('#')]
 
 
-def render(source,out,p,pts):
+def render(source,out,p,pts,*,preset="ultrafast"):
+    need(preset in ("ultrafast","superfast"),"Unsupported lossless encoding preset")
     r=p['region'];i,j=p['start_frame'],p['end_frame_inclusive']
     vf=f"trim=start_frame={i}:end_frame={j+1},crop={r['width']}:{r['height']}:{r['x']}:{r['y']},setpts=PTS-STARTPTS,format=yuv420p"
     # MP4 must retain a positive duration on the final encoded packet.
     last_delta=pts[j+1]-pts[j] if j+1<len(pts) else pts[j]-pts[j-1]
     packet_duration=max(1,round(last_delta*1000000))
-    command(['ffmpeg','-v','error','-nostdin','-n','-threads','1','-filter_threads','1','-i',str(source),'-map','0:v:0','-vf',vf,'-an','-c:v','libx264','-threads','1','-preset','ultrafast','-crf','0','-pix_fmt','yuv420p','-fps_mode','passthrough','-enc_time_base','1:1000000','-bsf:v',f'setts=duration={packet_duration}',str(out)])
+    command(['ffmpeg','-v','error','-nostdin','-n','-threads','1','-filter_threads','1','-i',str(source),'-map','0:v:0','-vf',vf,'-an','-c:v','libx264','-threads','1','-preset',preset,'-crf','0','-pix_fmt','yuv420p','-fps_mode','passthrough','-enc_time_base','1:1000000','-bsf:v',f'setts=duration={packet_duration}','-frames:v',str(j-i+1),str(out)])
     meta=json.loads(command(['ffprobe','-v','error','-show_entries','stream=codec_type,codec_name,width,height:format=duration','-of','json',str(out)]))
     streams=meta['streams'];need(len(streams)==1 and streams[0]['codec_type']=='video' and streams[0]['codec_name']=='h264' and (streams[0]['width'],streams[0]['height'])==(r['width'],r['height']),'Clip media mismatch')
     actual=decoded_pts(out);expected=[t-pts[i] for t in pts[i:j+1]]
     need(len(actual)==len(expected) and all(abs(a-b)<=0.000002 for a,b in zip(actual,expected)),'Clip frame/PTS mismatch')
-    src_hashes=frame_hashes(source,vf);out_hashes=frame_hashes(out)
+    src_hashes=frame_hashes(source,vf,max_frames=j-i+1);out_hashes=frame_hashes(out)
     need(len(src_hashes)==len(expected) and src_hashes==out_hashes,'Clip decoded pixel mismatch')
-    return {'file':out.name,'sha256':sha256(out),'frames':len(actual),'width':r['width'],'height':r['height'],'duration_seconds':float(meta['format']['duration']),'relative_pts_audited':True,'decoded_yuv420p_pixels_match':True,'audio_included':False,'complete_hand_verified':False}
+    return {'file':out.name,'sha256':sha256(out),'frames':len(actual),'width':r['width'],'height':r['height'],'duration_seconds':float(meta['format']['duration']),'relative_pts_audited':True,'decoded_yuv420p_pixels_match':True,'audio_included':False,'encoding_preset':preset,'complete_hand_verified':False}
 
 
-def run(database,job_id,draft_path,request_path,new_dir):
+def run(database,job_id,draft_path,request_path,new_dir,*,preset="ultrafast"):
+    need(preset in ("ultrafast","superfast"),"Unsupported lossless encoding preset")
     binding=read_bound_evidence(database,job_id);job=OfflineJobStore(database).get(job_id)
     root=Path(job['result_path']).parent;source=Path(job['source_path']);manifest=read_manifest(root/'evidence/ingest/manifest.json')
     need(regions_from_json(root/'regions.json',manifest['media']['width'],manifest['media']['height'])==manifest['regions'],'Region mismatch')
@@ -115,7 +120,7 @@ def run(database,job_id,draft_path,request_path,new_dir):
             items.append(item);by_draft[r['draft_id']].append(item)
         clips=[]
         for i,(did,p) in enumerate(sorted(plans.items()),1):
-            meta=render(source,stage/f'hand_{i:04d}.mp4',p,pts)
+            meta=render(source,stage/f'hand_{i:04d}.mp4',p,pts,preset=preset)
             clips.append({**p,**meta,'decision_files':[x['json'] for x in by_draft[did]]})
             for x in by_draft[did]:x['clip']=meta['file']
         summary['exported_decisions']=items;summary['clips']=clips
@@ -142,8 +147,8 @@ def verify(directory):
 
 
 def main(argv=None):
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('database');p.add_argument('job_id');p.add_argument('drafts');p.add_argument('request');p.add_argument('output');a=p.parse_args(argv)
-    run(a.database,a.job_id,a.drafts,a.request,a.output);return 0
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('database');p.add_argument('job_id');p.add_argument('drafts');p.add_argument('request');p.add_argument('output');p.add_argument('--preset',choices=('ultrafast','superfast'),default='ultrafast');a=p.parse_args(argv)
+    run(a.database,a.job_id,a.drafts,a.request,a.output,preset=a.preset);return 0
 
 
 if __name__=='__main__':raise SystemExit(main())
