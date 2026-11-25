@@ -83,6 +83,26 @@ CATALOG = (
             terms_url='https://plomastermind.com/terms/',
             methodology='Public product description: 110 preflop cash solutions, 5-max and HU; postflop not released',
             distribution='Conceptual reference only; range export unavailable; no service content ingestion or import'),
+    Dataset('rangeconverter-plo5-strategy', 'RangeConverter', 'strategy', (5,),
+            'https://rangeconverter.com/games/pot-limit-omaha-plo5-and-plo6-range-viewer-and-gto-trainer',
+            restricted=True, terms_url='https://rangeconverter.com/articles/fair-use',
+            methodology='Advertised preflop solves, heads-up to 6-max, 20-100 BB',
+            distribution='Online study only for PLO5; no range download offered'),
+    Dataset('rangeconverter-plo6-strategy', 'RangeConverter', 'strategy', (6,),
+            'https://rangeconverter.com/games/pot-limit-omaha-plo5-and-plo6-range-viewer-and-gto-trainer',
+            restricted=True, terms_url='https://rangeconverter.com/articles/fair-use',
+            methodology='Advertised heads-up and 3-to-6-player multiway preflop solves',
+            distribution='Online study only for PLO6; no range download offered'),
+    Dataset('plocom-plo5-reference', 'PLO.com', 'reference', (5,),
+            'https://plo.com/tools/equity-calculator/guide', restricted=True,
+            terms_url='https://plo.com/terms',
+            methodology='Public description of exact enumeration and Monte Carlo for specific hands; PLO5 range sampling unverified',
+            distribution='Reference only; no solver data extraction or reuse license verified'),
+    Dataset('plocom-plo6-reference', 'PLO.com', 'reference', (6,),
+            'https://plo.com/tools/equity-calculator/guide', restricted=True,
+            terms_url='https://plo.com/terms',
+            methodology='Public description of exact enumeration and Monte Carlo for specific hands; PLO6 range sampling unverified',
+            distribution='Reference only; no solver data extraction or reuse license verified'),
 )
 
 
@@ -104,3 +124,16 @@ def acquisition_plan(dataset_id, *, kind, variant):
             'terms_url': dataset.terms_url, 'methodology': dataset.methodology,
             'distribution': dataset.distribution,
             'verified_rows': 0, 'production_import_allowed': False}
+
+
+def acquisition_inventory():
+    """Return all reviewed scopes and candidate row counts, not imported coverage."""
+    plans = [acquisition_plan(d.id, kind=d.kind, variant=v)
+             for d in CATALOG for v in d.variants]
+    candidates = [p for p in plans if p['status'] == 'LICENSE_CANDIDATE']
+    return {'providers': sorted({d.provider for d in CATALOG}),
+            'plans': plans,
+            'candidate_ids': sorted({p['dataset_id'] for p in candidates}),
+            'advertised_candidate_rows': sum(d.advertised_rows or 0 for d in CATALOG
+                                             if d.id in {p['dataset_id'] for p in candidates}),
+            'production_import_enabled': any(p['production_import_allowed'] for p in plans)}
