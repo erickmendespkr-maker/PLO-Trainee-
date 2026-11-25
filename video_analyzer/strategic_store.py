@@ -1,10 +1,12 @@
-"""Local strategic SQLite foundation. Only synthetic fixtures are writable in v2."""
+"""Local strategic SQLite store. v3 adds audited source permission reviews."""
+from datetime import date
 import hashlib
 import json
 import math
 import sqlite3
+import re
 
-VERSION = 2
+VERSION = 3
 SCHEMA = """
 BEGIN IMMEDIATE;
 CREATE TABLE sources (
@@ -41,8 +43,9 @@ def connect(path):
             if db.execute("SELECT 1 FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' LIMIT 1").fetchone():
                 raise ValueError('Unversioned nonempty database; migration required')
             db.executescript(SCHEMA)
-        elif version != VERSION:
+        elif version not in (2, VERSION):
             raise ValueError('Unsupported schema version; migration required')
+        migrate_permissions(db)
         return db
     except BaseException:
         db.close()
@@ -79,7 +82,7 @@ def scenario_identity(variant, scenario):
 def add_record(db, source, variant, scenario, actions, *, synthetic):
     scenario_id, context = scenario_identity(variant, scenario)
     if synthetic is not True:
-        raise ValueError('Real strategy writes disabled pending authorization workflow')
+        raise ValueError('Real strategy writes disabled pending normalized import validation')
     if not isinstance(actions, dict) or not actions:
         raise ValueError('Invalid actions')
     for action, p in actions.items():
@@ -102,3 +105,96 @@ def lookup(db, variant, scenario, *, synthetic=False):
     return [(source, json.loads(payload)) for source, payload in db.execute(
         'SELECT source_id,payload FROM records WHERE scenario_id=? AND synthetic=? ORDER BY id',
         (scenario_id, int(synthetic)))]
+
+
+# The v2 sources.permission column is a legacy pending-only marker.
+# The latest review below is the authoritative local permission metadata.
+# An approval records a human decision; it does not independently verify a license.
+PERMISSION_SCHEMA = (
+    """CREATE TABLE source_permission_reviews (
+        id INTEGER PRIMARY KEY,
+        source_id TEXT NOT NULL REFERENCES sources(id),
+        status TEXT NOT NULL CHECK(status IN ('pending','allowed','restricted')),
+        local_use INTEGER NOT NULL CHECK(local_use IN (0,1)),
+        redistribution INTEGER NOT NULL CHECK(redistribution IN (0,1)),
+        reviewer TEXT NOT NULL CHECK(length(trim(reviewer)) > 0),
+        reviewed_on TEXT NOT NULL,
+        evidence_ref TEXT NOT NULL CHECK(length(trim(evidence_ref)) > 0),
+        evidence_sha256 TEXT NOT NULL CHECK(length(evidence_sha256) = 64 AND evidence_sha256 NOT GLOB '*[^0-9a-f]*'),
+        source_version TEXT NOT NULL CHECK(length(trim(source_version)) > 0),
+        scope TEXT NOT NULL CHECK(length(trim(scope)) > 0),
+        CHECK((status = 'allowed' AND local_use = 1) OR
+              (status != 'allowed' AND local_use = 0 AND redistribution = 0))
+    )""",
+    "CREATE INDEX source_review_latest ON source_permission_reviews(source_id, id DESC)",
+    """CREATE TRIGGER source_review_no_update BEFORE UPDATE ON source_permission_reviews
+        BEGIN SELECT RAISE(ABORT, 'Permission review history is append-only'); END""",
+    """CREATE TRIGGER source_review_no_delete BEFORE DELETE ON source_permission_reviews
+        BEGIN SELECT RAISE(ABORT, 'Permission review history is append-only'); END""",
+)
+
+
+def migrate_permissions(db):
+    if db.in_transaction:
+        raise ValueError('Migration requires an idle connection')
+    db.execute('BEGIN IMMEDIATE')
+    try:
+        version = db.execute('PRAGMA user_version').fetchone()[0]
+        if version == 2:
+            for statement in PERMISSION_SCHEMA:
+                db.execute(statement)
+            if db.execute('PRAGMA foreign_key_check').fetchone() is not None:
+                raise ValueError('Existing database violates foreign keys')
+            db.execute('PRAGMA user_version=3')
+        elif version != VERSION:
+            raise ValueError('Unsupported schema version; migration required')
+        # Fail closed on a version marker without its required table.
+        db.execute('SELECT id, source_id, status FROM source_permission_reviews LIMIT 0')
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise
+
+
+def record_permission_review(db, source, *, status, local_use, redistribution,
+                             reviewer, reviewed_on, evidence_ref, evidence_sha256,
+                             source_version, scope):
+    """Append an explicit human review; never call from an untrusted importer."""
+    if status not in ('pending', 'allowed', 'restricted'):
+        raise ValueError('Invalid permission status')
+    if type(local_use) is not bool or type(redistribution) is not bool:
+        raise ValueError('Permission scope flags must be boolean')
+    if local_use != (status == 'allowed') or (redistribution and not local_use):
+        raise ValueError('Permission scope contradicts status')
+    if not all(isinstance(x, str) and x.strip() for x in
+               (reviewer, reviewed_on, evidence_ref, evidence_sha256, source_version, scope)):
+        raise ValueError('Complete review provenance required')
+    if date.fromisoformat(reviewed_on).isoformat() != reviewed_on:
+        raise ValueError('Review date must use YYYY-MM-DD')
+    if re.fullmatch(r'[0-9a-f]{64}', evidence_sha256) is None:
+        raise ValueError('Expected lowercase SHA-256 of permission evidence')
+    with db:
+        cursor = db.execute(
+            'INSERT INTO source_permission_reviews(source_id,status,local_use,redistribution,'
+            'reviewer,reviewed_on,evidence_ref,evidence_sha256,source_version,scope) '
+            'VALUES (?,?,?,?,?,?,?,?,?,?)',
+            (source, status, int(local_use), int(redistribution), reviewer, reviewed_on,
+             evidence_ref, evidence_sha256, source_version, scope))
+        return cursor.lastrowid
+
+
+def source_permission(db, source):
+    """Return the latest review or a fail-closed pending result for a known source."""
+    if db.execute('SELECT 1 FROM sources WHERE id=?', (source,)).fetchone() is None:
+        raise KeyError('Unknown source')
+    cursor = db.execute(
+        'SELECT id,status,local_use,redistribution,reviewer,reviewed_on,evidence_ref,'
+        'evidence_sha256,source_version,scope FROM source_permission_reviews '
+        'WHERE source_id=? ORDER BY id DESC LIMIT 1', (source,))
+    row = cursor.fetchone()
+    if row is None:
+        return {'status': 'pending', 'local_use': False, 'redistribution': False, 'id': None}
+    result = dict(zip((column[0] for column in cursor.description), row))
+    result['local_use'] = bool(result['local_use'])
+    result['redistribution'] = bool(result['redistribution'])
+    return result
