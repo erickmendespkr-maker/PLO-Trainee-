@@ -49,7 +49,13 @@ def settle(review):
         contributors=sorted(i for i,v in net.items() if v>=cap)
         eligible=[i for i in contributors if not rows[i]['folded']]
         need(len(contributors)>=2 and eligible,'Uncontested or ineligible pot tier')
-        tiers.append({'pot_id':'main' if not tiers else f'side_{len(tiers)}','cap_chips':cap,'gross_chips':(cap-prev)*len(contributors),'contributors':contributors,'eligible':eligible});prev=cap
+        layer={'cap_chips':cap,'gross_chips':(cap-prev)*len(contributors),'contributors':contributors}
+        # Folded dead money alone must not create a separate payout pot.
+        if tiers and tiers[-1]['eligible']==eligible:
+            prior=tiers[-1];prior['cap_chips']=cap;prior['gross_chips']+=layer['gross_chips'];prior['layers'].append(layer)
+        else:
+            tiers.append({'pot_id':'main' if not tiers else f'side_{len(tiers)}','cap_chips':cap,'gross_chips':layer['gross_chips'],'contributors':contributors,'eligible':eligible,'layers':[layer]})
+        prev=cap
     pots=review['pots'];need(type(pots) is list and len(pots)==len(tiers),'Pot tier count mismatch')
     received={i:0 for i in rows};results=[]
     for tier,p in zip(tiers,pots):
