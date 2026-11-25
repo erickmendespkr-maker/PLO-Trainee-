@@ -1,6 +1,5 @@
 """Offline PLO5 reviewed decision bridge; no OCR candidate becomes a verified fact."""
 import argparse
-from collections import Counter
 from contextlib import closing
 from fractions import Fraction
 import hashlib
@@ -14,14 +13,12 @@ from offline_jobs import OfflineJobStore
 from offline_ingest_pts_audit import read_manifest, unique_pairs
 from offline_video_ingest_probe import require, sha256
 from plo5_ingest_job import read_bound_evidence
-from plo5_equity_store import lookup_descriptor, SHA256, SOURCE, LICENSE, RANKS
+from plo5_equity_store import lookup_descriptor, SHA256, SOURCE, LICENSE
+from plo5_hand_classes import classify
 from plo5_ev_comparison import compare, action_key
 
 # Exact reviewed SQLite snapshot from block 11. Alternate builds require review.
 EQUITY_DB_SHA256 = 'bddf887d08b9bfaeb55ab55e287b3398c31cf51620dde2ce9986baf7aeddaa9a'
-# Multiplicity labels, not an identity of the exact rank-to-suit assignment.
-PARTITIONS = {(2,2,1):'ds',(2,1,1,1):'ss',(3,1,1):'3-suit',
-              (3,2):'3+2',(4,1):'4-suit',(5,):'mono'}
 
 
 def open_readonly(path, *, immutable=False):
@@ -35,14 +32,13 @@ def open_readonly(path, *, immutable=False):
 def descriptor_reference(db, context):
     if context['street']!='preflop':
         return {'status':'NOT_APPLICABLE_POSTFLOP','gto':False}
-    hero=context['hero']
-    hand='-'.join(sorted((c[0] for c in hero),key=RANKS.index))
-    suits=PARTITIONS[tuple(sorted(Counter(c[1] for c in hero).values(),reverse=True))]
+    identity=classify(context['hero'])
+    hand,suits=identity['rank_descriptor'],identity['suit_descriptor']
     metadata=dict(db.execute('SELECT key,value FROM metadata'))
     require(all(metadata.get(k)==v for k,v in {'variant':'5','kind':'equity_vs_one_random_opponent',
             'csv_sha256':SHA256,'source':SOURCE,'license':LICENSE,'schema_version':'1'}.items()),'Equity provenance mismatch')
     result=lookup_descriptor(db,hand,suits)
-    return {**result,'hand':hand,'suits':suits,'source':SOURCE,'license':LICENSE,
+    return {**result,'hand':hand,'suits':suits,'hand_class':identity,'source':SOURCE,'license':LICENSE,
             'attribution':'SolvePoker (solvepoker.app)','csv_sha256':SHA256,
             'exact_suit_match':False,'strategy_reference':False,'frequency':None,'ev_bb':None,
             'scope':'preflop_vs_one_uniform_random_opponent_descriptor_only'}
