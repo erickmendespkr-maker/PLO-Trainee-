@@ -76,5 +76,44 @@ class SourceTests(unittest.TestCase):
             self.assertIsNone(plan['download_url'])
 
 
+    def test_genius_restricted_by_variant(self):
+        for variant in (5, 6):
+            plan = s.acquisition_plan(f'plogenius-plo{variant}-strategy', kind='strategy', variant=variant)
+            self.assertEqual(plan['status'], 'RESTRICTED')
+            self.assertIsNone(plan['download_url'])
+            self.assertFalse(plan['production_import_allowed'])
+            self.assertEqual(plan['verified_rows'], 0)
+
+    def test_mastermind_reference_only(self):
+        for variant in (5, 6):
+            key = f'plomastermind-plo{variant}-reference'
+            plan = s.acquisition_plan(key, kind='reference', variant=variant)
+            self.assertEqual(plan['status'], 'REFERENCE_ONLY')
+            self.assertIsNone(plan['download_url'])
+            self.assertIsNone(plan['license_url'])
+            self.assertFalse(plan['production_import_allowed'])
+            for kind in ('strategy', 'equity', 'heuristic'):
+                with self.assertRaises(ValueError):
+                    s.acquisition_plan(key, kind=kind, variant=variant)
+
+    def test_mastermind_plo6_scope(self):
+        plan = s.acquisition_plan('plomastermind-plo6-reference', kind='reference', variant=6)
+        self.assertIn('postflop not released', plan['methodology'])
+        self.assertIsNone(plan['advertised_rows'])
+        with self.assertRaises(ValueError):
+            s.acquisition_plan('plomastermind-plo6-reference', kind='reference', variant=5)
+
+    def test_reference_never_becomes_download_candidate(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        ref = next(d for d in s.CATALOG if d.id == 'plomastermind-plo5-reference')
+        with patch.object(s, 'CATALOG', (replace(ref, restricted=False, license='CC BY 4.0',
+                                               url='https://example.com/test.csv', attribution='fixture'),)):
+            plan = s.acquisition_plan(ref.id, kind='reference', variant=5)
+            self.assertEqual(plan['status'], 'REFERENCE_ONLY')
+            self.assertIsNone(plan['download_url'])
+            self.assertFalse(plan['production_import_allowed'])
+
+
 if __name__ == '__main__':
     unittest.main()
