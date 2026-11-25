@@ -7,6 +7,7 @@ from pathlib import Path
 
 import strategic_store as store
 import strategic_normalize as norm
+import strategic_coverage as ledger
 
 FORMAT = 'plo-strategy-v1'
 FORMAT_V2 = 'plo-strategy-v2'
@@ -96,9 +97,10 @@ def import_fixture(db, path, *, source_id, synthetic):
         if db.execute('SELECT 1 FROM sources WHERE id=?', (source_id,)).fetchone() is None:
             raise ValueError('Unknown source')
         inserted = sum(store.insert_prepared_record(db, item) for item in prepared)
+        batch_id, replayed = ledger.persist_batch(db, source_id, report, prepared, inserted)
         db.commit()
     except BaseException:
         db.rollback()
         raise
     return dict(report, source_id=source_id, synthetic=True, inserted=inserted,
-                duplicates=report['read']-inserted)
+                duplicates=report['read']-inserted, batch_id=batch_id, replayed=replayed)
