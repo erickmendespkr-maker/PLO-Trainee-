@@ -1,4 +1,4 @@
-"""Local strategic SQLite store. v3 adds audited source permission reviews."""
+"""Local strategic SQLite store. v4 adds persistent fixture import provenance."""
 from datetime import date
 import hashlib
 import json
@@ -6,8 +6,9 @@ import math
 import sqlite3
 import re
 import strategic_normalize as norm
+import strategic_coverage as ledger
 
-VERSION = 3
+VERSION = 4
 SCHEMA = """
 BEGIN IMMEDIATE;
 CREATE TABLE sources (
@@ -44,7 +45,7 @@ def connect(path):
             if db.execute("SELECT 1 FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' LIMIT 1").fetchone():
                 raise ValueError('Unversioned nonempty database; migration required')
             db.executescript(SCHEMA)
-        elif version not in (2, VERSION):
+        elif version not in (2, 3, VERSION):
             raise ValueError('Unsupported schema version; migration required')
         migrate_permissions(db)
         return db
@@ -166,10 +167,17 @@ def migrate_permissions(db):
             if db.execute('PRAGMA foreign_key_check').fetchone() is not None:
                 raise ValueError('Existing database violates foreign keys')
             db.execute('PRAGMA user_version=3')
+            version = 3
+        if version == 3:
+            for statement in ledger.SCHEMA:
+                db.execute(statement)
+            db.execute('PRAGMA user_version=4')
         elif version != VERSION:
             raise ValueError('Unsupported schema version; migration required')
         # Fail closed on a version marker without its required table.
         db.execute('SELECT id, source_id, status FROM source_permission_reviews LIMIT 0')
+        db.execute('SELECT id FROM import_batches LIMIT 0')
+        db.execute('SELECT record_id FROM import_batch_records LIMIT 0')
         db.commit()
     except BaseException:
         db.rollback()
