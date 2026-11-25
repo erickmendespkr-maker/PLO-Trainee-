@@ -8,6 +8,7 @@ import tempfile
 from contextlib import closing
 
 import strategic_store as store
+import strategic_coverage as ledger
 
 
 def _readonly(path):
@@ -26,7 +27,7 @@ def _schema(db):
 
 
 def audit(db):
-    """Audit a committed v3 snapshot; reject structural and semantic corruption."""
+    """Audit a committed v4 snapshot; reject structural and semantic corruption."""
     if db.execute('PRAGMA user_version').fetchone()[0] != store.VERSION:
         raise ValueError('Unsupported snapshot version')
     with closing(store.connect(':memory:')) as expected:
@@ -37,7 +38,7 @@ def audit(db):
     if db.execute('PRAGMA foreign_key_check').fetchone() is not None:
         raise ValueError('Broken foreign key')
     counts = {}
-    for name in ('sources', 'scenarios', 'records', 'source_permission_reviews'):
+    for name in ('sources', 'scenarios', 'records', 'source_permission_reviews', 'import_batches', 'import_batch_records'):
         counts[name] = db.execute('SELECT count(*) FROM ' + name).fetchone()[0]
     for key, name, license, evidence in db.execute('SELECT id,name,license,evidence FROM sources'):
         if not all(isinstance(x, str) and x.strip() for x in (name, license, evidence)) or key != store.digest([name, license, evidence]):
@@ -54,6 +55,7 @@ def audit(db):
             raise ValueError('Invalid strategy record') from exc
         if expected != ((scenario, variant, context), (key, source, scenario, payload)):
             raise ValueError('Invalid strategy record')
+    ledger.audit_batches(db)
     return counts
 
 
