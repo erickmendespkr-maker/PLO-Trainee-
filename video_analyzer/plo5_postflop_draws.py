@@ -7,7 +7,8 @@ import re
 
 from plo5_board_texture import board_cards, pair_ranks, DECK
 from plo5_evaluator import evaluate
-from offline_omaha_showdown import _cards, _five, RANKS
+from offline_omaha_showdown import _cards, RANKS
+from plo5_rank_cache import fast_five as _five
 
 TARGETS = ('straight', 'flush', 'full_house', 'quads')
 
