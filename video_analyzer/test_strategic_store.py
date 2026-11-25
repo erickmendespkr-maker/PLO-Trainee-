@@ -23,7 +23,7 @@ class StoreTests(unittest.TestCase):
                             self.actions if actions is None else actions, synthetic=synthetic)
 
     def test_schema(self):
-        self.assertEqual(self.db.execute('PRAGMA user_version').fetchone()[0], 3)
+        self.assertEqual(self.db.execute('PRAGMA user_version').fetchone()[0], 4)
         names = {r[0] for r in self.db.execute('SELECT name FROM sqlite_master')}
         self.assertTrue({'sources', 'scenarios', 'records', 'records_lookup'} <= names)
         self.assertEqual(self.db.execute('PRAGMA foreign_keys').fetchone()[0], 1)
@@ -178,7 +178,7 @@ class PermissionTests(unittest.TestCase):
         db.close()
         db = s.connect(path)
         self.addCleanup(db.close)
-        self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 3)
+        self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 4)
         self.assertEqual(db.execute('SELECT id FROM records').fetchone()[0], record)
         self.assertEqual(s.lookup(db, 5, self.scenario, synthetic=True), [(source, self.actions)])
         self.assertEqual(s.source_permission(db, source)['status'], 'pending')
