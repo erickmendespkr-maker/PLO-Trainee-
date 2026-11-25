@@ -6,8 +6,10 @@ import json
 from pathlib import Path
 
 import strategic_store as store
+import strategic_normalize as norm
 
 FORMAT = 'plo-strategy-v1'
+FORMAT_V2 = 'plo-strategy-v2'
 FIELDS = ('variant', 'scenario', 'actions')
 MAX_BYTES = 8 * 1024 * 1024
 MAX_ROWS = 10000
@@ -34,9 +36,13 @@ def _rows(text, format):
     if format == 'json':
         envelope = _json(text)
         if (type(envelope) is not dict or set(envelope) != {'format', 'records'} or
-                envelope['format'] != FORMAT or type(envelope['records']) is not list):
+                envelope['format'] not in (FORMAT, FORMAT_V2) or type(envelope['records']) is not list):
             raise ValueError('Expected versioned strategy JSON envelope')
-        yield from envelope['records']
+        for row in envelope['records']:
+            normalized = type(row) is dict and type(row.get('scenario')) is dict and row['scenario'].get('schema') == norm.SCHEMA
+            if normalized != (envelope['format'] == FORMAT_V2):
+                raise ValueError('Scenario schema does not match exchange version')
+            yield row
     else:
         reader = csv.reader(io.StringIO(text, newline=''), delimiter=',' if format == 'csv' else '\t', strict=True)
         if tuple(next(reader, ())) != FIELDS:
