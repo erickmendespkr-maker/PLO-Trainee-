@@ -34,5 +34,47 @@ class SourceTests(unittest.TestCase):
                 s.acquisition_plan(key, kind=kind, variant=variant)
 
 
+    def test_restricted_sources(self):
+        restricted = [d for d in s.CATALOG if d.provider in ('PokerData', 'OmahaSolve')]
+        self.assertEqual(len(restricted), 6)
+        for d in restricted:
+            for variant in d.variants:
+                with self.subTest(dataset=d.id):
+                    plan = s.acquisition_plan(d.id, kind=d.kind, variant=variant)
+                    self.assertEqual(plan['status'], 'RESTRICTED')
+                    self.assertIsNone(plan['download_url'])
+                    self.assertIsNone(plan['license_url'])
+                    self.assertFalse(plan['production_import_allowed'])
+                    self.assertEqual(plan['verified_rows'], 0)
+                    self.assertTrue(plan['terms_url'])
+                    self.assertTrue(plan['methodology'])
+
+    def test_heuristics_are_not_solver_data(self):
+        for variant in (5, 6):
+            key = f'omahasolve-plo{variant}-ranges'
+            self.assertEqual(s.acquisition_plan(key, kind='heuristic', variant=variant)['kind'], 'heuristic')
+            with self.assertRaises(ValueError):
+                s.acquisition_plan(key, kind='strategy', variant=variant)
+            with self.assertRaises(ValueError):
+                s.acquisition_plan(key, kind='equity', variant=variant)
+
+    def test_pokerdata_scope(self):
+        for key in ('pokerdata-plo5-preflop', 'pokerdata-plo5-postflop'):
+            with self.assertRaises(ValueError):
+                s.acquisition_plan(key, kind='strategy', variant=6)
+        plan = s.acquisition_plan('pokerdata-plo5-preflop', kind='strategy', variant=5)
+        self.assertIn('1.2 BB ante', plan['methodology'])
+        self.assertIn('JSON', plan['distribution'])
+
+    def test_restriction_overrides_license_candidate(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        candidate = next(d for d in s.CATALOG if d.id == 'solvepoker-plo5-equity')
+        with patch.object(s, 'CATALOG', (replace(candidate, restricted=True),)):
+            plan = s.acquisition_plan(candidate.id, kind='equity', variant=5)
+            self.assertEqual(plan['status'], 'RESTRICTED')
+            self.assertIsNone(plan['download_url'])
+
+
 if __name__ == '__main__':
     unittest.main()
