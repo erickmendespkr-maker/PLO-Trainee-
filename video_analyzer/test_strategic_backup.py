@@ -30,7 +30,7 @@ class BackupTests(unittest.TestCase):
         restored = self.root / 'restored.sqlite'
         result = b.restore(self.target, restored, expected_sha256=report['sha256'])
         self.assertEqual(report['counts'], result['counts'])
-        self.assertEqual(report['counts'], dict(sources=1, scenarios=1, records=1, source_permission_reviews=1))
+        self.assertEqual(report['counts'], dict(sources=1, scenarios=1, records=1, source_permission_reviews=1, import_batches=0, import_batch_records=0))
         with b.closing(s.connect(restored)) as db:
             self.assertEqual(s.lookup(db, 5, self.context, synthetic=True), [(self.key, {'fold': 1})])
             self.assertEqual(s.lookup(db, 5, self.context), [])
