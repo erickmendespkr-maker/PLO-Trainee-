@@ -11,3 +11,6 @@ Linux: 6 testes unitários novos aprovados; 6 testes de renderização visual do
 
 ## Pendências
 Integrações nos módulos existentes publicadas, mas ainda não executadas ponta a ponta no Linux/Windows: checkout completo, vídeos reais e snapshot SQLite ausentes no ambiente de teste. Não ligar segmentos densos a decisões do relatório esparso sem vínculo verificado. Reconhecimento de cartas e posições, reconstrução integral de mãos, settlement, ranges e solver, integração estratégica e validação real continuam pendentes. Preservar todas as pendências dos blocos anteriores, inclusive documentação do bloco 46/47 que não foi publicada. Não houve deploy, mudança em main ou alteração na automação.
+
+## Ensaio adicional com Tesseract real
+36 imagens sintéticas de rótulos BB (seis conteúdos repetidos seis vezes), três workers, OMP_THREAD_LIMIT=1: sem cache 36 chamadas em 1,270059 s; com cache 6 chamadas em 0,226381 s (27 hits e 3 compartilhamentos em voo). As 36 saídas foram idênticas e corresponderam aos rótulos esperados. Redução de 82,2% do tempo de parede neste cenário de repetição. Não é benchmark de vídeo, ROIs da sala ou cadeia completa.
