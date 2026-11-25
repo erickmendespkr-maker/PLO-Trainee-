@@ -1,7 +1,11 @@
 # PLO Trainee — escopo revisado: análise de sessões gravadas
 
+## Diretriz vigente — 25/11/2026
+
+O escopo prospectivo é exclusivamente PLO5. O [plano de execução revisado](PLO5_EXECUTION_PLAN.md) define os requisitos por decisão e os blocos restantes, inclusive frequência e EV de referência quando comprovados, análise de folds e mãos ganhas, relatório de leaks e separação de perdas financeiras e EV loss. A documentação histórica abaixo é preservada; nenhuma meta nova de PLO4 ou PLO6 permanece ativa.
+
 ## Produto único
-Usuário envia um vídeo gravado de uma sessão PLO5/PLO6 (até quatro mesas); a plataforma identifica mãos, estima qualidade matemática das decisões e devolve cortes com explicações. **Não** jogar, apostar ou interagir com mesas ao vivo.
+Usuário envia um vídeo gravado de uma sessão PLO5 (até quatro mesas); a plataforma identifica mãos, estima qualidade matemática das decisões e devolve cortes com explicações. **Não** jogar, apostar ou interagir com mesas ao vivo.
 
 ## Pipeline de MVP
 1. Upload local de MP4/WebM; validar formato, duração, resolução e limites; excluir arquivos após prazo configurável.
@@ -28,7 +32,7 @@ Usuário envia um vídeo gravado de uma sessão PLO5/PLO6 (até quatro mesas); a
 - Processar somente gravações enviadas pelo usuário; sem captura ou assistência em tempo real.
 
 ## Arquitetura proposta (a validar)
-Frontend upload + fila de processamento + FFmpeg + reconhecimento visual/OCR + reconstrutor de mãos + motor PLO5/PLO6 + calculadora de equity/EV + gerador de cortes e relatório.
+Frontend upload + fila de processamento + FFmpeg + reconhecimento visual/OCR + reconstrutor de mãos + motor PLO5 + calculadora de equity/EV + gerador de cortes e relatório.
 O Poker Kernel permanece como biblioteca de regras, não como interface do produto.
 
 ## Não incluído
