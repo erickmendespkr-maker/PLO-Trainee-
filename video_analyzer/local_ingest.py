@@ -8,10 +8,12 @@ import tempfile
 import uuid
 from offline_jobs import OfflineJobStore
 from video_validator import validate_recording
+from offline_video_ingest_probe import sha256
 
 def ingest_local(source_path, storage_dir, database_path):
     source = Path(source_path).resolve(strict=True)
     metadata = validate_recording(source)
+    source_hash = sha256(source)
     storage = Path(storage_dir).resolve()
     storage.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(storage, 0o700)
@@ -24,7 +26,8 @@ def ingest_local(source_path, storage_dir, database_path):
             shutil.copyfileobj(input_file, output, length=1024 * 1024)
             output.flush()
             os.fsync(output.fileno())
-        if Path(temporary).stat().st_size != metadata['size_bytes']:
+        if (Path(temporary).stat().st_size != metadata['size_bytes'] or
+                sha256(temporary) != source_hash or sha256(source) != source_hash):
             raise ValueError('Recording changed while copying')
         validate_recording(temporary)
         os.chmod(temporary, 0o600)
