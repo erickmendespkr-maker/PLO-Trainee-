@@ -1,0 +1,23 @@
+# Bloco 44 — integração estratégica PLO5 (25/11/2026)
+
+## Implementação
+
+Novo video_analyzer/plo5_strategy_integration.py. Camada aditiva sobre o bridge de decisões revisadas do bloco 24, sem substituir o reconhecimento de vídeo, solver, database ou relatórios anteriores. CLI:
+
+    python video_analyzer/plo5_strategy_integration.py DATABASE JOB_ID DRAFTS REVIEW EQUITY_DB STRATEGY_DB EXTENSION OUTPUT
+
+EXTENSION JSON tem exatamente variant=5, review_digest (SHA-256 do JSON da revisão com chaves ordenadas, separators=(',',':'), allow_nan=False), kind, scenario, seat_map. kind=none exige scenario=null e seat_map={} e preserva o bridge existente. preflop e stackoff reutilizam os contratos dos blocos 27 e 28 e mapa de posição para assento declarado pelo revisor. multiway utiliza o bloco 31, mapa de índice de range (strings "0", "1"...) para assentos adversários. river utiliza a árvore do bloco 43, mapa {"opponent": assento}. Nos quatro modelos adicionais, hipóteses do bridge devem estar vazias, evitando combinar EVs de famílias incompatíveis. O bridge valida a identidade do job, manifesto, recortes e contexto/ação; se insuficiente, extensão não é executada. Contextos adicionais exigem unidade explícita em fichas inteiras. Conferência de cartas, posição, número de assentos, pot/call/stack, rake e cap onde modelados, unidade BB, sizing e stacks adversários conforme a família do modelo. O mapa de assentos é declaração, não reconstrução automática. Revalida SHA dos inputs, snapshot SQLite e binding após execução, usa DBs somente leitura. Não gera referência estratégica certificada, EV loss comprovada, resultado financeiro ou seleção automática de clipes.
+
+Escopo: replay descritivo preflop 2–6 jogadores (inclusive RFI, defesa, cold call, 3-bet/squeeze); modelo terminal de stack-off apenas HU e sem short call fora do contrato do bridge; multiway postflop call/fold com hipótese declarada de pote comum, todos os assentos elegíveis e adversários já tendo pago, sem side pots ou árvore futura; solver river HU check/showdown ou bet único com fold/call, sem rake. O solver retorna frequências restritas dentro da própria extensão, não GTO da partida. O relatório inclui base_decision, model_kind, model_status e extension_result. Mantém flags de verificação falsas, frequency/ev_loss_bb/financial_result_bb nulos no nível integrado. A saída adicional ainda não é consumida automaticamente pelo agregador de leaks ou exportador. Não inferir ranges, posições, ações ou valores a partir dos candidatos insuficientes dos vídeos reais.
+
+## Projetos externos
+
+Consultados READMEs via conector GitHub: uoftcprg/pokerkit (blob 02cbac232d684320c239e6a20d7dcf1504684105), pokerinfra/poker-eval (e8c6bc27c51f8e3394ed9f9174e24b092a8708b3), jejellyroll-fr/poker-eval (d8d664e3f12626ac2397e15cca6bcd7cacac3e4e). PokerKit declara arquitetura flexível de estados/regras, PokerInfra declara avaliação exata Omaha5, Poker-eval declara avaliação/equity/CFR PLO5. Tentativas git ls-remote do Poker-eval e PokerInfra falharam por resolução DNS; pip install pokerkit phevaluator em destino isolado falhou na resolução de distribuição PokerKit. Isso não prova ausência ou incompatibilidade das bibliotecas. Não baixadas/compiladas/validadas; nenhuma dependência externa adicionada e nenhum código de terceiros integrado. Retomar validação de API/licenças e confronto independente quando acesso permitido. Preservar 11B.
+
+## Testes
+
+78 testes selecionados em 5,161 s, 9 novos e 69 regressões, todos aprovados, sem skips. Cobrem RFI 6-max, 4-bet all-in HU, multiway com EV condicional de call 9,3 BB em fixture, solver river restrito, insuficiência de evidência, divergências de pote/BB/stack/rake/assento/sizing, vínculo da revisão, rejeição de modelos misturados, preservação do bridge anterior e ingestão de MP4 sintético auditado com snapshot SQLite revisado e adulteração de JPEG rejeitada. As quatro extensões foram testadas com fixtures declarados; o teste MP4 exercitou kind=none. Não foi realizada análise estratégica de mãos reais confirmadas, nem repetida a suíte integral anterior. Blobs dos dois arquivos Python novos conferidos com arquivos locais testados.
+
+## Estado
+
+Bloco 44 parcial. Integração matemática de contextos declarados realizada, automação de históricos reais e cobertura GTO permanecem pendentes. Preservar todas as 18 pendências originais e blocos 40–43. Próximo bloco 45: relatório técnico e leaks com denominadores, distinção entre modelos e resultados financeiros e sem somar diferenças de EV de árvores incompatíveis. Exclusivamente PLO5, sem alteração de main, deploy, automação ou dados privados.
