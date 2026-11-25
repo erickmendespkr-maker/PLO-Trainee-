@@ -3,6 +3,8 @@ import argparse
 from contextlib import closing
 import hashlib
 import json
+import os
+import tempfile
 from pathlib import Path
 import sqlite3
 import time
@@ -75,14 +77,29 @@ def audit(database, *, csv_path=None):
             'strict_regression_snapshot_compatible':exact,'audit_seconds':time.perf_counter()-start}
 
 
+def recover(database, csv_path):
+    """Publish only after full audit; failed recovery never leaves a candidate DB."""
+    from plo5_equity_store import import_csv
+    dest=Path(database)
+    require(dest.parent.is_dir() and not dest.exists() and not dest.is_symlink(), 'New database destination required')
+    with tempfile.TemporaryDirectory(prefix='.plo5-reference-',dir=dest.parent) as tmp:
+        stage=Path(tmp)/'reference.sqlite'
+        import_csv(csv_path,stage)
+        result=audit(stage,csv_path=csv_path)
+        # No overwrite even if another process creates the destination after the guard.
+        os.link(stage,dest)
+    return result
+
+
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('database');p.add_argument('--csv');p.add_argument('--recover',action='store_true')
     a=p.parse_args(argv)
     if a.recover:
         require(a.csv is not None,'Recovery requires original reviewed CSV')
-        from plo5_equity_store import import_csv
-        import_csv(a.csv,a.database)
-    print(json.dumps(audit(a.database,csv_path=a.csv),ensure_ascii=False,indent=2));return 0
+        result=recover(a.database,a.csv)
+    else:
+        result=audit(a.database,csv_path=a.csv)
+    print(json.dumps(result,ensure_ascii=False,indent=2));return 0
 
 
 if __name__=='__main__':raise SystemExit(main())
