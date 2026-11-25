@@ -79,7 +79,7 @@ def scenario_identity(variant, scenario):
     return digest([variant, context]), context
 
 
-def add_record(db, source, variant, scenario, actions, *, synthetic):
+def prepare_record(source, variant, scenario, actions, *, synthetic):
     scenario_id, context = scenario_identity(variant, scenario)
     if synthetic is not True:
         raise ValueError('Real strategy writes disabled pending normalized import validation')
@@ -92,10 +92,21 @@ def add_record(db, source, variant, scenario, actions, *, synthetic):
         raise ValueError('Frequencies must sum to one')
     payload = canonical(actions)
     key = digest([source, scenario_id, payload, True])
+    return (scenario_id, variant, context), (key, source, scenario_id, payload)
+
+
+def insert_prepared_record(db, prepared):
+    """Internal transaction participant; caller must validate and commit."""
+    scenario, record = prepared
+    db.execute('INSERT INTO scenarios VALUES (?,?,?) ON CONFLICT(id) DO NOTHING', scenario)
+    return db.execute('INSERT INTO records VALUES (?,?,?,?,1) ON CONFLICT(id) DO NOTHING', record).rowcount
+
+
+def add_record(db, source, variant, scenario, actions, *, synthetic):
+    prepared = prepare_record(source, variant, scenario, actions, synthetic=synthetic)
     with db:
-        db.execute('INSERT INTO scenarios VALUES (?,?,?) ON CONFLICT(id) DO NOTHING', (scenario_id, variant, context))
-        db.execute('INSERT INTO records VALUES (?,?,?,?,1) ON CONFLICT(id) DO NOTHING', (key, source, scenario_id, payload))
-    return key
+        insert_prepared_record(db, prepared)
+    return prepared[1][0]
 
 
 def lookup(db, variant, scenario, *, synthetic=False):
