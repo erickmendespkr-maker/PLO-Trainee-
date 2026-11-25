@@ -21,6 +21,9 @@ def fixture():
 class SettlementTests(unittest.TestCase):
     def test_side_pot_return_rake_rebuy(self):
         r=settle(fixture());self.assertEqual(r['status'],'CONDITIONAL_SETTLEMENT');self.assertEqual(r['hero_net_chips'],-200);self.assertEqual(r['hero_net_bb_fraction'],{'numerator':-20,'denominator':1});self.assertFalse(r['hero_loss_over_30bb']);self.assertFalse(r['financial_result_verified']);self.assertEqual([p['gross_chips'] for p in r['pots']],[400,200]);self.assertEqual(sum(x['net_chips'] for x in r['balances']),-20)
+    def test_six_seats_folded_dead_money_no_artificial_side_pot(self):
+        r=dict(variant=5,reviewer='fixture',complete=True,hero_seat=3,bb_chips=10,board=[],seats=[seat(1,500,500,200),seat(2,200,0,200),seat(3,100,345,100),seat(4,500,475,25,folded=True),seat(5,500,490,10,folded=True),seat(6,500,490,10,folded=True)],pots=[pot('main',0,[(3,345)]),pot('side_1',0,[(1,200)])])
+        result=settle(r);self.assertEqual(result['status'],'CONDITIONAL_SETTLEMENT');self.assertEqual([p['gross_chips'] for p in result['pots']],[345,200]);self.assertEqual([len(p['layers']) for p in result['pots']],[3,1]);self.assertEqual(result['hero_net_chips'],245)
     def test_inconsistent_balance(self):
         r=fixture();r['seats'][2]['after']+=1;result=settle(r);self.assertEqual(result['status'],'UNRESOLVED_BALANCE');self.assertIsNone(result['hero_net_chips']);self.assertIsNone(result['hero_loss_over_30bb'])
     def test_illegal_pots(self):
