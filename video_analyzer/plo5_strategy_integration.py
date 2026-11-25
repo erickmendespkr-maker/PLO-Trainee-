@@ -4,7 +4,8 @@ from fractions import Fraction
 import hashlib
 import json
 from pathlib import Path
-from contextlib import closing
+from contextlib import closing, ExitStack
+from functools import partial
 
 import plo5_decision_analysis as bridge
 from plo5_preflop_context import analyze as preflop
@@ -28,7 +29,7 @@ def amount(value, bb, target):
     return type(value) is int and Fraction(value,bb)==Fraction(target)
 
 
-def integrate(binding,manifest,drafts,review,dh,edb,sdb,extension,*,trials=2000,seed=0,iterations=10000):
+def integrate(binding,manifest,drafts,review,dh,edb,sdb,extension,*,trials=2000,seed=0,iterations=10000,river_solver=None):
     need(type(extension) is dict and set(extension)=={'variant','review_digest','kind','scenario','seat_map'} and type(extension['variant']) is int and extension['variant']==5 and extension['review_digest']==digest(review),'Extension review mismatch')
     kind=extension['kind'];s=extension['scenario'];mapping=extension['seat_map']
     need(kind in ('none','preflop','stackoff','multiway','river') and type(mapping) is dict,'Unknown model extension')
@@ -72,17 +73,27 @@ def integrate(binding,manifest,drafts,review,dh,edb,sdb,extension,*,trials=2000,
         need(set(mapping)=={'opponent'} and type(mapping['opponent']) is int and {mapping['opponent']}==seats-{hero_seat},'Opponent seat mismatch')
         need(sorted(s['board'][:3])+s['board'][3:]==c['board'] and amount(s['pot_chips'],bb,c['pot']) and amount(s['hero_stack_chips'],bb,c['stack']) and amount(s['opponent_stack_chips'],bb,observed(mapping['opponent'])),'River context mismatch')
         need(chosen[0]=='check' or chosen[1]==s['bet_chips'],'Unmodeled bet sizing')
-        report=river(s,iterations=iterations);rows=[x for x in report['hero_strategy'] if sorted(x['cards'])==c['hero']];need(len(rows)==1,'Hero holding absent from legal range')
+        report=(river if river_solver is None else river_solver)(s,iterations=iterations);rows=[x for x in report['hero_strategy'] if sorted(x['cards'])==c['hero']];need(len(rows)==1,'Hero holding absent from legal range')
         result['model_status']='RESTRICTED_RIVER_GAME_APPROXIMATION';result['chosen_conditional_model']=rows[0]
     result['extension_result']=report
     return result
 
 
-def run(database,job_id,drafts,review,equity_db,strategy_db,extension,**options):
+def run(database,job_id,drafts,review,equity_db,strategy_db,extension,*,river_engine='vanilla',river_cache_path=None,**options):
+    need(river_engine in ('vanilla','cfr-plus') and (river_cache_path is None or river_engine=='cfr-plus'),'Invalid river backend options')
     b=read_bound_evidence(database,job_id);j=OfflineJobStore(database).get(job_id);m=read_manifest(Path(j['result_path']).parent/'evidence/ingest/manifest.json')
     d,dh=load(drafts);r,rh=load(review);e,eh=load(extension)
     need(sha256(equity_db)==bridge.EQUITY_DB_SHA256,'Unreviewed equity snapshot')
-    with closing(bridge.open_readonly(equity_db,immutable=True)) as edb,closing(bridge.open_readonly(strategy_db)) as sdb:
+    with ExitStack() as stack:
+        edb=stack.enter_context(closing(bridge.open_readonly(equity_db,immutable=True)))
+        sdb=stack.enter_context(closing(bridge.open_readonly(strategy_db)))
+        if river_engine=='cfr-plus' and e['kind']=='river':
+            from plo5_river_accelerated import solve as accelerated
+            cache=None
+            if river_cache_path is not None:
+                from plo5_river_cache_open import open_cache
+                cache=stack.enter_context(closing(open_cache(river_cache_path,protected=(database,drafts,review,equity_db,strategy_db,extension,j['source_path'],j['result_path']))))
+            options['river_solver']=partial(accelerated,cache=cache)
         sdb.execute('BEGIN');out=integrate(b,m,d,r,dh,edb,sdb,e,**options)
     need(read_bound_evidence(database,job_id)==b and all(sha256(p)==h for p,h in ((drafts,dh),(review,rh),(extension,eh),(equity_db,bridge.EQUITY_DB_SHA256))),'Inputs changed')
     return {**out,'review_sha256':rh,'extension_sha256':eh,'equity_database_sha256':bridge.EQUITY_DB_SHA256}
@@ -91,7 +102,10 @@ def run(database,job_id,drafts,review,equity_db,strategy_db,extension,**options)
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     for k in ('database','job_id','drafts','review','equity_db','strategy_db','extension','output'):p.add_argument(k)
-    a=p.parse_args(argv);out=Path(a.output);need(out.suffix=='.json' and not out.exists() and not out.is_symlink(),'New JSON output required');write(out,run(a.database,a.job_id,a.drafts,a.review,a.equity_db,a.strategy_db,a.extension));return 0
+    p.add_argument('--river-engine',choices=('vanilla','cfr-plus'),default='vanilla');p.add_argument('--river-cache')
+    a=p.parse_args(argv);out=Path(a.output);need(out.suffix=='.json' and not out.exists() and not out.is_symlink(),'New JSON output required')
+    need(a.river_cache is None or Path(a.river_cache).resolve()!=out.resolve(),'Cache and output must be distinct')
+    write(out,run(a.database,a.job_id,a.drafts,a.review,a.equity_db,a.strategy_db,a.extension,river_engine=a.river_engine,river_cache_path=a.river_cache));return 0
 
 
 if __name__=='__main__':raise SystemExit(main())
