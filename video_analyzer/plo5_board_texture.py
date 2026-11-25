@@ -7,11 +7,13 @@ from math import comb, log, sqrt
 import random
 
 if __package__:
-    from .offline_omaha_showdown import _cards, _five, RANKS, SUITS
+    from .offline_omaha_showdown import _cards, RANKS, SUITS
     from .plo5_evaluator import evaluate, CATEGORIES
+    from .plo5_rank_cache import fast_five as _five
 else:
-    from offline_omaha_showdown import _cards, _five, RANKS, SUITS
+    from offline_omaha_showdown import _cards, RANKS, SUITS
     from plo5_evaluator import evaluate, CATEGORIES
+    from plo5_rank_cache import fast_five as _five
 
 DECK = tuple(r+s for r in RANKS for s in SUITS)
 
