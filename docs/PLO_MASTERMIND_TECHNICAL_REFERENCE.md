@@ -51,3 +51,11 @@ Os termos oficiais proíbem acesso automatizado não autorizado, scraping sistem
 5. Gerar clipes MP4 completos com relatório JSON e avisos de evidência insuficiente.
 
 Status: **documentação técnica de referência**, não validação experimental das funções nem autorização de uso dos dados proprietários do PLO Mastermind.
+
+## Revisão pública — 25/11/2026 (bloco 09)
+
+A página oficial https://plomastermind.com/6-card-plo-trainer/ agora anuncia 110 soluções pré-flop de PLO6, cash 5-max e heads-up, 10–200 BB, com pós-flop ainda não lançado e sem exportação de ranges PLO6. Isso atualiza a observação de 11/11 sobre disponibilidade do solver; não constitui validação independente das soluções.
+
+Os termos públicos https://plomastermind.com/terms/ restringem explicitamente o envio de conteúdo do serviço a sistemas de IA, inclusive por imagens, transcrições ou OCR. A referência é limitada a informações públicas sobre funcionalidades e conceitos gerais; não ingerir materiais do serviço, nem usar como benchmark, treinamento ou base de respostas. O catálogo classifica PLO Mastermind como REFERENCE_ONLY, sem importação de produção. PLO Genius também permanece bloqueado para importação, conforme https://plogenius.com/terms-of-service. Nenhuma assinatura, coleta de soluções ou alteração de escopo foi realizada.
+
+Testes locais da suíte estratégica: 74 aprovados, incluindo quatro novos testes de catálogo. Sem validação de vídeo real ou solver GTO neste bloco.
