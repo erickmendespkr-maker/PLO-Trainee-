@@ -104,7 +104,8 @@ def train(images):
     return bank
 
 
-def observe(image,bank,*,slot_reader=slot):
+def observe(image,bank,*,slot_reader=None):
+    if slot_reader is None:slot_reader=slot
     need(image.size in LAYOUTS,'Unsupported layout')
     visible=present(image);out={'visible':visible,'hero_cards':None,'board_cards':None,'hero_slots':[],'board_slots':[],'cards_verified':False}
     if visible is not True:return out
