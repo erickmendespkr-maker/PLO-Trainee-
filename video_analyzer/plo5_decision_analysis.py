@@ -15,6 +15,7 @@ from offline_video_ingest_probe import require, sha256
 from plo5_ingest_job import read_bound_evidence
 from plo5_equity_store import lookup_descriptor, SHA256, SOURCE, LICENSE
 from plo5_hand_structure import describe
+from plo5_board_texture import texture
 from plo5_ev_comparison import compare, action_key
 
 # Exact reviewed SQLite snapshot from block 11. Alternate builds require review.
@@ -154,6 +155,7 @@ def analyze_review(binding,manifest,drafts,review,draft_sha,equity_db,strategy_d
         status='CONDITIONAL_MODEL_ONLY' if coverage['hypotheses_comparable'] else ('NO_MATCH' if coverage['no_match'] else 'INSUFFICIENT_DATA')
     return {**base,'status':status,'reasons':reasons,
             'starting_equity':reference,'strategic_reference':strategy,'conditional_model':model,
+            'postflop_texture':texture(c['board'],c['hero']) if c['street']!='preflop' else None,
             'context_is_reviewed_declaration_not_verified':True}
 
 
