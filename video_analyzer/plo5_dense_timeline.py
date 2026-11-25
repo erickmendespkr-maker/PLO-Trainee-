@@ -98,29 +98,32 @@ def timeline(rows,max_gap=2.5):
 
 def run(jobs,windows,output,*,cache_capacity=512):
     from plo5_recognition_cache import ExactReader
+    from plo5_card_slot_cache import SlotCache
+    from plo5_visual_calibration import slot
     bank,snapshots=calibration(jobs);out=Path(output);need(out.parent.is_dir() and not out.exists() and not out.is_symlink(),'New output directory required')
     need(type(windows) is list and 1<=len(windows)<=8,'Invalid windows');total=0;used=set()
     with tempfile.TemporaryDirectory(prefix='.plo5-dense-',dir=out.parent) as tmp:
-        stage=Path(tmp);reports=[];readers={}
+        stage=Path(tmp);reports=[];readers={};card_readers={}
         for i,w in enumerate(windows):
             need(type(w) is dict and set(w)=={'job_id','start','seconds'} and w['job_id'] in snapshots,'Invalid window')
             j,b,ah,early,m=snapshots[w['job_id']];reader=readers.get(w['job_id'])
             if reader is None:
                 reader=ExactReader(cache_capacity);readers[w['job_id']]=reader
+                card_readers[w['job_id']]=SlotCache(LAYOUTS,slot,cache_capacity)
             start,seconds=w['start'],w['seconds'];need(type(start) is int and type(seconds) is int and 2<=seconds<=60 and start>early and start+seconds+1<m['media']['duration_seconds'],'Window overlaps training or exceeds source')
             keys={(w['job_id'],x) for x in range(start,start+seconds)};need(not keys&used,'Overlapping windows');used|=keys;total+=seconds*len(m['regions']);need(total<=512,'Dense crop budget exceeded')
             folder=stage/f'window_{i+1:02d}';folder.mkdir();source=Path(OfflineJobStore(j['database']).get(j['job_id'])['source_path']);size=(m['media']['width'],m['media']['height']);fs=extract(source,start,seconds,folder,size);rows=[]
             for n,f in enumerate(fs):
                 with Image.open(folder/f['file']) as im:
                     for r in m['regions']:
-                        x,y,width,height=(r[k] for k in ('x','y','width','height'));crop=im.crop((x,y,x+width,y+height)).convert('RGB');name=f"table_{r['table_id']:02d}_{n+1:03d}.png";crop.save(folder/name);p=observe(crop,bank);action=None
+                        x,y,width,height=(r[k] for k in ('x','y','width','height'));crop=im.crop((x,y,x+width,y+height)).convert('RGB');name=f"table_{r['table_id']:02d}_{n+1:03d}.png";crop.save(folder/name);p=observe(crop,bank,slot_reader=card_readers[w['job_id']].read);action=None
                         if p['visible'] is True:
                             action=reader.read(crop,'action')
                         rows.append({'file':name,'sha256':sha256(folder/name),'source_frame':f['file'],'source_frame_sha256':f['sha256'],'table_id':r['table_id'],'pts':f['pts'],**p,'action_reading':action})
             result=timeline(rows);report={'variant':5,'job_id':w['job_id'],'source_sha256':b['source_sha256'],'sparse_manifest_sha256':b['reports']['evidence/ingest/manifest.json'],'annotation_sha256':ah,'start':start,'seconds':seconds,'frames':fs,'observations':rows,**result,'pixel_comparison_independent':False,'video_verified':False,'equity_ev_authorized':False};write(folder/'timeline.json',report)
             reports.append({'window':folder.name,'start':start,'seconds':seconds,'frames':len(fs),'observations':len(rows),'segments':len(result['segments']),'unassigned':len(result['unassigned']),'full_hero_candidates':sum(r['hero_cards'] is not None for r in rows),'board_candidates':sum(r['board_cards'] is not None for r in rows),'label_episodes':sum(len(s['label_episodes']) for s in result['segments']),'post_fold_frames':sum(f['after_fold_label'] for s in result['segments'] for f in s['frames'])});print(json.dumps(reports[-1]),flush=True)
         for j,b,ah,_,_ in snapshots.values():need(read_bound_evidence(j['database'],j['job_id'])==b and load(j['annotations'])[1]==ah,'Source changed')
-        summary={'variant':5,'status':'DENSE_CANDIDATE_TIMELINES','windows':reports,'ocr_cache_by_job':{k:v.stats() for k,v in readers.items()},'hands_reconstructed':False,'actions_verified':False,'automatic_clip_selection_authorized':False,'independent_human_reference_verified':False};write(stage/'summary.json',summary);need(not out.exists() and not out.is_symlink(),'Output appeared');os.rename(stage,out)
+        summary={'variant':5,'status':'DENSE_CANDIDATE_TIMELINES','windows':reports,'ocr_cache_by_job':{k:v.stats() for k,v in readers.items()},'card_cache_by_job':{k:v.stats() for k,v in card_readers.items()},'hands_reconstructed':False,'actions_verified':False,'automatic_clip_selection_authorized':False,'independent_human_reference_verified':False};write(stage/'summary.json',summary);need(not out.exists() and not out.is_symlink(),'Output appeared');os.rename(stage,out)
     return summary
 
 
