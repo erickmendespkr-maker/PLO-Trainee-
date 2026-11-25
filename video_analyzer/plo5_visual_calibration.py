@@ -104,13 +104,13 @@ def train(images):
     return bank
 
 
-def observe(image,bank):
+def observe(image,bank,*,slot_reader=slot):
     need(image.size in LAYOUTS,'Unsupported layout')
     visible=present(image);out={'visible':visible,'hero_cards':None,'board_cards':None,'hero_slots':[],'board_slots':[],'cards_verified':False}
     if visible is not True:return out
     for field in ('hero','board'):
         for i in range(5):
-            state,r,s,col=slot(image,field,i);rank=nearest(r,bank['rank']) if state=='face' else None;suit=nearest(s,bank['suit']) if state=='face' else None
+            state,r,s,col=slot_reader(image,field,i);rank=nearest(r,bank['rank']) if state=='face' else None;suit=nearest(s,bank['suit']) if state=='face' else None
             token=rank+suit if rank and suit and col==suit else None
             out[field+'_slots'].append({'card':token,'status':'candidate_unverified' if token else 'no_face_candidate' if state=='empty' else 'uncertain_face','rank':rank,'suit':suit,'color_suit':col})
     out.update(summarize(out['hero_slots'],out['board_slots']));return out
