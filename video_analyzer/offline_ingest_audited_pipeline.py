@@ -25,7 +25,7 @@ from offline_ingest_roi_batch_pixel_audit import verify
 from offline_ingest_roi_pixel_audit import MAX_CHECKS
 
 
-def choose_spotcheck(samples, tables, budget):
+def choose_spotcheck(samples, tables, budget, *, balanced=False):
     """Choose deterministic, temporally spread samples for every table."""
     require(type(budget) is int and len(tables) <= budget <= MAX_CHECKS,
             'pixel check budget must cover each table and be <= 64')
@@ -38,6 +38,9 @@ def choose_spotcheck(samples, tables, budget):
     selected = []
     ordered_tables = sorted(tables)
     target = min(budget, len(samples))
+    if balanced:
+        # The independent PTS auditor requires equal sample counts per region.
+        target = len(tables) * min(budget // len(tables), min(map(len, grouped.values())))
     base, extra = divmod(target, len(tables))
     quotas = {table: min(len(grouped[table]), base + (i < extra))
               for i, table in enumerate(ordered_tables)}
@@ -95,7 +98,7 @@ def run(video, regions_json, new_output_dir, interval_seconds=30.0, pixel_checks
         require(full_pts['sample_count'] == len(manifest['samples']),
                 'incomplete full PTS audit')
         selected = choose_spotcheck(manifest['samples'],
-                                    [t['table_id'] for t in tables], pixel_checks)
+                                    [t['table_id'] for t in tables], pixel_checks, balanced=True)
         with tempfile.TemporaryDirectory(prefix='.pixel_subset_', dir=stage) as subset_temp:
             subset = Path(subset_temp)
             subset_manifest = dict(manifest)
