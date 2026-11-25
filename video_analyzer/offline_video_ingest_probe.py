@@ -19,7 +19,7 @@ import subprocess
 import tempfile
 
 MAX_BYTES = 30 * 1024**3
-MAX_DURATION = 3600.0
+MAX_DURATION = 3660.0  # match the local queue duration limit
 MAX_PIXELS = 3840 * 2160
 SAFE_EXTENSIONS = {'.mp4', '.webm', '.mov', '.mkv'}
 
@@ -69,7 +69,7 @@ def probe(recording):
     except (ValueError, TypeError, KeyError, IndexError) as exc:
         raise ValueError('Unsupported or incomplete media metadata') from exc
     require(math.isfinite(duration) and 0.5 <= duration <= MAX_DURATION,
-            'Recording duration must be 0.5–3600 seconds')
+            'Recording duration must be 0.5–3660 seconds')
     require(64 <= width <= 3840 and 64 <= height <= 2160 and
             width * height <= MAX_PIXELS, 'Invalid video dimensions')
     return {'duration_seconds': duration, 'width': width, 'height': height,
