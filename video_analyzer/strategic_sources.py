@@ -63,6 +63,26 @@ CATALOG = (
             'https://omahasolve.com/plo6-preflop-ranges', restricted=True,
             terms_url='https://omahasolve.com/terms',
             methodology='Equity ranking mapped to PLO4 opening frequencies; not solved PLO6 strategy'),
+    Dataset('plogenius-plo5-strategy', 'PLO Genius', 'strategy', (5,),
+            'https://plogenius.com/plo-solver', restricted=True,
+            terms_url='https://plogenius.com/terms-of-service',
+            methodology='Provider advertises preflop and postflop solver solutions',
+            distribution='Limited free preflop study; paid range export is not a reuse license'),
+    Dataset('plogenius-plo6-strategy', 'PLO Genius', 'strategy', (6,),
+            'https://plogenius.com/plo-solver', restricted=True,
+            terms_url='https://plogenius.com/terms-of-service',
+            methodology='Provider advertises preflop and postflop solutions, including on-demand calculations',
+            distribution='Paid PRO access; no compatible dataset reuse license verified'),
+    Dataset('plomastermind-plo5-reference', 'PLO Mastermind', 'reference', (5,),
+            'https://plomastermind.com/', restricted=True,
+            terms_url='https://plomastermind.com/terms/',
+            methodology='Public product description: multi-street CFR, preflop and postflop',
+            distribution='Conceptual reference only; no service content ingestion, extraction or import'),
+    Dataset('plomastermind-plo6-reference', 'PLO Mastermind', 'reference', (6,),
+            'https://plomastermind.com/6-card-plo-trainer/', restricted=True,
+            terms_url='https://plomastermind.com/terms/',
+            methodology='Public product description: 110 preflop cash solutions, 5-max and HU; postflop not released',
+            distribution='Conceptual reference only; range export unavailable; no service content ingestion or import'),
 )
 
 
@@ -73,7 +93,9 @@ def acquisition_plan(dataset_id, *, kind, variant):
         raise ValueError('Unknown or incompatible dataset scope')
     eligible = not dataset.restricted and dataset.kind == 'equity' and dataset.license == 'CC BY 4.0' and bool(dataset.url and dataset.attribution)
     return {'dataset_id': dataset.id, 'kind': dataset.kind, 'variant': variant,
-            'status': 'LICENSE_CANDIDATE' if eligible else ('RESTRICTED' if dataset.restricted else 'PERMISSION_PENDING'),
+            'status': ('REFERENCE_ONLY' if dataset.kind == 'reference' else
+                       'LICENSE_CANDIDATE' if eligible else
+                       'RESTRICTED' if dataset.restricted else 'PERMISSION_PENDING'),
             'download_url': dataset.url if eligible else None,
             'license': dataset.license, 'attribution': dataset.attribution,
             'license_url': LICENSE_URL if eligible else None,
