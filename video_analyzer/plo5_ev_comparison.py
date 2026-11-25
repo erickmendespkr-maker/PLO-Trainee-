@@ -50,7 +50,10 @@ def summarize(report, chosen):
     best_lower=max(lo for lo,_ in bounds.values())
     possible=[k for k,(_,hi) in bounds.items() if hi>=best_lower]
     ranked=[{'action':label(k),'ev_bb':float(points[k]),'ev_fraction_bb':fraction_info(points[k]),
-             'sampling_interval_bb':[float(v) for v in bounds[k]]} for k in sorted(points,key=lambda k:(-points[k],k))]
+             'sampling_interval_bb':[float(v) for v in bounds[k]],
+             'showdown_equity':{field:rows[k]['equity'][field] for field in
+                 ('method','equity_fraction','outcome_mass','mass_denominator','sampling_ci95','evaluated_states','seed')}
+                 if rows[k].get('equity') is not None else None} for k in sorted(points,key=lambda k:(-points[k],k))]
     common={'scenario_sha256':report['scenario_sha256'],'alternatives':ranked,
             'point_best_actions':[label(k) for k in best_keys],
             'possible_best_actions_under_bounds':[label(k) for k in possible],
