@@ -1,0 +1,10 @@
+# Finalização F2 — continuidade visual PLO5
+
+## Entregas
+- plo5_window_review.py: fusão de janelas densas adjacentes do mesmo job e calibração, nomes de recortes qualificados por janela, cobertura por mesa e segundo, detecção de conflitos, resets e lacunas, retenção após fold, evidências de cinco cartas repetidas, streets e candidatos monetários. O CLI usa bound_window para revalidar mídia e hashes. Não infere perdas, posições, mãos completas ou decisões GTO.
+- plo5_card_slot_cache.py: reutilização exata de assinaturas de pixels das cartas, com capacidade limitada e cache por job. Integração em plo5_visual_calibration.observe e plo5_dense_timeline.run; sem alteração de templates ou limiares. --cache-capacity 0 permite comparação sem cache.
+- 17 testes novos executados no Linux em 0,006 s, todos aprovados (12 de fusão, 5 de cache). Benchmark puramente sintético: 480 observações, quatro mesas, duas janelas adjacentes de 60 segundos, 4 segmentos candidatos, 21 repetições, mediana 0,003850 s para build; não inclui decodificação, OCR, reconhecimento ou solver.
+- CLI de fusão: python video_analyzer/plo5_window_review.py JOB_JSON WINDOWS_JSON OUTPUT_JSON. WINDOWS_JSON é lista de objetos timeline (caminho para timeline.json dentro de window_NN) e money (caminho para relatório monetário ou null). Usar apenas janelas do mesmo job, até 512 observações.
+
+## Limites
+Vídeos reais não recuperados em buscas de arquivos/Drive; clone completo falhou por DNS. Os 17 testes cobrem componentes isolados e fixtures sintéticos, não o fluxo de mídia ponta a ponta, nem a integração dos módulos alterados com todos os módulos do repositório. Não há precisão medida em vídeo real. Identificação de posição e ações de todos os assentos, fronteiras completas, pagamentos/rebuys, ledger automático, verdade de referência independente e validação real continuam pendentes. F2 parcial; F3 pode avançar nas tarefas independentes. Preservar F1, F3 e pendências históricas. Sem modificação de main, automação ou deploy.
