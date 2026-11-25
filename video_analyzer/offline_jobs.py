@@ -75,6 +75,15 @@ class OfflineJobStore:
             db.execute('COMMIT')
         return self.get(job_id)
 
+    def claim_job(self, job_id):
+        """Atomically claim the requested job without taking another queued recording."""
+        with _connect(self.database_path) as db:
+            claimed = db.execute("""UPDATE video_jobs SET state='running',attempts=attempts+1,
+                          updated_at=? WHERE job_id=? AND state='queued'""", (self._utc(), job_id))
+            if claimed.rowcount != 1:
+                return None
+        return self.get(job_id)
+
     def transition(self, job_id, state, *, result_path=None, error=None):
         transitions = {'running': {'review_required','completed','failed'},
                        'review_required': {'completed','failed'}}
