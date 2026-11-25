@@ -115,5 +115,43 @@ class SourceTests(unittest.TestCase):
             self.assertFalse(plan['production_import_allowed'])
 
 
+    def test_rangeconverter_online_only(self):
+        for variant in (5, 6):
+            plan = s.acquisition_plan(f'rangeconverter-plo{variant}-strategy', kind='strategy', variant=variant)
+            self.assertEqual(plan['status'], 'RESTRICTED')
+            self.assertIsNone(plan['download_url'])
+            self.assertFalse(plan['production_import_allowed'])
+            self.assertIn('no range download', plan['distribution'])
+
+    def test_plocom_reference_not_strategy(self):
+        for variant in (5, 6):
+            key = f'plocom-plo{variant}-reference'
+            plan = s.acquisition_plan(key, kind='reference', variant=variant)
+            self.assertEqual(plan['status'], 'REFERENCE_ONLY')
+            self.assertIsNone(plan['download_url'])
+            self.assertIn('range sampling unverified', plan['methodology'])
+            for kind in ('strategy', 'equity'):
+                with self.assertRaises(ValueError):
+                    s.acquisition_plan(key, kind=kind, variant=variant)
+
+    def test_complete_source_inventory(self):
+        inventory = s.acquisition_inventory()
+        self.assertEqual(len(inventory['providers']), 8)
+        self.assertEqual(len(inventory['plans']), 18)
+        self.assertEqual(inventory['advertised_candidate_rows'], 144459)
+        self.assertFalse(inventory['production_import_enabled'])
+        self.assertEqual(set(inventory['candidate_ids']),
+                         {'solvepoker-plo5-equity', 'solvepoker-plo6-equity-top10000'})
+
+    def test_inventory_never_counts_restricted_rows(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        d = next(d for d in s.CATALOG if d.id == 'solvepoker-plo5-equity')
+        with patch.object(s, 'CATALOG', (replace(d, restricted=True),)):
+            inventory = s.acquisition_inventory()
+            self.assertEqual(inventory['advertised_candidate_rows'], 0)
+            self.assertEqual(inventory['candidate_ids'], [])
+
+
 if __name__ == '__main__':
     unittest.main()
