@@ -12,9 +12,11 @@ from pathlib import Path
 
 from plo5_evaluator import evaluate
 from offline_omaha_showdown import _cards
-from plo5_leak_review import need
-from plo5_session_export import load, write
-from offline_video_ingest_probe import sha256
+
+
+def need(ok, message):
+    if not ok:
+        raise ValueError(message)
 
 
 def integer(v, lo, hi):
@@ -99,6 +101,8 @@ def solve(game, iterations=10000):
 
 def main(argv=None):
     import argparse
+    from plo5_session_export import load, write
+    from offline_video_ingest_probe import sha256
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('game');p.add_argument('output');p.add_argument('--iterations',type=int,default=10000);a=p.parse_args(argv)
     out=Path(a.output);need(out.suffix=='.json' and not out.exists() and not out.is_symlink(),'New JSON output required')
     game,h=load(a.game);result=solve(game,a.iterations);need(sha256(a.game)==h,'Input changed');result['input_sha256']=h;write(out,result);return 0
