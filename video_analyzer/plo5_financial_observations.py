@@ -86,26 +86,28 @@ def deltas(segment, readings):
     return out
 
 
-def run(job,path,output,workers=2):
+def run(job,path,output,workers=2,*,cache_capacity=512):
+    from plo5_recognition_cache import ExactReader
+    reader=ExactReader(cache_capacity)
     need(type(workers) is int and 1<=workers<=3,'Invalid OCR worker count')
     out=Path(output);need(out.suffix=='.json' and not out.exists() and not out.is_symlink(),'New JSON output required');r,rh,b,paths=bound_window(job,path)
     def scan(o):
         p=paths[o['file']];result={'file':o['file'],'table_id':o['table_id'],'pts':o['pts'],'crop_sha256':o['sha256'],'pot_reading':None,'stack_reading':None,'result_label_candidate':None}
         if o['visible'] is True:
             with Image.open(p) as img:
-                im=img.convert('RGB');result['pot_reading']=read_money(im,'pot');result['stack_reading']=read_gold_stack(im) if im.size==(402,748) else read_money(im,'stack')
+                im=img.convert('RGB');result['pot_reading']=reader.read(im,'pot');result['stack_reading']=reader.read(im,'stack')
             a=o.get('action_reading') or {};conf=a.get('engine_confidence');result['result_label_candidate']=parse_result(a.get('raw')) if conf is not None and conf>=.85 else None
         for f in ('pot','stack'):result[f+'_bb']=amount(result[f+'_reading'])
         return result
     with ThreadPoolExecutor(max_workers=workers) as pool:rows=list(pool.map(scan,r['observations']))
     idx={x['file']:x for x in rows};changes=[{'segment_id':s['segment_id'],'table_id':s['table_id'],'changes':deltas(s,idx),'financial_result_bb':None} for s in r['segments']]
     need(load(path)[1]==rh and load_job(job['database'],job['job_id'])[0]==b and load(job['annotations'])[1]==r['annotation_sha256'] and all(sha256(paths[x['file']])==x['crop_sha256'] for x in rows),'Inputs changed during OCR')
-    report={'variant':5,'status':'DISPLAY_CANDIDATES_ONLY','job_id':r['job_id'],'source_sha256':r['source_sha256'],'timeline_sha256':rh,'observations':rows,'segments':changes,'samples':len(rows),'pot_candidates':sum(x['pot_bb'] is not None for x in rows),'stack_candidates':sum(x['stack_bb'] is not None for x in rows),'unresolved_changes':sum(len(x['changes']) for x in changes),'result_label_candidates':sum(x['result_label_candidate'] is not None for x in rows),'financial_results_confirmed':0,'financial_result_verified':False,'ev_loss_bb':None,'automatic_clip_selection_authorized':False}
+    report={'variant':5,'status':'DISPLAY_CANDIDATES_ONLY','job_id':r['job_id'],'source_sha256':r['source_sha256'],'timeline_sha256':rh,'observations':rows,'segments':changes,'samples':len(rows),'ocr_cache':reader.stats(),'pot_candidates':sum(x['pot_bb'] is not None for x in rows),'stack_candidates':sum(x['stack_bb'] is not None for x in rows),'unresolved_changes':sum(len(x['changes']) for x in changes),'result_label_candidates':sum(x['result_label_candidate'] is not None for x in rows),'financial_results_confirmed':0,'financial_result_verified':False,'ev_loss_bb':None,'automatic_clip_selection_authorized':False}
     write(out,report);return report
 
 
 def main(argv=None):
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('job_json');p.add_argument('timeline');p.add_argument('output');p.add_argument('--workers',type=int,default=2);a=p.parse_args(argv);r=run(load(a.job_json)[0],a.timeline,a.output,a.workers);print({k:v for k,v in r.items() if k not in ('observations','segments')},flush=True);return 0
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('job_json');p.add_argument('timeline');p.add_argument('output');p.add_argument('--workers',type=int,default=2);p.add_argument('--cache-capacity',type=int,default=512);a=p.parse_args(argv);r=run(load(a.job_json)[0],a.timeline,a.output,a.workers,cache_capacity=a.cache_capacity);print({k:v for k,v in r.items() if k not in ('observations','segments')},flush=True);return 0
 
 
 if __name__=='__main__':raise SystemExit(main())
