@@ -35,6 +35,11 @@ class EventCaptureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d);src=p/'a.mp4';src.write_bytes(b'a');out=p/'existing';out.mkdir()
             with self.assertRaisesRegex(ValueError,'New output'):run(src,out)
+    def test_pipeline_route(self):
+        from plo5_review_pipeline import main
+        with patch('plo5_event_capture.main',return_value=0) as m:
+            self.assertEqual(main(['event-video','x.mp4','new']),0)
+            m.assert_called_once_with(['x.mp4','new'])
     def test_invalid_window(self):
         with self.assertRaises(ValueError):run('a','b',seconds=61)
 if __name__=='__main__':unittest.main()
