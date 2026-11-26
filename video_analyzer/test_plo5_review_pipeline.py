@@ -31,7 +31,7 @@ class PipelineTests(unittest.TestCase):
         mods['plo5_ingest_job'].read_bound_evidence=lambda *args:self.binding
         mods['offline_video_ingest_probe'].sha256=lambda p:sha(Path(p).read_bytes())
         def visual(db,jid,draft,study,out,mode):
-            out.mkdir();(out/'index.html').write_text(mode);return {}
+            out.mkdir();(out/'index.html').write_text(mode);return {'variant':5,'status':'VISUAL_CONDITIONAL_STUDY_ONLY','job_id':jid,'source_sha256':'b'*64,'video_verified':False,'strategic_error_established':False,'gto_solution':False,'prints':[]}
         mods['plo5_visual_report'].run=visual
         self.mods=mods;self.patch=patch.dict('sys.modules',mods);self.patch.start();self.addCleanup(self.patch.stop)
     def execute(self,**kwargs):return run(self.job,list(self.windows),self.out,**kwargs)
@@ -55,6 +55,13 @@ class PipelineTests(unittest.TestCase):
     def test_study_separate(self):
         d=self.root/'draft';s=self.root/'study';d.write_text('{}');s.write_text('{}');r=self.execute(study={'drafts':d,'study_input':s},mode='deep')
         self.assertTrue(r['study_present']);self.assertFalse(r['dense_strategy_link_verified']);self.assertEqual((self.out/'study/index.html').read_text(),'deep');self.assertIn('sem associação automática',(self.out/'index.html').read_text())
+    def test_exact_study_print_link(self):
+        d=self.root/'draft';s=self.root/'study';d.write_text('{}');s.write_text('{}')
+        original=self.mods['plo5_visual_report'].run;obs=next(iter(self.windows.values()))[0]['observations'][0]
+        def visual(*args):
+            r=original(*args);r['prints']=[{'table_id':obs['table_id'],'pts':obs['pts'],'sha256':obs['sha256'],'file':'prints/00001.png','source_crop':'sparse.png','draft_id':'d1','classification':'NO_MATCH'}];return r
+        self.mods['plo5_visual_report'].run=visual
+        r=self.execute(study={'drafts':d,'study_input':s});self.assertEqual(r['exact_study_print_links'],1);self.assertFalse(r['dense_strategy_link_verified']);self.assertIn('study/index.html#print-00001',(self.out/'index.html').read_text())
     def test_changed_crop(self):
         p=next(iter(self.windows.values()))[3]['table_01_001.png'];p.write_bytes(b'bad')
         with self.assertRaisesRegex(ValueError,'Crop changed'):self.execute()
