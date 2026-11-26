@@ -23,6 +23,9 @@ class CardReader:
         profile="suprema-1504x696-v1"
         if self.suprema_soft_bank is not None:
             from plo5_suprema_soft import classify as sup_classify, PROFILE as profile
+        # Alternate showdown geometry reads outside the normal cache key; bypass cache.
+        if self.suprema_soft_bank is not None and f=='board' and highlighted(image,t):
+            return sup_classify(image,t,f,i,bank)
         rank,suit=sup_regions(image,t,f,i)
         # The showdown guard reads a wider board region, not just these glyphs.
         key=(profile,f,rank.size,suit.size,f=='board' and highlighted(image,t),rank.convert('RGB').tobytes()+suit.convert('RGB').tobytes())
