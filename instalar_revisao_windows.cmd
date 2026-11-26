@@ -14,7 +14,7 @@ if errorlevel 1 goto failed
 if errorlevel 1 goto failed
 ".venv\Scripts\python.exe" -c "import tkinter; import PIL"
 if errorlevel 1 goto failed
-".venv\Scripts\python.exe" video_analyzer\plo5_launcher.py --check
+".venv\Scripts\python.exe" video_analyzer\plo5_release_check.py
 if errorlevel 1 goto failed
 echo Dependencias iniciais da revisao visual conferidas.
 echo A base de equity e a validacao completa continuam separadas.
