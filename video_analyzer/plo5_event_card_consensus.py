@@ -51,23 +51,29 @@ def run(root,banks):
     root=Path(root);p=root/'manifest.json';need(p.is_file() and not p.is_symlink() and p.stat().st_size<=16*1024**2,'Invalid event manifest')
     raw=p.read_bytes();d=json.loads(raw);hz=d['sampling_hz']
     need(d['variant']==5 and d['status']=='PIXEL_CHANGE_CANDIDATES_ONLY' and type(hz) is int and 2<=hz<=12,'Invalid event format')
-    models={k:load_bank(v) for k,v in banks.items()};hashes={k:hashlib.sha256(Path(v).read_bytes()).hexdigest() for k,v in banks.items()};rows=[];seen=set()
+    need(bool(banks) and set(banks)<={'pppoker','suprema','suprema_soft'} and not {'suprema','suprema_soft'}<=set(banks),'Invalid or conflicting bank profiles')
+    models={k:load_bank(v) for k,v in banks.items() if k!='suprema_soft'}
+    observers={'pppoker':ppp_observe,'suprema':sup_observe}
+    if 'suprema_soft' in banks:
+        from plo5_suprema_soft import load_bank as soft_load, observe as soft_observe
+        models['suprema']=soft_load(banks['suprema_soft']);observers['suprema']=soft_observe
+    hashes={k:hashlib.sha256(Path(v).read_bytes()).hexdigest() for k,v in banks.items()};rows=[];seen=set()
     for e in d['events']:
         i,t,k=e['event_id'],e['table_id'],e['platform'];need(type(i) is int and i>0 and i not in seen and type(t) is int and 1<=t<=4,'Invalid event identity');seen.add(i)
         if e['status']!='stable_change_candidate' or k not in models or 'peer' not in e:continue
         a,b=e['after'],e['peer'];u,v=Fraction(a['pts']),Fraction(b['pts'])
         need(abs(a['sample']-b['sample'])==1 and abs(int(u*hz)-int(v*hz))==1 and 0<abs(u-v)<=Fraction(2,hz) and min(u,v)>=d['start'] and max(u,v)<d['start']+d['seconds'],'Noncontiguous peer')
-        observer=ppp_observe if k=='pppoker' else sup_observe
+        observer=observers[k]
         x=observer(read_crop(root,a,i,'after',t),t,models[k]);y=observer(read_crop(root,b,i,'peer',t),t,models[k]);need(x['platform']==y['platform']==k,'Detected platform mismatch')
-        rows.append({'event_id':i,'table_id':t,'after_pts':str(u),'peer_pts':str(v),'after':x,'peer':y,'agreement':combine(x,y)})
+        rows.append({'event_id':i,'table_id':t,'after_pts':str(u),'peer_pts':str(v),'after':x,'peer':y,'rank_profile':'suprema-soft-1504x696-v2' if k=='suprema' and 'suprema_soft' in banks else k+'-v1','agreement':combine(x,y)})
     need(hashlib.sha256(p.read_bytes()).hexdigest()==hashlib.sha256(raw).hexdigest(),'Manifest changed')
     need(all(hashlib.sha256(Path(v).read_bytes()).hexdigest()==hashes[k] for k,v in banks.items()),'Bank changed')
     return {'variant':5,'status':'TWO_FRAME_CARD_CANDIDATES_ONLY','source_sha256':d['source_sha256'],'manifest_sha256':hashlib.sha256(raw).hexdigest(),'bank_sha256':hashes,'rows':rows,'cards_verified':False,'hands_reconstructed':False,'strategy_authorized':False,'independent_source_reextraction_verified':False}
 
 
 def main(argv=None):
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('event_report');p.add_argument('output');p.add_argument('--pppoker-bank');p.add_argument('--suprema-bank');a=p.parse_args(argv)
-    banks={k:v for k,v in [('pppoker',a.pppoker_bank),('suprema',a.suprema_bank)] if v};need(banks,'At least one bank required');r=run(a.event_report,banks)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('event_report');p.add_argument('output');p.add_argument('--pppoker-bank');p.add_argument('--suprema-bank');p.add_argument('--suprema-soft-bank');a=p.parse_args(argv)
+    banks={k:v for k,v in [('pppoker',a.pppoker_bank),('suprema',a.suprema_bank),('suprema_soft',a.suprema_soft_bank)] if v};need(banks,'At least one bank required');r=run(a.event_report,banks)
     with Path(a.output).open('x',encoding='utf-8') as f:json.dump(r,f,ensure_ascii=False,indent=2)
     print(json.dumps({'pairs':len(r['rows']),'cards_verified':False}));return 0
 if __name__=='__main__':raise SystemExit(main())
