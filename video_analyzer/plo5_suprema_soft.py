@@ -2,7 +2,8 @@
 import numpy as np
 import cv2
 from PIL import Image
-from plo5_suprema_suits import regions, felt, detect
+from plo5_suprema_suits import regions, felt, detect, BOARD_X
+from plo5_mixed_money import STARTS
 from plo5_suprema_cards import highlighted
 from plo5_fourcolor_cards import RANKS,SUITS
 
@@ -40,9 +41,26 @@ def soft_ink(im):
     return SUITS[idx],(mask.tobytes(),w/h)
 
 
+def showdown_regions(image,t,i):
+    """Conservative alternate geometry: three broad golden top edges required."""
+    x0=STARTS[t-1];flags=[]
+    for x in BOARD_X:
+        q=np.asarray(image.crop((x0+x-3,242,x0+x+46,248)).convert('RGB'),dtype=np.int16)
+        r,g,b=q.transpose(2,0,1)
+        yellow=(r>=145)&(g>=110)&(r>b+55)&(g>b+45)
+        flags.append(int((yellow.sum(axis=1)>=20).sum())>=2)
+    if sum(flags)!=3:return None
+    if not flags[i]:return regions(image,t,'board',i)
+    x=x0+BOARD_X[i]-2;y=248
+    return image.crop((x+2,y+2,x+22,y+23)),image.crop((x+2,y+23,x+15,y+34))
+
+
 def feature(image,t,f,i):
     rank,suit=regions(image,t,f,i)
-    if f=='board' and highlighted(image,t):return None,None,None,False
+    if f=='board' and highlighted(image,t):
+        alternate=showdown_regions(image,t,i)
+        if alternate is None:return None,None,None,False
+        rank,suit=alternate
     if f=='board' and felt(rank)>.85 and felt(suit)>.85:return None,None,None,True
     a,sig=soft_ink(rank);b,_=soft_ink(suit)
     return a,b,sig,False
