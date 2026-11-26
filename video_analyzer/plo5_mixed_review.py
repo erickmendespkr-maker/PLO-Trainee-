@@ -126,7 +126,11 @@ def run(source,output,*,start=0,seconds=60,capacity=512,workers=3,card_bank=None
         report={'variant':5,'status':'MIXED_LAYOUT_DISPLAY_REVIEW_ONLY','source_sha256':h,'start':start,'seconds':seconds,'sampled_seconds':len(frames),'missing_source_seconds':sorted(set(range(start,start+seconds))-{int(Fraction(f['pts'])//1) for f in frames}),'frames':frames,'priority':priority,'cache':reader.cache.stats(),'stage_seconds':{'extract':extract_s,'recognition':ocr_s,'final_recheck':verify_s},'wall_seconds':time.perf_counter()-t,'hands_reconstructed':False,'financial_result_verified':False,'gto_solution':False,'independent_pixel_reextraction_verified':False}
         if cards is not None:
             report.update(card_bank_sha256=bank_hash,suprema_card_bank_sha256=suprema_hash,suprema_soft_bank_sha256=soft_hash,card_cache=cards.cache.stats(),card_segments=groups,cards_verified=False,card_recognition_seconds=card_seconds)
-        if seat_candidates:report.update(positions_verified=False,seat_candidates_enabled=True)
+        if seat_candidates:
+            report.update(positions_verified=False,seat_candidates_enabled=True)
+            if cards is not None:
+                from plo5_preflop_roster import candidates
+                report['preflop_roster_candidates']=candidates(frames)
         with (stage/'manifest.json').open('x',encoding='utf-8') as f:json.dump(report,f,ensure_ascii=False,indent=2,allow_nan=False)
         page=['<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>PLO5 — Revisão de valores</title><style>body{font:16px system-ui;max-width:1200px;margin:auto;padding:20px}img{max-width:100%}article{border-top:1px solid #aaa;padding:12px}</style><h1>Revisão de valores PLO5</h1><p>Quedas entre amostras consecutivas, não perdas de mãos. Nenhuma mão, ação ou estratégia foi confirmada.</p>']
         for r in priority:
@@ -143,6 +147,12 @@ def run(source,output,*,start=0,seconds=60,capacity=512,workers=3,card_bank=None
                         backs=', '.join(q['seat'] for q in r['opponents'] if q['status']=='card_backs_visible_candidate') or 'nenhum detectado'
                         empty=', '.join(q['seat'] for q in r['opponents'] if q['status']=='explicit_empty_marker_candidate') or 'nenhum detectado'
                         page.append(f'<li><a href="prints/{f["file"]}">{html.escape(f["pts"])} s</a> — mesa {r["table_id"]}: dealer {html.escape(r["dealer_seat_candidate"] or "incerto")}; Hero {html.escape(r["hero_seat_candidate"] or "incerto")}; versos visíveis: {html.escape(backs)}; marcadores de vazio: {html.escape(empty)}. Participantes não confirmados.</li>')
+            page.append('</ul>')
+        if 'preflop_roster_candidates' in report:
+            page.append('<h2>Participantes pré-flop candidatos</h2><p>Posições condicionais a todos os participantes visíveis e blinds padrão; distribuição inicial e blinds não verificados.</p><ul>')
+            for r in report['preflop_roster_candidates']:
+                pos=r['positions_if_standard_blinds_and_full_roster']['hero_bottom']
+                page.append(f'<li>Mesa {r["table_id"]} — <a href="prints/{r["first"]["file"]}">{html.escape(r["first"]["pts"])} s</a> até <a href="prints/{r["last"]["file"]}">{html.escape(r["last"]["pts"])} s</a>: {len(r["visible_dealt_seats"])} participantes visíveis, Hero {html.escape(pos)} (condicional), {r["samples"]} amostras.</li>')
             page.append('</ul>')
         page.append('<h2>Amostras disponíveis</h2><ul>')
         for f in frames:page.append(f'<li><a href="prints/{f["file"]}">{html.escape(f["pts"])} s</a></li>')
