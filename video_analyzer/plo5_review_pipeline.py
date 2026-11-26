@@ -13,6 +13,7 @@ import tempfile
 import time
 from PIL import Image
 from plo5_window_review import build, need
+from plo5_balance_review import triage
 
 
 def sha(data):return hashlib.sha256(data).hexdigest()
@@ -21,7 +22,7 @@ def dump(path,obj):
     with Path(path).open('x',encoding='utf-8') as f:json.dump(obj,f,ensure_ascii=False,indent=2,allow_nan=False)
 
 
-def render(stage,review,roster):
+def render(stage,review,roster,*,triage_report=None):
     """Copy every audited crop; show candidate data, not linked strategic decisions."""
     stage=Path(stage);(stage/'prints').mkdir(); owners={}
     for s in review['segments']:
@@ -39,6 +40,9 @@ def render(stage,review,roster):
         articles.append(f'<article data-table="{tid}"><h2>Mesa {tid} — {esc(pts)} s</h2><p>{esc(owner or "Não atribuído")}</p><img loading="lazy" src="{dest}" alt="Print da mesa {tid}"><p>{esc(info)}</p></article>')
         rows.append({'source_crop':name,'file':dest,'sha256':obs['sha256'],'table_id':tid,'pts':pts,'candidate_id':owner})
     page='''<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><title>PLO5 — Revisão visual</title><style>body{font:16px system-ui;margin:24px;color:#17212b;background:#f5f5f5}article{background:white;padding:16px;margin:16px 0;max-width:900px}img{max-width:100%;height:auto}[hidden]{display:none}</style><h1>PLO5 — Revisão visual</h1><p>Leituras candidatas; mão, posição, resultado financeiro e erro estratégico não confirmados. A variação do stack não comprova perda. Não é GTO.</p>'''
+    if triage_report is not None:
+        priority=[r for r in triage_report['rows'] if r['priority_review']]
+        page+='<h2>Prioridade de revisão financeira</h2><p>Quedas observadas acima de 30 BB: '+str(len(priority))+'. Não são perdas confirmadas.</p><ul>'+''.join(f"<li>{esc(r['candidate_id'])} — mesa {esc(r['table_id'])}: queda exibida {esc(r['maximum_display_decline_bb'])} BB</li>" for r in priority)+'</ul><p><a href="triage.json">Dados da triagem</a></p>'
     if (stage/'study'/'index.html').is_file():page+='<p><a href="study/index.html">Relatório estratégico revisado (amostras separadas; sem associação automática)</a></p>'
     page+='<label>Mesa <select id="table"><option value="">Todas</option>'+''.join(f'<option>{t}</option>' for t in sorted({r['table_id'] for r in rows}))+'</select></label>'+''.join(articles)+'''<script>document.getElementById('table').onchange=function(){for(const a of document.querySelectorAll('article'))a.hidden=!!(this.value&&a.dataset.table!==this.value);};</script></html>'''
     (stage/'index.html').write_text(page,encoding='utf-8')
@@ -82,16 +86,17 @@ def run(job,inputs,output,*,extract=False,workers=2,capacity=512,mode='quick',st
             for o in t['observations']:
                 key=name+'/'+o['file'];need(key not in roster,'Duplicate crop identity');roster[key]=(crops[o['file']],o);refs.append((crops[o['file']],o['sha256']))
         review=timed('fusion',lambda:build(items));dump(stage/'review.json',review);dump(stage/'money.json',[x['money'] for x in items])
+        triage_report=timed('financial_triage',lambda:triage(review));dump(stage/'triage.json',triage_report)
         if study is not None:
             from plo5_visual_report import run as visual
             need(type(study) is dict and set(study)=={'drafts','study_input'},'Invalid study inputs')
             for p in study.values():refs.append((Path(p),sha256(p)))
             timed('separate_strategy_report',lambda:visual(job['database'],job['job_id'],study['drafts'],study['study_input'],stage/'study',mode))
-        media=timed('visual_report',lambda:render(stage,review,roster))
+        media=timed('visual_report',lambda:render(stage,review,roster,triage_report=triage_report))
         def recheck():
             need(read_bound_evidence(job['database'],job['job_id'])==binding and sha256(job['annotations'])==review['annotation_sha256'] and all(sha256(p)==h for p,h in refs),'Inputs changed')
         timed('final_recheck',recheck)
-        report={'variant':5,'status':'OFFLINE_REVIEW_PACKAGE','job_id':review['job_id'],'source_sha256':review['source_sha256'],'windows':len(items),'observations':review['observations'],'candidate_segments':len(review['segments']),'unassigned':len(review['unassigned']),'money_cache':reader.stats(),'stage_seconds':times,'wall_seconds':time.perf_counter()-started,'study_present':study is not None,'dense_strategy_link_verified':False,'financial_result_verified':False,'hands_reconstructed':False,'gto_solution':False,'ev_loss_bb':None,**media}
+        report={'variant':5,'status':'OFFLINE_REVIEW_PACKAGE','job_id':review['job_id'],'source_sha256':review['source_sha256'],'windows':len(items),'observations':review['observations'],'candidate_segments':len(review['segments']),'unassigned':len(review['unassigned']),'money_cache':reader.stats(),'priority_financial_candidates':sum(r['priority_review'] for r in triage_report['rows']),'stage_seconds':times,'wall_seconds':time.perf_counter()-started,'study_present':study is not None,'dense_strategy_link_verified':False,'financial_result_verified':False,'hands_reconstructed':False,'gto_solution':False,'ev_loss_bb':None,**media}
         dump(stage/'manifest.json',report);need(not out.exists() and not out.is_symlink(),'Output appeared');os.rename(stage,out)
     return report
 
