@@ -41,6 +41,17 @@ class PipelineTests(unittest.TestCase):
         for p in r['prints']:self.assertEqual(sha((self.out/p['file']).read_bytes()),p['sha256'])
         self.assertEqual(len(json.loads((self.out/'money.json').read_text())),2)
         self.assertIn('não comprova perda',(self.out/'index.html').read_text())
+    def test_priority_financial_candidates(self):
+        values=iter(('100','20','100','100'))
+        reader=self.mods['plo5_recognition_cache'].ExactReader
+        reader.read=lambda self,im,field:next(values) if field=='stack' else '40'
+        result=self.execute(workers=1)
+        self.assertEqual(result['priority_financial_candidates'],1)
+        data=json.loads((self.out/'triage.json').read_text())
+        self.assertEqual(data['rows'][0]['maximum_display_decline_bb'],'80')
+        self.assertIsNone(data['rows'][0]['conditional_net_bb'])
+        self.assertFalse(data['financial_results_verified'])
+        self.assertIn('queda exibida 80 BB',(self.out/'index.html').read_text())
     def test_study_separate(self):
         d=self.root/'draft';s=self.root/'study';d.write_text('{}');s.write_text('{}');r=self.execute(study={'drafts':d,'study_input':s},mode='deep')
         self.assertTrue(r['study_present']);self.assertFalse(r['dense_strategy_link_verified']);self.assertEqual((self.out/'study/index.html').read_text(),'deep');self.assertIn('sem associação automática',(self.out/'index.html').read_text())
