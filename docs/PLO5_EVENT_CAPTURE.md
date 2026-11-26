@@ -1,0 +1,16 @@
+# Captura orientada a eventos visuais — continuidade do bloco 03
+
+## Entrega
+- `plo5_event_capture.py` usa FFmpeg/FFprobe, OpenCV, NumPy e Pillow para amostrar uma gravação MP4 local de 1504×696 a 2–12 Hz (padrão 8). Confere o roster de PTS real contra FFprobe; não inventa frames.
+- Detecta plataforma e mudanças nos pixels de regiões de Hero, board, pote, stack e áreas de ações. Compara assinaturas RGB reduzidas, exige estabilidade entre dois frames amostrados ou registra timeout como instável. Reinicia a referência quando há lacuna, mesa não reconhecida ou mudança de plataforma.
+- Salva recortes originais de mesa (antes, primeira mudança, depois), selecionando o frame mais nítido entre os dois candidatos estáveis pela variância do Laplaciano nas áreas de cartas. Gera ampliações Lanczos 4× do Hero e board, hashes e HTML de evidência.
+- A rota anterior permanece intacta. Nova rota:
+  `python video_analyzer/plo5_review_pipeline.py event-video VIDEO.mp4 PASTA_NOVA --start 1250 --seconds 20 --hz 8`
+- Dependências testadas localmente: OpenCV 4.13.0, NumPy 2.3.5, Pillow 12.3.0, FFmpeg/FFprobe. Não adicionadas ao instalador Windows neste ciclo.
+
+## Evidência real
+Uma única gravação, Poker_Parte_01.mp4, duas janelas não sobrepostas. 1250–1270 s: 159 frames, 1 intervalo de 125 ms ausente, 35 registros (23 estáveis, 2 instáveis, 10 iniciais/reinícios), 10,807 s. 1450–1470 s: 136 frames, 24 intervalos ausentes, 47 registros (22 estáveis, 1 instável, 24 iniciais/reinícios), 12,245 s. Total 295 frames, 82 registros (45 estáveis, 3 instáveis, 34 iniciais/reinícios), 23,052 s. Pacotes com prints locais de 27,84 MB e 37,06 MB. A rota principal também executou 4 s do segundo trecho, 32 frames, 2,960 s (sobreposto, não somado à amostra).
+189 testes locais selecionados passaram (9 novos, 180 regressões, 4,720 s). Parte da suíte e alterações experimentais anteriores da Suprema existem localmente, mas nem todas estão publicadas; não é regressão de checkout integral do GitHub. Arquivos novos/alterados da captura e rota publicados com hashes verificados. Nenhum print ou vídeo privado publicado.
+
+## Limites e próxima ação
+Detecção de alteração de pixels não equivale a reconhecimento de ação. Animações podem gerar mudanças espúrias; eventos rápidos, mudanças pequenas ou pendências no fim da janela podem passar despercebidos. Não houve anotação independente de todas as ações, comparação de acurácia de cartas com OCR periódico, nem reconhecimento automático sobre os zooms. Maior nitidez não comprova estabilidade semântica. A amostragem fixa continua como caminho auxiliar; nenhuma substituição definitiva antes de medir cobertura e velocidade. Próxima tarefa: preservar dois frames estáveis de cada evento, executar reconhecimento temporal com perfis separados, comparar acertos/abstenções e detectar lacunas. Bloco 03 ainda parcial: perfil de valores Suprema tem baixa cobertura (34/62 cartas na avaliação anterior); integração experimental anterior parcialmente publicada. Preservar escopo e pendências; não baixar as demais gravações apenas para calibrar.
