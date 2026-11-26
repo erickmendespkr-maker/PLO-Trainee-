@@ -7,6 +7,9 @@ from plo5_mixed_money import STARTS, detect
 
 RANKS='23456789TJQKA'
 SUITS='cdhs'
+# Conservative limits: the previous validation exposed high-distance rank confusions.
+MAX_RANK_DISTANCE=.34
+MIN_RANK_MARGIN=.075
 
 
 def regions(image,table,field,i):
@@ -76,7 +79,7 @@ def classify(image,t,f,i,bank):
     scores=sorted((min(distance(g,k)+.15*abs(aspect-ak)+(.06 if f!=fk else 0) for k,ak,fk in vv),r) for r,vv in bank.items() if vv)
     if len(scores)<2:return out
     d,r=scores[0];gap=scores[1][0]-d;out.update(rank=r,distance=d,margin=gap)
-    if d<.4 and gap>.06:out.update(card=r+a,status='candidate_unverified')
+    if d<MAX_RANK_DISTANCE and gap>MIN_RANK_MARGIN:out.update(card=r+a,status='candidate_unverified')
     return out
 
 
