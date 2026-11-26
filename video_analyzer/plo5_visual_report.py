@@ -55,7 +55,7 @@ def render(folder, samples, drafts, study, crop_root, output, *, recheck):
             tid = s['table_id']; pts = s['actual_frame_timestamp_seconds']; owner = owners[name]; d = decisions.get(name)
             classification = d['classification'] if d else 'SEM_DECISAO_VINCULADA'
             explanation = d['text'] if d else 'Evidência visual sem decisão estratégica vinculada. Não permite concluir erro, ganho ou perda.'
-            sections.append(f'<article data-table="{esc(tid)}" data-class="{esc(classification)}"><h2>Mesa {esc(tid)} · {esc(pts)} s</h2><p>Segmento: {esc(owner or "não atribuído")} | {esc(classification)}</p><img loading="lazy" src="{target}" alt="Print da mesa {esc(tid)}"><pre>{esc(explanation)}</pre></article>')
+            sections.append(f'<article id="print-{n:05d}" data-table="{esc(tid)}" data-class="{esc(classification)}"><h2>Mesa {esc(tid)} · {esc(pts)} s</h2><p>Segmento: {esc(owner or "não atribuído")} | {esc(classification)}</p><img loading="lazy" src="{target}" alt="Print da mesa {esc(tid)}"><pre>{esc(explanation)}</pre></article>')
             records.append({'source_crop':name,'file':target,'sha256':s['sha256'],'table_id':tid,'pts':pts,'draft_id':owner,'classification':classification})
         options = ''.join(f'<option value="{esc(t)}">Mesa {esc(t)}</option>' for t in sorted({s['table_id'] for s in samples}))
         classes = ''.join(f'<option>{esc(c)}</option>' for c in sorted({r['classification'] for r in records}))
