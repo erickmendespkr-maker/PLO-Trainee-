@@ -80,12 +80,13 @@ def classify(image,t,f,i,bank):
     return out
 
 
-def observe(image,t,bank):
+def observe(image,t,bank,*,slot_reader=None):
     if image.size!=(1504,696) or type(t) is not int or not 1<=t<=4:raise ValueError('Unsupported layout')
     out={'variant':5,'platform':detect(image,t),'hero_cards':None,'board_cards':None,'hero_slots':[],'board_slots':[],'cards_verified':False}
     if out['platform']!='pppoker':return out
+    reader=classify if slot_reader is None else slot_reader
     for f in ('hero','board'):
-        rows=[classify(image,t,f,i,bank) for i in range(5)];out[f+'_slots']=rows
+        rows=[reader(image,t,f,i,bank) for i in range(5)];out[f+'_slots']=rows
         cards=[r['card'] for r in rows if r['card'] is not None]
         if f=='hero' and len(cards)==5 and len(set(cards))==5:out['hero_cards']=cards
         if f=='board' and len(cards) in (0,3,4,5) and len(set(cards))==len(cards) and all(r['card'] for r in rows[:len(cards)]) and all(r['status']=='felt_empty_candidate' for r in rows[len(cards):]):out['board_cards']=cards
