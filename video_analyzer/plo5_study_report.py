@@ -13,6 +13,7 @@ from plo5_hand_structure import describe
 from plo5_evaluator import evaluate
 from plo5_board_texture import texture
 from plo5_postflop_draws import draws
+from plo5_river_report_audit import verify as verify_river_policy
 from plo5_session_export import load, write
 from offline_video_ingest_probe import sha256
 from strategic_normalize import normalize_scenario
@@ -100,6 +101,7 @@ def extension(item,base):
     else:
         need(c['street']=='river' and c['players']==2 and c['to_call']=='0' and c['rake_percent']=='0' and sorted(s['board'][:3])+s['board'][3:]==c['board'] and m['game']==s and m['game_sha256']==digest(s),'River game mismatch')
         match(s['pot_chips'],'pot');match(s['hero_stack_chips'],'stack');need(chosen[0]=='check' or chosen==('bet',s['bet_chips']),'River sizing mismatch')
+        verify_river_policy(s,m)
         rows=[x for x in m['hero_strategy'] if sorted(x['cards'])==c['hero']];need(len(rows)==1 and rows[0]==r['chosen_conditional_model'],'Hero strategy mismatch')
         actions=rows[0]['actions'];need(len(actions)==2 and [x['action'] for x in actions]==['check','bet'] and actions[1]['extra_chips']==s['bet_chips'] and all(0<=number(x['frequency'])<=1 for x in actions) and same(sum(x['frequency'] for x in actions),1),'Invalid restricted frequencies')
         lo,hi=bounds(m['hero_value_bb'],[m['best_response_lower_bb'],m['best_response_upper_bb']]);gap=number(m['nash_gap_bb']);need(same(gap,hi-lo) and same(m['gap_fraction_of_pot'],gap*bb/s['pot_chips']),'River gap mismatch')
