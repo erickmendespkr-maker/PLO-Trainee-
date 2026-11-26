@@ -83,25 +83,43 @@ def changes(frames,threshold='30'):
     return rows
 
 
-def run(source,output,*,start=0,seconds=60,capacity=512,workers=3):
+def run(source,output,*,start=0,seconds=60,capacity=512,workers=3,card_bank=None):
     source=Path(source);out=Path(output)
     need(source.suffix.lower()=='.mp4' and source.is_file() and not source.is_symlink(),'Local MP4 required')
     need(out.parent.is_dir() and not out.exists() and not out.is_symlink(),'New output directory required')
     t=time.perf_counter();h=digest(source);reader=Reader(capacity,workers)
+    cards=None;bank_hash=None
+    if card_bank is not None:
+        from plo5_fourcolor_cards import load_bank
+        from plo5_card_review import CardReader
+        bank_hash=digest(card_bank);cards=CardReader(load_bank(card_bank))
     with tempfile.TemporaryDirectory(prefix='.mixed-review-',dir=out.parent) as tmp:
         stage=Path(tmp)/'package';stage.mkdir();media=stage/'prints';media.mkdir()
         a=time.perf_counter();samples=extract(source,start,seconds,media);extract_s=time.perf_counter()-a
-        frames=[];a=time.perf_counter()
+        frames=[];a=time.perf_counter();card_seconds=0.
         for p,pts in samples:
-            with Image.open(p) as im:obs=reader.scan(im.convert('RGB'))
-            frames.append({'file':p.name,'sha256':digest(p),'pts':str(pts),'observations':obs})
+            with Image.open(p) as im:rgb=im.convert('RGB')
+            obs=reader.scan(rgb);row={'file':p.name,'sha256':digest(p),'pts':str(pts),'observations':obs}
+            if cards is not None:
+                t0=time.perf_counter();row['cards']=cards.scan(rgb);card_seconds+=time.perf_counter()-t0
+            frames.append(row)
         ocr_s=time.perf_counter()-a;priority=changes(frames)
+        groups=[]
+        if cards is not None:
+            from plo5_card_review import segments
+            groups=segments(frames);need(digest(card_bank)==bank_hash,'Card bank changed')
         a=time.perf_counter();need(digest(source)==h and all(digest(media/f['file'])==f['sha256'] for f in frames),'Input or print changed');verify_s=time.perf_counter()-a
         report={'variant':5,'status':'MIXED_LAYOUT_DISPLAY_REVIEW_ONLY','source_sha256':h,'start':start,'seconds':seconds,'sampled_seconds':len(frames),'missing_source_seconds':sorted(set(range(start,start+seconds))-{int(Fraction(f['pts'])//1) for f in frames}),'frames':frames,'priority':priority,'cache':reader.cache.stats(),'stage_seconds':{'extract':extract_s,'recognition':ocr_s,'final_recheck':verify_s},'wall_seconds':time.perf_counter()-t,'hands_reconstructed':False,'financial_result_verified':False,'gto_solution':False,'independent_pixel_reextraction_verified':False}
+        if cards is not None:
+            report.update(card_bank_sha256=bank_hash,card_cache=cards.cache.stats(),card_segments=groups,cards_verified=False,card_recognition_seconds=card_seconds)
         with (stage/'manifest.json').open('x',encoding='utf-8') as f:json.dump(report,f,ensure_ascii=False,indent=2,allow_nan=False)
         page=['<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>PLO5 — Revisão de valores</title><style>body{font:16px system-ui;max-width:1200px;margin:auto;padding:20px}img{max-width:100%}article{border-top:1px solid #aaa;padding:12px}</style><h1>Revisão de valores PLO5</h1><p>Quedas entre amostras consecutivas, não perdas de mãos. Nenhuma mão, ação ou estratégia foi confirmada.</p>']
         for r in priority:
             page.append(f'<article><h2>Mesa {r["table_id"]}: queda exibida {html.escape(r["display_decline_bb"])} BB</h2><p>Antes: {html.escape(r["before_bb"])} BB; depois: {html.escape(r["after_bb"])} BB.</p><img loading="lazy" src="prints/{r["before_file"]}"><img loading="lazy" src="prints/{r["after_file"]}"></article>')
+        if cards is not None:
+            page.append('<h2>Grupos de cartas candidatos (PPPoker)</h2><p>Não são mãos confirmadas. Leituras incompletas interrompem os grupos.</p>')
+            for g in groups:
+                page.append(f'<article><h3>Mesa {g["table_id"]} — {html.escape(g["candidate_id"])}</h3><p>Hero: {html.escape(" ".join(g["hero_cards"]))}; board final: {html.escape(" ".join(g["last_board"]))}; amostras: {len(g["observations"])}.</p><a href="prints/{g["observations"][0]["file"]}">Primeiro print</a></article>')
         page.append('<h2>Amostras disponíveis</h2><ul>')
         for f in frames:page.append(f'<li><a href="prints/{f["file"]}">{html.escape(f["pts"])} s</a></li>')
         page.append('</ul><p><a href="manifest.json">Dados e hashes</a></p></html>');(stage/'index.html').write_text(''.join(page),encoding='utf-8')
@@ -110,8 +128,8 @@ def run(source,output,*,start=0,seconds=60,capacity=512,workers=3):
 
 
 def main(argv=None):
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('source');p.add_argument('output');p.add_argument('--start',type=int,default=0);p.add_argument('--seconds',type=int,default=60);p.add_argument('--capacity',type=int,default=512);p.add_argument('--workers',type=int,default=3);a=p.parse_args(argv)
-    r=run(a.source,a.output,start=a.start,seconds=a.seconds,capacity=a.capacity,workers=a.workers);print(json.dumps({k:v for k,v in r.items() if k!='frames'},ensure_ascii=False));return 0
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('source');p.add_argument('output');p.add_argument('--start',type=int,default=0);p.add_argument('--seconds',type=int,default=60);p.add_argument('--capacity',type=int,default=512);p.add_argument('--workers',type=int,default=3);p.add_argument('--card-bank');a=p.parse_args(argv)
+    r=run(a.source,a.output,start=a.start,seconds=a.seconds,capacity=a.capacity,workers=a.workers,card_bank=a.card_bank);print(json.dumps({k:v for k,v in r.items() if k!='frames'},ensure_ascii=False));return 0
 
 
 if __name__=='__main__':raise SystemExit(main())
