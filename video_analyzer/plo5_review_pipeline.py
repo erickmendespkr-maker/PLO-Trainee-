@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import sys
 import time
 from PIL import Image
 from plo5_window_review import build, need
@@ -128,6 +129,10 @@ def run(job,inputs,output,*,extract=False,workers=2,capacity=512,mode='quick',st
 
 
 def main(argv=None):
+    argv=list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0]=='mixed-video':
+        from plo5_mixed_review import main as mixed_main
+        return mixed_main(argv[1:])
     from plo5_session_export import load
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('job');p.add_argument('windows');p.add_argument('output');p.add_argument('--extract',action='store_true');p.add_argument('--workers',type=int,default=2);p.add_argument('--capacity',type=int,default=512);p.add_argument('--mode',choices=('quick','deep'),default='quick');p.add_argument('--study');a=p.parse_args(argv)
     r=run(load(a.job)[0],load(a.windows)[0],a.output,extract=a.extract,workers=a.workers,capacity=a.capacity,mode=a.mode,study=load(a.study)[0] if a.study else None);print(json.dumps({k:v for k,v in r.items() if k!='prints'},ensure_ascii=False));return 0
