@@ -140,7 +140,9 @@ def run(source,output,*,start=0,seconds=60,capacity=512,workers=3,card_bank=None
             for f in frames:
                 for r in f['seats']:
                     if r['platform'] is not None:
-                        page.append(f'<li><a href="prints/{f["file"]}">{html.escape(f["pts"])} s</a> — mesa {r["table_id"]}: dealer {html.escape(r["dealer_seat_candidate"] or "incerto")}; Hero {html.escape(r["hero_seat_candidate"] or "incerto")}</li>')
+                        backs=', '.join(q['seat'] for q in r['opponents'] if q['status']=='card_backs_visible_candidate') or 'nenhum detectado'
+                        empty=', '.join(q['seat'] for q in r['opponents'] if q['status']=='explicit_empty_marker_candidate') or 'nenhum detectado'
+                        page.append(f'<li><a href="prints/{f["file"]}">{html.escape(f["pts"])} s</a> — mesa {r["table_id"]}: dealer {html.escape(r["dealer_seat_candidate"] or "incerto")}; Hero {html.escape(r["hero_seat_candidate"] or "incerto")}; versos visíveis: {html.escape(backs)}; marcadores de vazio: {html.escape(empty)}. Participantes não confirmados.</li>')
             page.append('</ul>')
         page.append('<h2>Amostras disponíveis</h2><ul>')
         for f in frames:page.append(f'<li><a href="prints/{f["file"]}">{html.escape(f["pts"])} s</a></li>')
