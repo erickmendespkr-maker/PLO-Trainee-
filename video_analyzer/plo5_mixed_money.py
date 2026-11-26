@@ -5,9 +5,11 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 import io
+import hashlib
 import json
 import os
 from pathlib import Path
+from statistics import median
 import re
 import subprocess
 import time
@@ -47,19 +49,42 @@ def read(image,table,platform,field):
     return {'value_bb':parse(raw,platform,field) if confidence is not None and confidence>=.65 else None,'raw':raw,'confidence':confidence}
 
 
-def scan(image,platforms,workers=3):
-    if len(platforms)!=4 or any(p not in REGIONS for p in platforms) or type(workers) is not int or not 1<=workers<=3:
-        raise ValueError('Four explicit platform profiles required')
+def detect(image,table):
+    """Candidate layout based on felt colors and the matching window title bar."""
+    if image.size!=(1504,696) or type(table) is not int or not 1<=table<=4:
+        raise ValueError('Invalid recorded layout')
+    x=STARTS[table-1]
+    def rgb(box):
+        pixels=list(image.crop(box).convert('RGB').getdata())
+        return tuple(median(c[i] for c in pixels) for i in range(3))
+    header=rgb((x+120,5,x+245,22));green=blue=0
+    for px,py in ((.25,.43),(.75,.43),(.30,.52),(.70,.52),(.30,.66),(.70,.66),(.5,.45),(.5,.75)):
+        u,v=x+round(372*px),round(696*py);r,g,b=rgb((u-3,v-3,u+4,v+4))
+        green+=g>=r+25 and g>=b+12 and 60<=g<=190
+        blue+=b>=g+10 and g>=r+5 and 30<=b<=145
+    if green>=4 and blue<=1 and max(header)<65 and max(header)-min(header)<=15:return 'pppoker'
+    if blue>=4 and green<=1 and min(header)>=235:return 'suprema'
+    return None
+
+
+def scan(image,platforms=None,workers=3):
+    if (platforms is not None and (len(platforms)!=4 or any(p not in REGIONS for p in platforms))) or type(workers) is not int or not 1<=workers<=3:
+        raise ValueError('Invalid platform profiles or workers')
     image=image.convert("RGB")
-    jobs=[(t,p,f) for t,p in enumerate(platforms,1) for f in ('stack','pot')]
+    detected=[detect(image,t) for t in range(1,5)]
+    jobs=[(t,p,f) for t,p in enumerate(detected,1) for f in ('stack','pot')]
     def task(j):
-        t,p,f=j;return {'table_id':t,'platform':p,'field':f,**read(image,t,p,f),'financial_result_verified':False}
+        t,p,f=j
+        active=p is not None and (platforms is None or platforms[t-1]==p)
+        result=read(image,t,p,f) if active else {'value_bb':None,'raw':'','confidence':None}
+        return {'table_id':t,'platform':p,'field':f,**result,'layout_candidate_active':active,'financial_result_verified':False}
     with ThreadPoolExecutor(max_workers=workers) as pool:return list(pool.map(task,jobs))
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('frame');p.add_argument('--platforms',required=True);a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('frame');p.add_argument('--platforms',default='auto');a=p.parse_args()
     start=time.perf_counter()
-    with Image.open(a.frame) as im:rows=scan(im.convert('RGB'),a.platforms.split(','))
-    print(json.dumps({'variant':5,'status':'DISPLAY_CANDIDATES_ONLY','observations':rows,'wall_seconds':time.perf_counter()-start,'financial_result_verified':False},indent=2))
+    raw=Path(a.frame).read_bytes()
+    with Image.open(io.BytesIO(raw)) as im:rows=scan(im.convert('RGB'),None if a.platforms=='auto' else a.platforms.split(','))
+    print(json.dumps({'variant':5,'status':'DISPLAY_CANDIDATES_ONLY','frame_sha256':hashlib.sha256(raw).hexdigest(),'observations':rows,'wall_seconds':time.perf_counter()-start,'financial_result_verified':False},indent=2))
 if __name__=='__main__':main()
