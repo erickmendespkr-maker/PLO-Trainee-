@@ -52,7 +52,7 @@ class Tracker:
         sig=signatures(crop,platform);now=(idx,crop.copy(),sig,bucket)
         if old is None or old['platform']!=platform or bucket!=old['last'][3]+1:
             self.state[t]={'platform':platform,'last':now,'base':now,'pending':None}
-            return [('initial_or_gap',[],None,now,now)]
+            return [('initial_or_gap',[],None,now,now,None)]
         base=old['base'];last=old['last'];delta=changed(base[2],sig);pending=old['pending']
         if not delta:
             old['pending']=None;old['base']=now
@@ -64,7 +64,7 @@ class Tracker:
             timeout=bucket-pending['first'][3]>=self.hz
             if stable or timeout:
                 best=max((last,now),key=lambda q:sharp(q[1],platform)) if stable else now
-                events.append(('stable_change_candidate' if stable else 'unstable_change_candidate',sorted(pending['fields']),pending['before'],pending['first'],best))
+                events.append(('stable_change_candidate' if stable else 'unstable_change_candidate',sorted(pending['fields']),pending['before'],pending['first'],best,(now if best is last else last) if stable else None))
                 old['base']=now;old['pending']=None
         old['last']=now
         return events
@@ -96,9 +96,9 @@ def run(source,out,start=1250,seconds=20,hz=8):
                     need(len(raw)==size and n<len(ordered),'Truncated or excess decoded frame');rgb=np.frombuffer(raw,dtype=np.uint8).reshape(SIZE[1],SIZE[0],3);im=Image.fromarray(rgb)
                     for t,x in enumerate(STARTS,1):
                         platform=detect(im,t);counts[str(platform)]=counts.get(str(platform),0)+1;crop=rgb[:,x:x+372]
-                        for reason,fields,before,first,after in tracker.step(t,platform,crop,n,ordered[n]):
+                        for reason,fields,before,first,after,peer in tracker.step(t,platform,crop,n,ordered[n]):
                             i=len(events)+1;row={'event_id':i,'table_id':t,'platform':platform,'status':reason,'changed_regions':fields,'action_verified':False,'hand_verified':False,'financial_result_verified':False}
-                            for label,item in [('before',before),('first',first),('after',after)]:
+                            for label,item in [('before',before),('first',first),('after',after),('peer',peer)]:
                                 if item is not None:
                                     idx,c,_,_=item;row[label]={'sample':idx,'pts':str(buckets[ordered[idx]]*tb),**save(c,f'{i:04}_{label}.png')}
                             for f in ('hero','board'):
@@ -117,7 +117,7 @@ def run(source,out,start=1250,seconds=20,hz=8):
         (stage/'manifest.json').write_text(json.dumps(report,indent=2),encoding='utf-8');page=['<!doctype html><meta charset="utf-8"><title>PLO5 — Eventos visuais</title><style>body{font:16px system-ui;max-width:1000px;margin:auto}img{max-width:100%}article{border-top:1px solid #aaa;padding:12px}</style><h1>Eventos visuais candidatos</h1><p>Mudanças de pixels, não ações confirmadas. Zoom digital não cria detalhe.</p>']
         for r in events:
             page.append(f'<article><h2>Mesa {r["table_id"]} — {r["after"]["pts"]} s ({r["status"]})</h2><p>{", ".join(r["changed_regions"])}</p>')
-            for k in ('before','first','after','hero_zoom','board_zoom'):
+            for k in ('before','first','after','peer','hero_zoom','board_zoom'):
                 if k in r:page.append(f'<a href="{r[k]["file"]}">{k}</a> ')
             page.append(f'<p><img loading="lazy" src="{r["hero_zoom"]["file"]}"><img loading="lazy" src="{r["board_zoom"]["file"]}"></p></article>')
         (stage/'index.html').write_text(''.join(page),encoding='utf-8');need(not out.exists() and not out.is_symlink(),'Output appeared');os.rename(stage,out)
