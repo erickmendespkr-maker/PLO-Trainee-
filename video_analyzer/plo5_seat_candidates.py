@@ -14,7 +14,7 @@ GLYPHS={
 
 def observe(image,table,cards=None):
     platform=detect(image,table)
-    out={'table_id':table,'platform':platform,'dealer_seat_candidate':None,'hero_seat_candidate':None,'scores':[],'positions_verified':False,'hero_identity_verified':False,'dealt_seats':None,'hero_position':None}
+    out={'table_id':table,'platform':platform,'dealer_seat_candidate':None,'hero_seat_candidate':None,'scores':[],'positions_verified':False,'hero_identity_verified':False,'dealt_seats':None,'hero_position':None,'opponents':[],'dealt_roster_verified':False}
     if platform not in CENTERS:return out
     a=np.asarray(image.convert('L'));glyph=np.frombuffer(bytes.fromhex(GLYPHS[platform]),np.uint8).reshape(14,14)
     for seat,(x,y) in zip(SEATS,CENTERS[platform]):
@@ -27,6 +27,9 @@ def observe(image,table,cards=None):
         from plo5_card_review import valid
         h=cards.get('hero_cards')
         if valid(h,(5,)):out['hero_seat_candidate']='hero_bottom'
+    from plo5_dealt_candidates import observe as observe_opponents
+    evidence=observe_opponents(image,table)
+    if evidence['platform']==platform:out['opponents']=evidence['opponents']
     return out
 
 
