@@ -130,6 +130,9 @@ def run(job,inputs,output,*,extract=False,workers=2,capacity=512,mode='quick',st
 
 def main(argv=None):
     argv=list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0]=='blind-evidence':
+        from plo5_blind_evidence import main as blind_main
+        return blind_main(argv[1:])
     if argv and argv[0]=='event-cards':
         from plo5_event_card_consensus import main as cards_main
         return cards_main(argv[1:])
