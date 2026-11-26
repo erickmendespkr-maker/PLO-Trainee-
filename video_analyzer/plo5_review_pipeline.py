@@ -130,6 +130,9 @@ def run(job,inputs,output,*,extract=False,workers=2,capacity=512,mode='quick',st
 
 def main(argv=None):
     argv=list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0]=='event-video':
+        from plo5_event_capture import main as event_main
+        return event_main(argv[1:])
     if argv and argv[0]=='mixed-video':
         from plo5_mixed_review import main as mixed_main
         return mixed_main(argv[1:])
