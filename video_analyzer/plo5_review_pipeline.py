@@ -22,7 +22,29 @@ def dump(path,obj):
     with Path(path).open('x',encoding='utf-8') as f:json.dump(obj,f,ensure_ascii=False,indent=2,allow_nan=False)
 
 
-def render(stage,review,roster,*,triage_report=None):
+def exact_study_links(review, roster, study):
+    """Link identical media evidence only; never infer a shared hand or decision."""
+    if study is None:return {}
+    need(study.get('variant')==5 and study.get('status')=='VISUAL_CONDITIONAL_STUDY_ONLY' and
+         study.get('job_id')==review['job_id'] and study.get('source_sha256')==review['source_sha256'] and
+         all(study.get(k) is False for k in ('video_verified','strategic_error_established','gto_solution')), 'Study evidence identity mismatch')
+    index={};ambiguous=set();paths=set()
+    for r in study['prints']:
+        key=(r['table_id'],r['pts'],r['sha256']);path=r['file']
+        need(type(path) is str and re.fullmatch(r'prints/\d{5}\.(?:png|jpg|jpeg)',path) and path not in paths,'Invalid study print path')
+        paths.add(path)
+        if key in index:ambiguous.add(key)
+        index[key]=r
+    links={}
+    for name,(_,o) in roster.items():
+        key=(o['table_id'],o['pts'],o['sha256'])
+        r=index.get(key)
+        if r is not None and key not in ambiguous and r['classification']!='SEM_DECISAO_VINCULADA' and r['draft_id'] is not None:
+            links[name]={'anchor':'print-'+Path(r['file']).stem,'source_crop':r['source_crop'],'classification':r['classification']}
+    return links
+
+
+def render(stage,review,roster,*,triage_report=None,study_manifest=None):
     """Copy every audited crop; show candidate data, not linked strategic decisions."""
     stage=Path(stage);(stage/'prints').mkdir(); owners={}
     for s in review['segments']:
@@ -31,22 +53,25 @@ def render(stage,review,roster,*,triage_report=None):
     for r in review['unassigned']:
         need(r['file'] not in owners,'Duplicate unassigned crop');owners[r['file']]=(None,r)
     need(set(owners)==set(roster) and len(roster)==review['observations'],'Incomplete review roster')
+    links=exact_study_links(review,roster,study_manifest)
     rows=[];articles=[];total=0
     for n,(name,(path,obs)) in enumerate(sorted(roster.items(),key=lambda kv:(kv[1][1]['table_id'],kv[1][1]['pts'])),1):
         owner,r=owners[name];need(path.is_file() and not path.is_symlink() and 0<path.stat().st_size<=32*1024**2,'Unsafe crop')
         data=path.read_bytes();need(sha(data)==obs['sha256'],'Crop changed');total+=len(data);need(total<=2*1024**3,'Media budget exceeded')
         dest=f'prints/{n:05d}.png';(stage/dest).write_bytes(data)
         tid=obs['table_id'];pts=obs['pts'];info=' | '.join(f'{k}: {r.get(v) if r.get(v) is not None else "não reconhecido"}' for k,v in [('Hero','hero'),('Board','board'),('Ação','label'),('Stack BB','stack_bb'),('Pote BB','pot_bb')]) if owner else r['reason']
-        articles.append(f'<article data-table="{tid}"><h2>Mesa {tid} — {esc(pts)} s</h2><p>{esc(owner or "Não atribuído")}</p><img loading="lazy" src="{dest}" alt="Print da mesa {tid}"><p>{esc(info)}</p></article>')
-        rows.append({'source_crop':name,'file':dest,'sha256':obs['sha256'],'table_id':tid,'pts':pts,'candidate_id':owner})
+        link=links.get(name)
+        reference=f'<p><a href="study/index.html#{esc(link["anchor"])}">Ver estudo revisado do print idêntico</a> (não confirma a mão)</p>' if link else ''
+        articles.append(f'<article id="print-{n:05d}" data-table="{tid}"><h2>Mesa {tid} — {esc(pts)} s</h2><p>{esc(owner or "Não atribuído")}</p><img loading="lazy" src="{dest}" alt="Print da mesa {tid}"><p>{esc(info)}</p>{reference}</article>')
+        rows.append({'source_crop':name,'file':dest,'sha256':obs['sha256'],'table_id':tid,'pts':pts,'candidate_id':owner,'exact_study_print_link':link})
     page='''<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><title>PLO5 — Revisão visual</title><style>body{font:16px system-ui;margin:24px;color:#17212b;background:#f5f5f5}article{background:white;padding:16px;margin:16px 0;max-width:900px}img{max-width:100%;height:auto}[hidden]{display:none}</style><h1>PLO5 — Revisão visual</h1><p>Leituras candidatas; mão, posição, resultado financeiro e erro estratégico não confirmados. A variação do stack não comprova perda. Não é GTO.</p>'''
     if triage_report is not None:
         priority=[r for r in triage_report['rows'] if r['priority_review']]
         page+='<h2>Prioridade de revisão financeira</h2><p>Quedas observadas acima de 30 BB: '+str(len(priority))+'. Não são perdas confirmadas.</p><ul>'+''.join(f"<li>{esc(r['candidate_id'])} — mesa {esc(r['table_id'])}: queda exibida {esc(r['maximum_display_decline_bb'])} BB</li>" for r in priority)+'</ul><p><a href="triage.json">Dados da triagem</a></p>'
-    if (stage/'study'/'index.html').is_file():page+='<p><a href="study/index.html">Relatório estratégico revisado (amostras separadas; sem associação automática)</a></p>'
+    if (stage/'study'/'index.html').is_file():page+='<p><a href="study/index.html">Relatório estratégico revisado (amostras separadas; sem associação automática de mãos)</a></p>'
     page+='<label>Mesa <select id="table"><option value="">Todas</option>'+''.join(f'<option>{t}</option>' for t in sorted({r['table_id'] for r in rows}))+'</select></label>'+''.join(articles)+'''<script>document.getElementById('table').onchange=function(){for(const a of document.querySelectorAll('article'))a.hidden=!!(this.value&&a.dataset.table!==this.value);};</script></html>'''
     (stage/'index.html').write_text(page,encoding='utf-8')
-    return {'prints':rows,'media_bytes':total,'mp4_rendered':0}
+    return {'prints':rows,'media_bytes':total,'mp4_rendered':0,'exact_study_print_links':len(links)}
 
 
 def run(job,inputs,output,*,extract=False,workers=2,capacity=512,mode='quick',study=None):
@@ -87,12 +112,13 @@ def run(job,inputs,output,*,extract=False,workers=2,capacity=512,mode='quick',st
                 key=name+'/'+o['file'];need(key not in roster,'Duplicate crop identity');roster[key]=(crops[o['file']],o);refs.append((crops[o['file']],o['sha256']))
         review=timed('fusion',lambda:build(items));dump(stage/'review.json',review);dump(stage/'money.json',[x['money'] for x in items])
         triage_report=timed('financial_triage',lambda:triage(review));dump(stage/'triage.json',triage_report)
+        study_manifest=None
         if study is not None:
             from plo5_visual_report import run as visual
             need(type(study) is dict and set(study)=={'drafts','study_input'},'Invalid study inputs')
             for p in study.values():refs.append((Path(p),sha256(p)))
-            timed('separate_strategy_report',lambda:visual(job['database'],job['job_id'],study['drafts'],study['study_input'],stage/'study',mode))
-        media=timed('visual_report',lambda:render(stage,review,roster,triage_report=triage_report))
+            study_manifest=timed('separate_strategy_report',lambda:visual(job['database'],job['job_id'],study['drafts'],study['study_input'],stage/'study',mode))
+        media=timed('visual_report',lambda:render(stage,review,roster,triage_report=triage_report,study_manifest=study_manifest))
         def recheck():
             need(read_bound_evidence(job['database'],job['job_id'])==binding and sha256(job['annotations'])==review['annotation_sha256'] and all(sha256(p)==h for p,h in refs),'Inputs changed')
         timed('final_recheck',recheck)
