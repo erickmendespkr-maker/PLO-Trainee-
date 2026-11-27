@@ -41,6 +41,37 @@ class TurnSolverTests(unittest.TestCase):
                 row=next(p for p in r['policy'] if p['node']==0 and p['holding']==sorted(h))
                 actual=next(a['ev_bb'] for a in row['actions'] if a['action']=='bet')
                 self.assertAlmostEqual(actual,float(expected),places=9)
+    def test_independent_uniform_best_responses(self):
+        # At iteration 1 the policy is uniform. Independent nine-node cash-flow
+        # formulas per street; group hidden hands by public card for seat1 BR.
+        from collections import defaultdict
+        c=dict(polar(),board=BOARD[:4]); r=solve(c,1,rake_on_fold=False)
+        prior=[(NUT,Fraction(1,3)),(BLUFF,Fraction(2,3))]
+        branches=defaultdict(list); br0=Fraction(0); value0=Fraction(0)
+        def sd(q):return 6*q-2
+        def bet(q):return (2+sd(q))/2
+        def uniform(q,continuation):return ((continuation+sd(q)/2)/2+bet(q))/2
+        for h,w in prior:
+            qs=[]
+            for card in sorted(DECK-set(h)-set(CATCH)-set(c['board'])):
+                board=c['board']+[card];a,b=omaha_rank(h,board),omaha_rank(CATCH,board)
+                q=Fraction(1) if a>b else Fraction(1,2) if a==b else Fraction(0)
+                qs.append(q);branches[card].append((1-q,w/38))
+            mean=sum(qs)/38
+            river_br=sum(max((2*q+max(0,sd(q)))/2,bet(q)) for q in qs)/38
+            br0+=w*max((river_br+max(0,sd(mean)))/2,bet(mean))
+            river_uniform=sum(uniform(q,2*q) for q in qs)/38
+            value0+=w*uniform(mean,river_uniform)
+        mean1=Fraction(0); river_br1=Fraction(0)
+        for items in branches.values():
+            mass=sum(w for q,w in items);q=sum(q*w for q,w in items)/mass
+            mean1+=mass*q
+            river_br1+=mass*(max(2*q,bet(q))+max(0,sd(q)))/2
+        br1=(max(river_br1,bet(mean1))+max(0,sd(mean1)))/2
+        self.assertAlmostEqual(r['values_bb'][0],float(value0),places=9)
+        self.assertAlmostEqual(r['best_responses_bb'][0],float(br0),places=9)
+        self.assertAlmostEqual(r['best_responses_bb'][1],float(br1),places=9)
+
     def test_convergence_and_rake(self):
         c=dict(polar(),board=BOARD[:4]);a=solve(c,1,rake_on_fold=False);b=solve(c,100,rake_on_fold=False)
         self.assertLess(b['nashconv_bb'],a['nashconv_bb'])
