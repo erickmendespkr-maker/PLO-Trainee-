@@ -1,0 +1,4 @@
+PokerStars Hand #1: 5 Card Omaha Pot Limit ($1/$2 USD)
+Dealt to Hero [As Kd Qh Jc Ts]
+*** SUMMARY ***
+Total pot $3 | Rake $0
