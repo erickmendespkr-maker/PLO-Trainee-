@@ -57,8 +57,19 @@ def visual_session(manifest_path,source=None,*,max_changes=100):
             if k not in crops:crops[k]=table_crop(root,f,t)
             body.append(f'<figure><img loading="lazy" alt="{label}, mesa {t}" src="data:image/png;base64,{crops[k]}"><figcaption>{label}: {text(f["pts"])} s — {text(f["file"])}</figcaption></figure>')
         body.append('</div><p><small>Recortes de slots fixos; hash do PNG conferido, leitura ainda não certificada.</small></p></details></article>')
+    need(len(r['segments'])<=100,'Card segment budget exceeded')
+    body.append(f'<h2>Segmentos de cartas candidatos: {len(r["segments"])}</h2>')
+    for seg in r['segments']:
+        t=seg['table_id'];body.append(f'<article><h3>Mesa {t} — Hero candidato: {text(" ".join(seg["hero_cards"]))}</h3><p>Não é uma mão reconstruída; ações e resultado não confirmados.</p><details><summary>Ver sequência visual</summary><ul>')
+        for obs in seg['observations']:
+            body.append(f'<li>{text(obs["pts"])} s — board {text(" ".join(obs["board"]) or "vazio candidato")}</li>')
+        body.append('</ul>');f=frames[seg['first_file']];k=(f['file'],t)
+        if 'sha256' in f and f['file'].endswith('.png'):
+            if k not in crops:crops[k]=table_crop(root,f,t)
+            body.append(f'<figure><img loading="lazy" alt="Primeiro print da mesa {t}" src="data:image/png;base64,{crops[k]}"></figure>')
+        body.append('</details></article>')
     body.append('<small>Manifesto SHA-256: <code>'+mhash+'</code>. Vídeo: '+('hash conferido' if source_checked else 'hash não rechecado')+'. Não houve nova auditoria de extração de frames neste relatório.</small>')
-    return page(body),dict(status='VISUAL_EVIDENCE_ONLY',changes=len(r['changes']),unique_crops=len(crops),source_hash_checked=source_checked,manifest_sha256=mhash,ev_authorized=False)
+    return page(body),dict(status='VISUAL_EVIDENCE_ONLY',changes=len(r['changes']),card_segments=len(r['segments']),unique_crops=len(crops),source_hash_checked=source_checked,manifest_sha256=mhash,ev_authorized=False)
 
 
 def review_batch(cache,models,*,cfr_executable=None,rank_executables=None,rank_reader=None,rank_worker=None):
