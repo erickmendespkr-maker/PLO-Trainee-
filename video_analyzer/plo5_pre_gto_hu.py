@@ -92,7 +92,6 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
     continuation={}; continuation_manifest=None
     need((continuation_table is None)==(continuation_source is None),"Continuation table and source required together")
     if continuation_table is not None:
-        need(cfr_executable is None,"Native kernel does not support pair-specific continuation")
         from plo5_pre_gto_continuation import validate
         continuation,continuation_manifest=validate(nodes,deals,bb,continuation_table,continuation_source)
     def terminal(n,i,j,q):
@@ -153,7 +152,7 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
         average={k:normalize(v) for k,v in sums.items()}
     else:
         from plo5_pre_gto_cfr_native import train
-        average=train(cfr_executable,nodes,deals,coefficients,regrets,iterations)
+        average=train(cfr_executable,nodes,deals,coefficients,regrets,iterations,continuation=continuation if continuation_manifest is not None else None)
         t=iterations
     v,lo,hi=evaluate_policy(average)
     # Conditional on opponent reach, not own historical action probability.
@@ -172,7 +171,7 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
     for d in deals:collect(0,d,1.,1.)
     def action_ev(key,k):
         return totals[key][k]/masses[key] if masses[key]>0 else None
-    return dict(version=VERSION,variant=5,training_backend="python" if cfr_executable is None else "native_cfr_v1",iterations=t,iteration_budget=iterations,nodes=len(nodes),
+    return dict(version=VERSION,variant=5,training_backend="python" if cfr_executable is None else ("native_cfr_cont1" if continuation_manifest is not None else "native_cfr_v1"),iterations=t,iteration_budget=iterations,nodes=len(nodes),
                 convergence_checks=convergence,early_stopped=t<iterations,
                 ev_baseline="decision_sunk_contributions_excluded",
                 ev_scope="fixed_average_policy_and_supplied_equity_matrix",
