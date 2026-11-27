@@ -77,8 +77,16 @@ def visual_session(manifest_path,source=None,*,max_changes=100):
             for seat in row['seats']:
                 body.append('<tr><td>'+text(row['pts'])+' / '+text(row['table_id'])+'</td><td>'+text(seat['seat'])+'</td><td>'+text(seat['stack']['candidate'] or '—')+'</td><td>'+text(seat['action']['candidate'] or '—')+'</td><td>'+('D' if seat['seat']==row['dealer'] else '—')+'</td></tr>')
         body.append('</table></details>')
+    temporal_stats={}
+    if seat_stats:
+        from plo5_temporal_evidence import inspect
+        temporal=inspect(m['frames']);temporal_stats=temporal['counts']
+        body.append('<h2>Continuidade e conciliação de displays</h2><p>Triagem de intervalos candidatos, não ações ou pagamentos confirmados. O pote exibido pode excluir apostas em trânsito.</p><details><summary>Ver bloqueios de reconstrução</summary><table><tr><th>Tempo / mesa</th><th>Estado</th><th>Bloqueios</th></tr>')
+        for row in temporal['intervals']:
+            body.append('<tr><td>'+text(row['before_pts'])+' → '+text(row['after_pts'])+' / '+text(row['table_id'])+'</td><td>'+text(row['status'])+'</td><td>'+text(', '.join(row['blockers']) or '—')+'</td></tr>')
+        body.append('</table></details>')
     body.append('<small>Manifesto SHA-256: <code>'+mhash+'</code>. Vídeo: '+('hash conferido' if source_checked else 'hash não rechecado')+'. Não houve nova auditoria de extração de frames neste relatório.</small>')
-    return page(body),dict(status='VISUAL_EVIDENCE_ONLY',changes=len(r['changes']),card_segments=len(r['segments']),unique_crops=len(crops),seat_evidence=seat_stats,source_hash_checked=source_checked,manifest_sha256=mhash,ev_authorized=False)
+    return page(body),dict(status='VISUAL_EVIDENCE_ONLY',changes=len(r['changes']),card_segments=len(r['segments']),unique_crops=len(crops),seat_evidence=seat_stats,temporal_evidence=temporal_stats,source_hash_checked=source_checked,manifest_sha256=mhash,ev_authorized=False)
 
 
 def review_batch(cache,models,*,cfr_executable=None,rank_executables=None,rank_reader=None,rank_worker=None):
