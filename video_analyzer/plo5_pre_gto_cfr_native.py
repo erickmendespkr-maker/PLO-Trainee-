@@ -4,7 +4,7 @@ from pathlib import Path
 from math import isfinite
 from plo5_pre_gto_context import need
 
-def train(executable,nodes,deals,coefficients,keys,iterations,timeout=120):
+def train(executable,nodes,deals,coefficients,keys,iterations,timeout=120,continuation=None):
     p=Path(executable).resolve(strict=True)
     keys=sorted(keys); ids={key:i for i,key in enumerate(keys)}
     need(0<len(keys)<=1000000 and len(nodes)*len(deals)*iterations<=100000000,"Native budget exceeded")
@@ -16,6 +16,16 @@ def train(executable,nodes,deals,coefficients,keys,iterations,timeout=120):
         else:
             actor=s.pending[0]
             lines.append(" ".join(map(str,[actor,len(ch),0,0,*ch,*(ids[n,d[actor]] for d in deals)])))
+    if continuation is not None:
+        leaves=sorted({n for n,i,j in continuation})
+        need(len(leaves)*len(deals)<=2000000,"Native continuation budget exceeded")
+        need(set(continuation)=={(n,i,j) for n in leaves for i,j,w,q in deals},"Incomplete continuation table")
+        lines.append(f"CONT1 {len(leaves)}")
+        for n in leaves:
+            need(0<=n<len(nodes) and nodes[n][0].status=="flop_transition","Invalid continuation leaf")
+            vals=[continuation[n,i,j] for i,j,w,q in deals]
+            need(all(isfinite(v) and abs(v)<=1e12 for v in vals),"Invalid continuation value")
+            lines.append(str(n)+" "+" ".join(format(v,".17g") for v in vals))
     proc=subprocess.run([str(p)],input="\n".join(lines)+"\n",capture_output=True,text=True,timeout=timeout,check=True)
     rows=proc.stdout.splitlines()
     need(len(rows)==len(keys),"Native output row count")
