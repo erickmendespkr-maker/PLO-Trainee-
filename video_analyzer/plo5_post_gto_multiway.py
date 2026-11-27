@@ -4,6 +4,7 @@ No prior side pots; discrete legal betting sizes; no multiplayer Nash guarantee.
 from collections import defaultdict
 from itertools import product, permutations
 from math import prod, isfinite
+from fractions import Fraction
 from hashlib import sha256
 import json
 from plo5_pre_gto_context import need, cards, integer
@@ -59,10 +60,11 @@ def support_diagnostics(rows, seats):
 
 def solve(context, iterations=100, pot_bps=(), *, rake_on_fold, joint=None,
           max_deals=4096, max_outcomes=100000, node_limit=100000, max_work=20000000,
-          cfr_executable=None, native_timeout=120):
+          cfr_executable=None, native_timeout=120, include_deal_values=False):
     c=normalize(context); n=len(c['seats']); board=tuple(c['board']); missing=5-len(board)
     need(all(c['stacks'].values()),'Root must have positive stacks; prior side pots unsupported')
     need(type(rake_on_fold) is bool,'Explicit fold rake rule required')
+    need(type(include_deal_values) is bool,'Invalid deal-value flag')
     for x,hi in ((iterations,50000),(max_outcomes,155648),(node_limit,100000),(max_work,100000000)):
         need(type(x) is int and 1<=x<=hi,'Invalid budget')
     rows=prior(context,joint,max_deals);mass=sum(w for h,w in rows)
@@ -134,9 +136,13 @@ def solve(context, iterations=100, pot_bps=(), *, rake_on_fold, joint=None,
     def collect(key,p,s,w,reach,pr,vals,mean):
         cf=w*prod(reach[:p]+reach[p+1:]);masses[key]+=cf
         for a,v in enumerate(vals):totals[key][a]+=cf*(v[p]+s.total_paid[p]/s.bb)
-    values=[0.]*n
-    for d,(_,w,_) in enumerate(deals):
-        for p,v in enumerate(walk(0,d,ones,collect)):values[p]+=w*v
+    values=[0.]*n;conditional={}
+    for d,(h,w,_) in enumerate(deals):
+        v=walk(0,d,ones,collect)
+        for p,x in enumerate(v):values[p]+=w*x
+        if include_deal_values:
+            sums=conditional.setdefault(h,[0.]*n)
+            for p,x in enumerate(v):sums[p]+=x/count
     def br(p):
         def rec(i,weighted):
             s,aa,ch,_,_=nodes[i]
@@ -154,10 +160,18 @@ def solve(context, iterations=100, pot_bps=(), *, rake_on_fold, joint=None,
         return rec(0,[(d,x[1]) for d,x in enumerate(deals)])
     best=[br(p) for p in range(n)];need(all(isfinite(x) for x in values+best) and all(b>=v-1e-8 for b,v in zip(best,values)),'Best response inconsistency')
     gains=[max(0.,b-v) for b,v in zip(best,values)]
-    return dict(variant=5,engine_version=VERSION,model_key=model_identity(context,rows,rake_on_fold,pot_bps),
+    result=dict(variant=5,engine_version=VERSION,model_key=model_identity(context,rows,rake_on_fold,pot_bps),
                 context_key=identity(context),rake_on_fold=rake_on_fold,pot_bps=sorted(set(pot_bps)),root_support=support_diagnostics(rows,c['seats']),
                 backend='native' if cfr_executable is not None else 'python',seats=c['seats'],iterations=iterations,nodes=len(nodes),legal_deals=len(rows),chance_outcomes=len(deals),work_per_iteration=work,
                 values_bb=values,best_responses_bb=best,unilateral_gains_bb=gains,nashconv_bb=sum(gains),expected_rake_bb=max(0.,c['pot']/c['bb']-sum(values)),gto_solution=False,
                 scope='Restricted exact-chance multiway CFR+ heuristic; no general Nash guarantee',
                 tree=[dict(node=i,board=list(s.board),position=s.actor,status=s.status,history=[list(e) for e in path],children=ch if isinstance(ch,dict) else list(ch)) for i,(s,aa,ch,path,ds) in enumerate(nodes)],
                 policy=[dict(node=i,position=nodes[i][0].actor,holding=list(h),opponent_reach_mass=masses[i,h],actions=[dict(action=a,amount=b,frequency=x,ev_bb=totals[i,h][j]/masses[i,h] if masses[i,h]>0 else None) for j,((a,b),x) in enumerate(zip(nodes[i][1],v))]) for (i,h),v in sorted(pol.items())])
+
+    if include_deal_values:
+        result['conditional_values']=dict(basis='root_pot_share_minus_postflop_contributions_bb',
+            scope='fixed_public_root_and_joint_prior_and_trained_average_policy',
+            preflop_continuation_certified=False,
+            rows=[dict(holdings=[list(k) for k in h],probability=[Fraction(w,mass).numerator,Fraction(w,mass).denominator],
+                       values_bb=conditional[h]) for h,w in rows])
+    return result
