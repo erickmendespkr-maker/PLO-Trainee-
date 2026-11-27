@@ -13,19 +13,25 @@ from plo5_pre_gto_native import NativeEquity
 
 def generate(db,context,*,trials=1000,seed=42,iterations=500,target=.01,
              pair_limit=256,node_limit=2000,max_work=20000000,sizings=(),
-             native=None,threads=2,check_every=50):
+             native=None,threads=2,check_every=50,cfr_executable=None,continuation_table=None,continuation_source=None):
     c=normalize(context)
     need(set(c["stacks"])=={"SB","BB"} and not c["history"],"HU root required")
     need(c["rake_bps"]==c["rake_cap"]==0 and not c["rake_on_fold"],"Zero rake only")
-    need(c["tree_version"]==TREE_VERSION and c["continuation_version"]=="showdown_only_v1","Model version mismatch")
+    need((continuation_table is None)==(continuation_source is None),"Continuation inputs required together")
+    expected="showdown_only_v1" if continuation_table is None else "pre-gto-continuation-table-v1"
+    need(c["tree_version"]==TREE_VERSION and c["continuation_version"]==expected,"Model version mismatch")
+    if cfr_executable is not None:
+        need(check_every==0,"Native training requires fixed iteration budget")
     rows,pairs=prepare([c["ranges"][p] for p in ("SB","BB")],trials=trials,seed=seed,
                        pair_limit=pair_limit,native=native,threads=threads,reuse_symmetry=True)
     mapping={p:[list(h) for h,w in r] for p,r in zip(("SB","BB"),rows)}
     report=solve(c["stacks"],c["sb"],c["bb"],pairs,iterations=iterations,target=target,
-                 node_limit=node_limit,max_work=max_work,sizings=sizings,check_every=check_every)
+                 node_limit=node_limit,max_work=max_work,sizings=sizings,check_every=check_every,cfr_executable=cfr_executable,
+                 continuation_table=continuation_table,continuation_source=continuation_source)
     manifest=dict(solver=SOLVER_VERSION,equity_backend="native" if native else "python",
                   trials_per_pair=trials,seed=seed,joint_symmetry=True,pairs_sha256=digest(pairs),
-                  legal_pairs=len(pairs),sizings=list(sizings),target_bb=target)
+                  legal_pairs=len(pairs),sizings=list(sizings),target_bb=target,
+                  training_backend=report["training_backend"],continuation=report["continuation_manifest"])
     openings=export(report,hu_holdings=mapping)
     model=save(db,context,report,hu_holdings=mapping,source_manifest=manifest)
     return dict(variant=5,model=model,manifest=manifest,opening=openings,
@@ -37,10 +43,14 @@ def main():
     p.add_argument("context");p.add_argument("database");p.add_argument("--native")
     p.add_argument("--trials",type=int,default=1000);p.add_argument("--iterations",type=int,default=500)
     p.add_argument("--seed",type=int,default=42)
+    p.add_argument("--cfr-executable");p.add_argument("--continuation",help="JSON with table and source")
     a=p.parse_args()
     c=json.loads(Path(a.context).read_text(encoding="utf-8"))
+    continuation=json.loads(Path(a.continuation).read_text(encoding="utf-8")) if a.continuation else {}
+    need(not a.continuation or set(continuation)=={"table","source"},"Invalid continuation document")
     with closing(connect(a.database)) as db:
         with (NativeEquity(a.native) if a.native else nullcontext(None)) as native:
-            result=generate(db,c,trials=a.trials,iterations=a.iterations,seed=a.seed,native=native)
+            result=generate(db,c,trials=a.trials,iterations=a.iterations,seed=a.seed,native=native,cfr_executable=a.cfr_executable,
+                            check_every=0 if a.cfr_executable else 50,continuation_table=continuation.get("table"),continuation_source=continuation.get("source"))
     print(json.dumps(result,allow_nan=False))
 if __name__=="__main__":main()
