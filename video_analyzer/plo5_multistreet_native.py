@@ -12,7 +12,7 @@ def train(executable,nodes,deals,terminal,keys,iterations,timeout=120):
     def flatten(n,d,depth=0):
         need(depth<=128 and len(forest)<1000000,'Native forest budget exceeded')
         s,aa,ch,_,_=nodes[n]
-        if ch and not aa:return flatten(ch[deals[d][3]],d,depth)
+        if ch and not aa:return flatten(ch[deals[d][3][len(s.board)-5]],d,depth)
         i=len(forest);forest.append(None)
         if not ch:forest[i]=f'-1 {terminal[n][d][0]:.17g} {terminal[n][d][1]:.17g}'
         else:
