@@ -1,8 +1,9 @@
-PLO Trainee — candidato de revisão offline PLO5 (Macrobloco 13)
+PLO Trainee — candidato de revisão offline PLO5 (Macrobloco 14)
 
 Este pacote é um subconjunto recuperado do projeto, validado no Linux.
 Não é instalador autônomo nem MVP Windows certificado. Não contém vídeos,
-bancos privados, credenciais, binários Linux ou executáveis Windows.
+credenciais, binários Linux ou executáveis Windows. Inclui somente máscaras
+de cartas PPPoker calibradas experimentalmente, sem prints originais.
 
 Windows 10 (não testado): instale Python 3.11+ 64-bit com Tkinter e py launcher,
 FFmpeg/ffprobe e Tesseract no PATH. Para motor nativo, instale g++ C++17
@@ -14,6 +15,9 @@ motores opcionais. Nenhum script muda as configurações do sistema.
 Modo video: MP4 1504x696, slots fixos PPPoker/Suprema, janelas de 2–120 s.
 Selecione uma pasta de saída nova. Gera relatório e prints selecionados.
 Valores e mudanças são candidatos, não resultados financeiros confirmados.
+A caixa Cartas PPPoker (experimental) usa calibration/ppp_bank.json.
+Banco pequeno: 42 máscaras, 13 ranks; não é calibração de produção.
+Suprema: valores apenas, sem banco de cartas recuperado.
 Modo models: JSON com decisões declaradas, exemplo em examples/models.json.
 Exibe EV modelado, pot odds brutas, alternativas; não é GTO certificado.
 Modo history: TXT PokerStars-style explícito 5 Card Omaha Pot Limit ou
@@ -22,6 +26,12 @@ Concilia ações, posições, potes, devoluções e resultado líquido se o regi
 for completo e compatível. Showdown exige cartas dos jogadores ativos;
 rake por pote, rebuy e origem não são certificados. EV não é inferido.
 Exemplo sintético completo em examples/history_complete.txt.
+Para revisão estratégica de histórico HU conciliado, forneça ranges e rake
+do modelo no arquivo JSON; exemplo sintético, a partir da raiz do pacote:
+  .venv\Scripts\python.exe video_analyzer\plo5_history_strategy.py examples\history_strategy.txt examples\history_strategy.json revisao.html --cache estrategias.sqlite
+Acrescente --native native\multiway.exe --rank native\rank_worker.exe se compilados.
+Não utiliza cartas futuras nem cartas reveladas no showdown para inferir ranges.
+A entrada continua restrita; não calcula automaticamente ranges do adversário.
 Exportações DriveHUD reais de
 PPPoker/Suprema ainda precisam ser validadas. Não lê a database do DriveHUD.
 
