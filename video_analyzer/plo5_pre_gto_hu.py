@@ -62,7 +62,7 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
             nodes[n]=(s,aa,children)
         return n
     build(start(stacks,sb,bb))
-    need(len(nodes)*len(deals)*(iterations+3)<=max_work,"Traversal work budget exceeded")
+    need(len(nodes)*len(deals)*(iterations+4)<=max_work,"Traversal work budget exceeded")
     regrets={}; sums={}
     for n,(s,aa,ch) in enumerate(nodes):
         if aa:
