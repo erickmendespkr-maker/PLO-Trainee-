@@ -1,0 +1,21 @@
+PLO TRAINEE — CANDIDATO DE DIAGNÓSTICO DE VÍDEO (Macro23)
+
+Este pacote NÃO é o beta estratégico validado. PLO5 offline, somente vídeos de sessões encerradas. DriveHUD permanece fora do beta. O reconhecimento de ações/mãos reais e a validação de estratégia ainda estão incompletos. Zero erros demonstrados não significa jogo sem erros.
+
+WINDOWS 10 (procedimento preparado, ainda não executado no Windows):
+1. Instale Python 3.11+ 64-bit com Tkinter e launcher py, FFmpeg + ffprobe e Tesseract com idioma eng. Os comandos devem estar no PATH.
+2. Execute packaging\Preparar_Beta_Video.bat para criar o ambiente virtual, instalar Pillow e verificar pré-requisitos. Não instala FFmpeg/Tesseract automaticamente.
+3. Execute packaging\Abrir_Beta_Video.bat. Selecione MP4 local com geometria 1504x696, nova pasta de saída, bancos JSON de cartas e streets. Duração vazia = até o fim. Use 1–3 trabalhadores OCR. O leitor CLI é padrão, sem depender da DLL Tesseract.
+4. Abra o diagnóstico gerado e mantenha a pasta inteira. A sessão reconhecida fica em recognition\session.json; pode ser selecionada novamente para reusar os manifestos sem OCR.
+5. O banco PPPoker base é selecionado por padrão se presente. Bancos complementares Macro18, se disponíveis, devem ser escolhidos explicitamente; não substituem bancos Macro15 mais amplos. A cobertura de Suprema é experimental.
+
+A rota opcional de validação anotada, pela CLI, exige JSON versionado com origem SHA-256, mãos com seed/snapshots explícitos e configuração de modelo opcional. Não é um requisito de uso do diagnóstico, nem substitui reconstrução autônoma. O modelo só produz estimativas condicionais; não certifica estratégia nem libera prints de erros. O extrator seletivo anterior permanece disponível separadamente para registros demonstrados.
+
+CLI (na raiz):
+  python video_analyzer/plo5_beta_desktop.py --check
+  python video_analyzer/plo5_beta_video.py VIDEO.mp4 NOVA_PASTA --start 0 --seconds 20 --streets flop turn river --ppp calibration/ppp_bank.json
+  python video_analyzer/plo5_beta_video.py VIDEO.mp4 NOVA_PASTA --session PASTA_ANTERIOR/recognition/session.json
+
+C++ opcional: packaging\Build_Nativo.bat requer compilador g++ C++17; não há executáveis Windows compilados incluídos. Os modelos restritos têm fallback Python. Nenhum serviço externo pago é necessário. O OCR persistente nativo continua experimental via CLI, não habilitado na interface.
+
+Resultados Linux: 216 testes aprovados no subconjunto recuperado, incluindo 8 novos. Interface aberta em Xvfb; executada rota CLI com trecho real. Ainda não testado no Windows. Pacote consolidado contém o subconjunto local recuperado, NÃO o repositório integral, e não deve sobrescrever uma instalação com componentes mais recentes. Atualização incremental é a opção para uma base Macro14–22 já existente. Não inclui vídeo original, prints privados nem executáveis.
