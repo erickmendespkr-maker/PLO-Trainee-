@@ -44,7 +44,7 @@ def prepare(ranges, *, trials=1000, seed=42, pair_limit=256, native=None, thread
     return rows,pairs
 
 def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
-          max_work=20000000,sizings=(),check_every=0):
+          max_work=20000000,sizings=(),check_every=0,cfr_executable=None):
     need(set(stacks)=={"SB","BB"},"HU only")
     need(type(iterations) is int and 1<=iterations<=50000,"Invalid iterations")
     need(type(check_every) is int and 0<=check_every<=50000,"Invalid convergence interval")
@@ -114,8 +114,9 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
         lo,hi=br(1),br(0)
         need(lo-1e-8<=v<=hi+1e-8,"Invalid best-response certificate")
         return v,lo,hi
+    need(cfr_executable is None or check_every==0,"Native training currently requires fixed iteration budget")
     convergence=[]
-    for t in range(1,iterations+1):
+    for t in range(1,iterations+1) if cfr_executable is None else ():
         policy={k:normalize(v) for k,v in regrets.items()}
         delta={k:[0.]*len(v) for k,v in regrets.items()}
         # Own realization reach only for average strategy. Deal marginals are
@@ -140,7 +141,12 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
             gap=max(0.,upper-lower)
             convergence.append(dict(iteration=t,gap_bb=gap))
             if gap<=target:break
-    average={k:normalize(v) for k,v in sums.items()}
+    if cfr_executable is None:
+        average={k:normalize(v) for k,v in sums.items()}
+    else:
+        from plo5_pre_gto_cfr_native import train
+        average=train(cfr_executable,nodes,deals,coefficients,regrets,iterations)
+        t=iterations
     v,lo,hi=evaluate_policy(average)
     # Conditional on opponent reach, not own historical action probability.
     # EV is measured from this decision: add back the actor's sunk contribution.
@@ -158,7 +164,7 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
     for d in deals:collect(0,d,1.,1.)
     def action_ev(key,k):
         return totals[key][k]/masses[key] if masses[key]>0 else None
-    return dict(version=VERSION,variant=5,iterations=t,iteration_budget=iterations,nodes=len(nodes),
+    return dict(version=VERSION,variant=5,training_backend="python" if cfr_executable is None else "native_cfr_v1",iterations=t,iteration_budget=iterations,nodes=len(nodes),
                 convergence_checks=convergence,early_stopped=t<iterations,
                 ev_baseline="decision_sunk_contributions_excluded",
                 ev_scope="fixed_average_policy_and_supplied_equity_matrix",
