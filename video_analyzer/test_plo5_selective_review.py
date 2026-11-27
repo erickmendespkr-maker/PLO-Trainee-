@@ -50,6 +50,16 @@ class SelectiveReviewTests(unittest.TestCase):
                 r=evaluate_models(p,[d],['flop']);f.assert_not_called();self.assertEqual(r['evaluated'],0)
                 with self.assertRaisesRegex(ValueError,'Street does not match'):evaluate_models(p,[dict(d,street='turn')],['flop'])
                 f.assert_not_called()
+    def test_recalculate_low_spr_after_prior_call(self):
+        from test_plo5_post_gto_river import context,NUT,BLUFF,BOARD
+        c=context([(NUT,1),(BLUFF,2)],[(CATCH,1)],board=BOARD[:3],stacks=(50,50),pot=20)
+        prefix=[['BB','bet',20]];m=dict(context=c,history=prefix,holding=CATCH,action=['call',20])
+        flop=model_state(m)
+        turn=model_state(dict(m,history=prefix+[['BTN','call',20],['chance',BOARD[3],0],['BB','bet',30]],action=['call',30]))
+        self.assertEqual((flop['street'],turn['street']),('flop','turn'))
+        self.assertAlmostEqual(flop['pot_odds_gross'],1/3);self.assertEqual(turn['pot_odds_gross'],.25)
+        self.assertEqual((flop['effective_spr_street_start'],turn['effective_spr_street_start']),(2.5,.5))
+        self.assertEqual(turn['pot_bb'],90)
     def test_preflop_filter(self):
         a=row('preflop');self.assertEqual(len(select([a],['preflop'])['errors']),1)
 
