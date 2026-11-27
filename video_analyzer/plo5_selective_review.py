@@ -104,7 +104,7 @@ def model_state(model):
     action_key(model['action']);step(s,s.actor,*model['action']);b=bounds(s);i=s.pending[0]
     # HU street-start effective SPR avoids reporting zero after an opponent shoves.
     spr=min(root.remaining)/root.pot if len(root.order)==2 and root.pot else None
-    return dict(street=BY_BOARD[len(s.board)],board=list(s.board),position=s.actor,pot_bb=s.pot/s.bb,call_bb=b['call_payment']/s.bb,remaining_bb=s.remaining[i]/s.bb,effective_spr_street_start=spr)
+    return dict(street=BY_BOARD[len(s.board)],board=list(s.board),position=s.actor,pot_bb=s.pot/s.bb,call_bb=b['call_payment']/s.bb,pot_odds_gross=b['call_payment']/(s.pot+b['call_payment']) if b['call_payment'] else None,remaining_bb=s.remaining[i]/s.bb,effective_spr_street_start=spr)
 
 
 def evaluate_models(cache,records,streets=STREETS,*,cfr_executable=None):
@@ -123,7 +123,7 @@ def evaluate_models(cache,records,streets=STREETS,*,cfr_executable=None):
         out.append(row)
         if d['street'] not in selected:continue
         r=postflop(cache,**m,cfr_executable=cfr_executable)
-        need(r['board']==state['board'] and r['action']==m['action'] and r['position']==state['position'],'Solver decision mismatch')
+        need(r['board']==state['board'] and r['action']==m['action'] and r['position']==state['position'] and r['pot_odds_gross']==state['pot_odds_gross'],'Solver decision mismatch')
         estimates.append(dict(hand_id=d['hand_id'],decision_id=d['decision_id'],state=state,model=r,certified=False))
     result=select(out,selected);result['experimental_estimates']=estimates
     return result
