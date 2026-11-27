@@ -146,7 +146,7 @@ def capture(source,manifest,records,output,streets=STREETS,*,timeout=120):
         need(digest(source)==source_hash,'Source changed during extraction')
         error_index={(e['hand_id'],e['decision_id']):e for e in selection['errors']}
         rows=[dict(e,error=error_index[e['hand_id'],e['decision_id']],**by_key[stamp(e['pts']),e['table_id']],status='EXACT_FRAME_CROP',semantic_binding_verified=False) for e in requests]
-        result=dict(version='plo5-error-prints-v1',source_sha256=source_hash,streets=selection['streets'],selected_errors=len(selection['errors']),adequate_count=selection['adequate_count'],unresolved_count=len(selection['unresolved']),missing_references=sum(e['evidence'] is None for e in selection['errors']),decision_prints=rows,unique_frames=len(wanted),unique_crops=len(by_key),decode_batches=batches,png_bytes=total_bytes,certificates_independently_verified=False,semantic_binding_verified=False)
+        result=dict(version='plo5-error-prints-v1',source_sha256=source_hash,streets=selection['streets'],selected_errors=len(selection['errors']),adequate_count=selection['adequate_count'],unresolved_count=len(selection['unresolved']),missing_references=sum(e['evidence'] is None for e in selection['errors']),errors=selection['errors'],unresolved=selection['unresolved'],decision_prints=rows,unique_frames=len(wanted),unique_crops=len(by_key),decode_batches=batches,png_bytes=total_bytes,certificates_independently_verified=False,semantic_binding_verified=False)
         (stage/'manifest.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False,indent=2),encoding='utf-8')
         need(not out.exists() and not out.is_symlink(),'Output appeared');os.rename(stage,out)
     return result
@@ -167,6 +167,6 @@ def main(argv=None):
         return 0
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('video');p.add_argument('manifest');p.add_argument('decisions');p.add_argument('output');p.add_argument('--streets',nargs='+',choices=STREETS,default=list(STREETS));a=p.parse_args(argv)
     d=read(a.decisions);need(type(d) is dict and set(d)=={'version','decisions'} and d['version']==VERSION,'Invalid decision contract')
-    r=capture(a.video,read(a.manifest),d['decisions'],a.output,a.streets);print(json.dumps({k:v for k,v in r.items() if k!='decision_prints'}));return 0
+    r=capture(a.video,read(a.manifest),d['decisions'],a.output,a.streets);print(json.dumps({k:v for k,v in r.items() if k not in ('decision_prints','errors','unresolved')}));return 0
 
 if __name__=='__main__':raise SystemExit(main())
