@@ -28,9 +28,9 @@ class BlindTests(unittest.TestCase):
         im=Image.new('RGB',(1504,696),(20,70,40));_,(x,y)=REGIONS['pppoker']['top'];ImageDraw.Draw(im).rectangle((x-4,y-4,x+4,y+4),fill=(255,0,0));r=Reader()
         with patch('plo5_blind_evidence.detect',return_value='pppoker'),patch('plo5_blind_evidence.read_text',return_value={'raw':'0,5 BB','confidence':.9,'value_bb':'0.5'}) as m:
             self.assertEqual(r.scan(im,1),r.scan(im,1));self.assertEqual(m.call_count,1)
-    def test_suprema_only_calibrated_seats(self):
+    def test_suprema_six_candidate_regions(self):
         with patch('plo5_blind_evidence.detect',return_value='suprema'):
-            r=Reader().scan(Image.new('RGB',(1504,696)),1);self.assertEqual({q['seat'] for q in r['stakes']},{'upper_left','lower_left'});self.assertFalse(r['all_stakes_verified'])
+            r=Reader().scan(Image.new('RGB',(1504,696)),1);self.assertEqual({q['seat'] for q in r['stakes']},{'top','upper_right','lower_right','hero_bottom','lower_left','upper_left'});self.assertFalse(r['all_stakes_verified'])
     def test_route(self):
         from plo5_review_pipeline import main
         with patch('plo5_blind_evidence.main',return_value=0) as m:
