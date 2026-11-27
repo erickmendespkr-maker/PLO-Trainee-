@@ -34,7 +34,7 @@ def roster(source,start,seconds):
     need(expected,'No source frames in window');return tb,known,expected
 
 
-def scan(source,start,seconds,*,capacity=512,workers=2,timeout=120,reader=None):
+def scan(source,start,seconds,*,capacity=512,workers=2,timeout=120,reader=None,card_reader=None):
     need(type(start) is int and start>=0 and type(seconds) is int and 2<=seconds<=120,'Invalid window')
     need(type(timeout) is int and 1<=timeout<=300,'Invalid timeout')
     source=Path(source);need(source.is_file() and not source.is_symlink() and source.suffix.lower()=='.mp4','Local MP4 required')
@@ -50,6 +50,7 @@ def scan(source,start,seconds,*,capacity=512,workers=2,timeout=120,reader=None):
                     raw=p.stdout.read(FRAME_BYTES);need(len(raw)==FRAME_BYTES,'Incomplete RGB frame')
                     a=time.perf_counter();image=Image.frombytes('RGB',SIZE,raw)
                     rows.append(dict(rgb_sha256=hashlib.sha256(raw).hexdigest(),observations=reader.scan(image)))
+                    if card_reader is not None:rows[-1]['cards']=card_reader.scan(image)
                     recognition+=time.perf_counter()-a
                 need(p.stdout.read(1)==b'','Extra RGB data');need(p.wait()==0,'FFmpeg failed')
             finally:
@@ -67,5 +68,5 @@ def scan(source,start,seconds,*,capacity=512,workers=2,timeout=120,reader=None):
     evidence=collect(rows)
     return dict(variant=5,status='STREAM_DISPLAY_CANDIDATES_ONLY',source_sha256=h,frames=rows,evidence=evidence,
                 probe_seconds=probe_s,pipeline_seconds=pipeline_s,recognition_seconds=recognition,wall_seconds=time.perf_counter()-t,
-                cache=reader.cache.stats(),layout_cache=reader.layout.stats(),png_evidence_written=False,
+                cache=reader.cache.stats(),layout_cache=reader.layout.stats(),card_cache=card_reader.stats() if card_reader is not None else None,png_evidence_written=False,
                 hands_reconstructed=False,financial_result_verified=False,strategy_authorized=False)
