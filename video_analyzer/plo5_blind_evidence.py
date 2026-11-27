@@ -11,10 +11,10 @@ import numpy as np
 from plo5_mixed_money import STARTS,detect,parse
 from plo5_singleflight import SingleFlight
 
-# (text ROI, chip center). Suprema upper/lower left calibrated; other seats unknown.
+# (text ROI, chip center). Candidate geometry; not all chip colors/states validated.
 REGIONS={
  'pppoker':{'top':((177,174,230,190),(167,181)), 'upper_right':((253,261,299,278),(243,269)), 'lower_right':((253,459,299,476),(243,467)), 'hero_bottom':((177,522,230,538),(167,529)), 'lower_left':((98,459,149,476),(89,467)), 'upper_left':((98,261,149,278),(89,269))},
- 'suprema':{'lower_left':((78,426,125,440),(104,415)), 'upper_left':((63,231,124,249),(94,224))}}
+ 'suprema':{'top':((211,124,271,141),(240,113)), 'upper_right':((256,234,309,248),(285,223)), 'lower_right':((246,427,299,440),(275,415)), 'hero_bottom':((156,503,223,519),(190,491)), 'lower_left':((78,426,125,440),(104,415)), 'upper_left':((63,231,124,249),(94,224))}}
 
 
 def chip_present(im,platform):
