@@ -1,0 +1,20 @@
+# PLO Trainee — Database matemática V3 / continuidade
+
+PLO5 exclusivamente, offline, pós-sessão. Repositório privado erickmendespkr-maker/PLO-Trainee-, branch feature/plo5-plo6-training; não alterar main. Não confundir com Poker Cortes. Relatório com prints e explicação; meta de 5–10 min por hora de vídeo de 4 mesas ainda não comprovada.
+
+## Base combinatória
+- `native/plo5_canonical_index.hpp` V1: matriz 13×4, códigos 0 ausente/1 Hero/2 flop/3 turn/4 river; ordenação canônica das colunas e DP com limites de contagem. Índices densos por street: pré-flop 134459, flop 1800975787, turn 78124329712, river 3337988096872. Total pós-flop 3417913402371. Preservar versão e ordem, não confundir índice de cartas com contexto estratégico.
+- `native/plo5_rank_shard.cpp` V1: 2598960 rankings de 5 cartas, 7462 níveis; regra exata 2+3. P5RANK01: cabeçalho de 40 bytes little-endian com street, início, quantidade e checksum FNV-1a; payload uint16. Consulta atual verifica arquivo inteiro. A base física integral não foi materializada.
+- `native/plo5_relative_strength.hpp` V2: tabela de duplas por board, nuts, contagem de cliques para W/T/L uniformes; flop/turn força atual, river equity HU uniforme. Teste `test_relative.cpp`. Não representa ranges ponderados ou multiway.
+- `native/plo5_runouts.cpp` V3: contagem exata de melhoria absoluta de ranking, mudança de categoria, distribuição da melhor categoria final e distribuição condicional por próxima carta, removendo cartas conhecidas e dead cards. Reutiliza melhores rankings de trincas do board; flop 946 pares finais sem ordem (1892 sequências igualmente prováveis), turn 43 cartas, river 1 estado sem cartas futuras quando não há dead cards adicionais. As probabilidades são contagem / total sob distribuição uniforme das cartas não vistas. Não são equity, clean outs nem probabilidade de vitória. Categoria final é a da melhor mão, não a possibilidade de formar uma categoria inferior. Não se pressupõe conhecimento de cartas adversárias.
+
+## Reprodução V3
+`cd native && g++ -std=c++17 -O3 -Wall -Wextra plo5_runouts.cpp -o runouts && ./runouts`
+Linux, GCC 14.2.0: 300 cenários aleatórios, 92500 boards finais comparados com enumeração direta, 300 trocas de naipes, teste royal e dead card duplicado. Zero divergências. Mesmo avaliador nas duas rotas; oracle independente ainda pendente. Benchmark 1000 cenários por street: flop 1694.93/s, turn 19984.1/s, river 165164/s (sem runouts futuros). Pico 27008 KiB. Exclui inicialização da tabela. Commit V3 bd2917645f7296cd13a7df6f39a175723231c309; blob 19ce6199ca1f99a8ac2401b34952ef263f595a1f conferido.
+
+## Próximas tarefas e pendências preservadas
+1. Separar API reutilizável de RankTable, CLI e testes; criar lookup binário com validação única e leitura aleatória; armazenamento de histogramas por intervalo com versionamento e manifest, sem materializar a base inteira. Testar processamento paralelo, retomada e compressão representativa.
+2. Classificar draws específicos, clean/dirty outs e nut redraws usando adversários/ranges definidos; não confundir melhoria absoluta com melhora de equity. Portar/reutilizar equity exata HU turn/river e estimador de ranges existentes, estender multiway; validar contra oracle independente.
+3. Solver experimental river restrito e estimador de equity de ranges já existem no desenvolvimento anterior. Solver completo multiway/flop/turn, estratégia pré-calculada, ranges autorizados e cache com contexto integral ainda pendentes. Não inferir GTO de ranking, equity ou frequência de vitória isolados.
+4. Captura PPPoker/Suprema: preservar bancos de templates, leitura de cartas, eventos, posição e histórico candidatos; ainda validar Suprema real, ações, apostas, resultado, rebuy, rake, side pots e reconstrução integral com referência independente. Não confundir evidência visual com ação confirmada. Vídeo Poker_Parte_01.mp4 para testes; Parte_06 apenas validação final se necessária.
+5. Integrar cálculos a relatório HTML com prints, validar precisão e velocidade de sessão completa, interface e instalação Windows. Não há versão final ou garantia de cobertura estratégica integral.
