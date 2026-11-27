@@ -11,7 +11,7 @@ from plo5_pre_gto_equity import equity
 
 VERSION="pre-gto-hu-cfr-v3"
 
-def prepare(ranges, *, trials=1000, seed=42, pair_limit=256, native=None, threads=2):
+def prepare(ranges, *, trials=1000, seed=42, pair_limit=256, native=None, threads=2, reuse_symmetry=False):
     need(type(ranges) in (list,tuple) and len(ranges)==2,"HU only")
     need(type(pair_limit) is int and 1<=pair_limit<=4096,"Invalid pair budget")
     need(all(type(r) is list and r for r in ranges),"Explicit ranges required")
@@ -25,15 +25,21 @@ def prepare(ranges, *, trials=1000, seed=42, pair_limit=256, native=None, thread
             need(h not in seen and type(w) is int and 1<=w<=10**12,"Invalid holding weight")
             seen.add(h);a.append((h,w))
         rows.append(sorted(a))
+    from plo5_pre_gto_pair_symmetry import joint_key, representative, pair_seed as canonical_seed
+    cache={}
     pairs=[]
     for i,(h,w) in enumerate(rows[0]):
         for j,(v,z) in enumerate(rows[1]):
             if set(h)&set(v):continue
-            specs=[{"kind":"weighted_holdings","holdings":[{"cards":list(k),"weight":1}]} for k in (h,v)]
-            pair_seed=seed+i*len(rows[1])+j
-            result=(equity(specs,trials=trials,seed=pair_seed,max_attempts=trials) if native is None
-                    else native.equity([h,v],trials=trials,seed=pair_seed,threads=threads))
-            pairs.append((i,j,w*z,result["equity"][0]))
+            key=joint_key(h,v) if reuse_symmetry else (i,j)
+            if key not in cache:
+                hh=representative(key) if reuse_symmetry else [h,v]
+                pair_seed=canonical_seed(key,seed) if reuse_symmetry else seed+i*len(rows[1])+j
+                specs=[{"kind":"weighted_holdings","holdings":[{"cards":list(k),"weight":1}]} for k in hh]
+                result=(equity(specs,trials=trials,seed=pair_seed,max_attempts=trials) if native is None
+                        else native.equity(hh,trials=trials,seed=pair_seed,threads=threads))
+                cache[key]=result["equity"][0]
+            pairs.append((i,j,w*z,cache[key]))
     need(pairs,"No legal deals")
     return rows,pairs
 
