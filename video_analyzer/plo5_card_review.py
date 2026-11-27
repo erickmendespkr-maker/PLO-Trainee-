@@ -5,17 +5,23 @@ from plo5_singleflight import SingleFlight
 
 
 class CardReader:
-    def __init__(self,bank,capacity=1024,*,suprema_bank=None,suprema_soft_bank=None):
+    def __init__(self,bank,capacity=1024,*,suprema_bank=None,suprema_soft_bank=None,card_codebook=None):
         if suprema_bank is not None and suprema_soft_bank is not None:
             raise ValueError("Conflicting Suprema profiles")
         self.bank=bank;self.suprema_bank=suprema_bank;self.suprema_soft_bank=suprema_soft_bank
-        self.cache=SingleFlight(capacity)
+        self.cache=SingleFlight(capacity);self.card_codebook=card_codebook
 
     def slot(self,image,t,f,i,bank):
         rank,suit=regions(image,t,f,i)
         # Key covers all pixels consumed by feature(), including empty-state checks.
         key=('pppoker',f,rank.size,suit.size,rank.convert('RGB').tobytes()+suit.convert('RGB').tobytes())
-        return self.cache.get(key,lambda:classify(image,t,f,i,bank))
+        def produce():
+            if self.card_codebook is not None:
+                from plo5_card_codes import read_slot
+                candidate=read_slot(self.card_codebook,'pppoker-1504x696-card-v1',f,rank,suit)
+                if candidate is not None:return candidate
+            return classify(image,t,f,i,bank)
+        return self.cache.get(key,produce)
 
     def suprema_slot(self,image,t,f,i,bank):
         from plo5_suprema_suits import regions as sup_regions
@@ -29,7 +35,13 @@ class CardReader:
         rank,suit=sup_regions(image,t,f,i)
         # The showdown guard reads a wider board region, not just these glyphs.
         key=(profile,f,rank.size,suit.size,f=='board' and highlighted(image,t),rank.convert('RGB').tobytes()+suit.convert('RGB').tobytes())
-        return self.cache.get(key,lambda:sup_classify(image,t,f,i,bank))
+        def produce():
+            if self.card_codebook is not None:
+                from plo5_card_codes import read_slot
+                candidate=read_slot(self.card_codebook,profile+'-card-codes-v1',f,rank,suit,guard=not (f=='board' and highlighted(image,t)))
+                if candidate is not None:return candidate
+            return sup_classify(image,t,f,i,bank)
+        return self.cache.get(key,produce)
 
     def scan(self,image):
         from plo5_mixed_money import detect
