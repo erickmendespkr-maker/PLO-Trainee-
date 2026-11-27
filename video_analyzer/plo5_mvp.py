@@ -29,11 +29,18 @@ class EvidenceReader:
         return row['observations']
 
 
-def review_video(source,output,*,start=0,seconds=20,workers=2):
+def review_video(source,output,*,start=0,seconds=20,workers=2,ppp_card_bank=None):
     out=Path(output);need(not out.exists() and not out.is_symlink() and out.parent.is_dir(),'New output directory required')
-    first=scan(source,start,seconds,workers=workers)
+    if ppp_card_bank is None:first=scan(source,start,seconds,workers=workers)
+    else:
+        from plo5_ppp_card_reader import PPPCardReader
+        bank_hash=digest(ppp_card_bank);reader_cards=PPPCardReader(ppp_card_bank)
+        first=scan(source,start,seconds,workers=workers,card_reader=reader_cards)
+        need(digest(ppp_card_bank)==bank_hash,'Card bank changed');first['ppp_card_bank_sha256']=bank_hash
     changes=first['evidence']['display_changes'];need(len(changes)<=100,'Too many changes; use a shorter window')
     wanted={c[k] for c in changes for k in ('before_file','after_file')}
+    segments=first['evidence']['card_segments'];need(len(segments)<=100,'Too many card segments; use a shorter window')
+    wanted.update(c['first_file'] for c in segments)
     with tempfile.TemporaryDirectory(prefix='.plo5-',dir=out.parent) as temp:
         stage=Path(temp)/'report';stage.mkdir();reader=EvidenceReader(first,wanted,stage)
         if wanted:
@@ -72,14 +79,14 @@ def preflight():
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='mode',required=True)
-    sub.add_parser('check');h=sub.add_parser('history');h.add_argument('source');h.add_argument('output');v=sub.add_parser('video');v.add_argument('source');v.add_argument('output');v.add_argument('--start',type=int,default=0);v.add_argument('--seconds',type=int,default=20);v.add_argument('--workers',type=int,choices=(1,2,3),default=2)
+    sub.add_parser('check');h=sub.add_parser('history');h.add_argument('source');h.add_argument('output');v=sub.add_parser('video');v.add_argument('source');v.add_argument('output');v.add_argument('--start',type=int,default=0);v.add_argument('--seconds',type=int,default=20);v.add_argument('--workers',type=int,choices=(1,2,3),default=2);v.add_argument('--ppp-card-bank')
     m=sub.add_parser('models');m.add_argument('source');m.add_argument('output');m.add_argument('--cache',required=True);m.add_argument('--native');m.add_argument('--rank')
     a=p.parse_args(argv)
     if a.mode=='check':r=preflight()
     elif a.mode=='history':
         from plo5_history_intake import report
         r=report(a.source,a.output)
-    elif a.mode=='video':r=review_video(a.source,a.output,start=a.start,seconds=a.seconds,workers=a.workers)
+    elif a.mode=='video':r=review_video(a.source,a.output,start=a.start,seconds=a.seconds,workers=a.workers,ppp_card_bank=a.ppp_card_bank)
     else:r=review_models(a.source,a.output,a.cache,native=a.native,rank=a.rank)
     print(json.dumps(r,ensure_ascii=True));return 0 if a.mode!='check' or r['visual_ready'] else 1
 
