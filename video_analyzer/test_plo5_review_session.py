@@ -20,7 +20,7 @@ class SessionReviewTests(unittest.TestCase):
             p=self.root/f['file'];Image.new('RGB',(1504,696),'red').save(p);f['sha256']=sha256(p.read_bytes()).hexdigest()
         source=self.root/'sample.mp4';source.write_bytes(b'synthetic fixture')
         m=self.root/'manifest.json';m.write_text(json.dumps(dict(variant=5,hands_reconstructed=False,source_sha256=sha256(source.read_bytes()).hexdigest(),frames=frames)))
-        html,s=visual_session(m,source);self.assertEqual(s['changes'],1);self.assertEqual(s['unique_crops'],2);self.assertTrue(s['source_hash_checked']);self.assertFalse(s['ev_authorized']);self.assertEqual(html.count('data:image/png;base64,'),2);self.assertIn('<details>',html)
+        html,s=visual_session(m,source);self.assertEqual(s['changes'],1);self.assertEqual(s['unique_crops'],2);self.assertTrue(s['source_hash_checked']);self.assertFalse(s['ev_authorized']);self.assertEqual(html.count('data:image/png;base64,'),3);self.assertEqual(s['card_segments'],1);self.assertIn('Hero candidato',html);self.assertIn('<details>',html)
         (self.root/frames[0]['file']).write_bytes(b'tampered')
         with self.assertRaisesRegex(ValueError,'hash mismatch'):visual_session(m,source)
         source.write_bytes(b'tampered')
