@@ -68,6 +68,11 @@ class PrintTests(unittest.TestCase):
         d=row();d['evidence']=bind(m,d,'1/4',1,'before');r=capture(self.video,m,[d],self.root/'fractional')
         e=r['decision_prints'][0];self.assertEqual(e['pts'],'1/4');self.assertEqual(e['error']['severity'],'marginal')
         with Image.open(self.root/'fractional'/e['file']) as im:self.assertEqual(im.tobytes(),Image.frombytes('RGB',(1504,696),raw).crop(e['crop']).tobytes())
+    def test_missing_evidence_preserves_error(self):
+        d=self.decision();d['evidence']=None
+        r=capture(self.video,self.manifest,[d],self.root/'missing')
+        self.assertEqual(r['missing_references'],1);self.assertEqual(r['errors'][0]['decision_id'],'a')
+        self.assertEqual(r['errors'][0]['evidence_status'],'MISSING_REFERENCE');self.assertEqual(r['unique_crops'],0)
     def test_source_mismatch(self):
         m=dict(self.manifest,source_sha256='0'*64)
         with self.assertRaisesRegex(ValueError,'Source hash mismatch'):capture(self.video,m,[],self.root/'badsource')
