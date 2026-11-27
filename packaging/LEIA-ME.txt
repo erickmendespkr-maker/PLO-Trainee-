@@ -1,0 +1,27 @@
+PLO Trainee — candidato de revisão offline PLO5 (Macrobloco 12)
+
+Este pacote é um subconjunto recuperado do projeto, validado no Linux.
+Não é instalador autônomo nem MVP Windows certificado. Não contém vídeos,
+bancos privados, credenciais, binários Linux ou executáveis Windows.
+
+Windows 10 (não testado): instale Python 3.11+ 64-bit com Tkinter e py launcher,
+FFmpeg/ffprobe e Tesseract no PATH. Para motor nativo, instale g++ C++17
+com runtime compatível e no PATH. Execute Instalar_Windows.bat. O pip pode
+precisar de internet para instalar Pillow; depois o fluxo funciona offline.
+Execute Abrir_PLO_Trainee.bat. Build_Nativo.bat permite recompilar os dois
+motores opcionais. Nenhum script muda as configurações do sistema.
+
+Modo video: MP4 1504x696, slots fixos PPPoker/Suprema, janelas de 2–120 s.
+Selecione uma pasta de saída nova. Gera relatório e prints selecionados.
+Valores e mudanças são candidatos, não resultados financeiros confirmados.
+Modo models: JSON com decisões declaradas, exemplo em examples/models.json.
+Exibe EV modelado, pot odds brutas, alternativas; não é GTO certificado.
+Modo history: TXT PokerStars-style explícito 5 Card Omaha Pot Limit ou
+Omaha 5 Cards Pot Limit; apenas intake de evidências, não reconcilia ações.
+Exemplo sintético em examples/history.txt. Exportações DriveHUD reais de
+PPPoker/Suprema ainda precisam ser validadas. Não lê a database do DriveHUD.
+
+Pendências: reconstrução automática integral das mãos de vídeo, cartas,
+assentos, ações e rebuy, importação completa DriveHUD, layout arbitrário,
+validação Windows, teste sessão longa e precisão independente. A janela de
+20 segundos não comprova 5–10 minutos por hora de vídeo. Não usar durante jogos.
