@@ -1,7 +1,7 @@
 """Restricted multiway PLO5 preflop CFR prototype.
 Explicit chance deals contain physical holdings and a complete sampled board.
 Players never observe the board or other holdings in their information sets.
-Zero rake; showdown-only continuation; discrete legal raises.
+Configurable capped rake; showdown-only continuation; discrete legal raises.
 No convergence guarantee in multiplayer games.
 """
 from collections import defaultdict
@@ -9,18 +9,25 @@ from math import isfinite
 from plo5_pre_gto_context import cards, need
 from plo5_pre_gto_tree import start, actions, step
 from plo5_pre_gto_equity import DECK
+from plo5_pre_gto_rules import rake_config, rake_amount, sized_actions
 from plo5_evaluator import evaluate
 
-VERSION="pre-gto-multiway-v1"
+VERSION="pre-gto-multiway-v2"
 
-def settlement(state,ranks):
+def settlement(state,ranks,config=None):
     """Net chip EV, fractional split pots, uncalled excess returned."""
     need(not state.pending,"Nonterminal settlement")
     paid=state.paid;n=len(paid)
     out=[-float(p) for p in paid]
+    config=rake_config() if config is None else rake_config(**config)
+    # Unique highest contribution is uncalled excess, never raked.
+    ordered=sorted(paid,reverse=True)
+    contested=sum(paid)-(ordered[0]-ordered[1])
+    fee=rake_amount(contested,config,len(state.active)==1)
     if len(state.active)==1:
-        out[state.active[0]]+=sum(paid)
+        out[state.active[0]]+=sum(paid)-fee
         return tuple(out)
+    remaining_fee=fee
     previous=0
     for level in sorted(set(paid)-{0}):
         contributors=[i for i,p in enumerate(paid) if p>=level]
@@ -28,12 +35,13 @@ def settlement(state,ranks):
         if len(contributors)==1:
             out[contributors[0]]+=pool
             continue
+        deduction=min(pool,remaining_fee);pool-=deduction;remaining_fee-=deduction
         eligible=[i for i in contributors if not state.folded[i]]
         need(eligible,"Invalid side pot without eligible players")
         best=max(ranks[i] for i in eligible)
         winners=[i for i in eligible if ranks[i]==best]
         for i in winners:out[i]+=pool/len(winners)
-    need(abs(sum(out))<=1e-7*max(1,sum(paid)),"Chip conservation failure")
+    need(remaining_fee==0 and abs(sum(out)+fee)<=1e-7*max(1,sum(paid)),"Chip conservation failure")
     return tuple(out)
 
 def prepare(deals,n):
@@ -51,9 +59,10 @@ def prepare(deals,n):
         raw.append((hands,w,ranks));mass+=w
     return [(h,w/mass,r) for h,w,r in raw]
 
-def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000,sizings=(),target_bb=.01):
+def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000,sizings=(),target_bb=.01,pot_bps=(),rake_bps=0,rake_cap=0,rake_on_fold=False):
     root=start(stacks,sb,bb);n=len(root.order)
-    need(3<=n<=6,"Use HU solver for two seats")
+    need(2<=n<=6,"Expected 2-6 seats")
+    config=rake_config(rake_bps,rake_cap,rake_on_fold)
     need(type(iterations) is int and 1<=iterations<=5000,"Invalid iterations")
     need(type(node_limit) is int and 1<=node_limit<=100000,"Invalid node limit")
     need(type(max_work) is int and 1<=max_work<=100000000,"Invalid work budget")
@@ -62,7 +71,7 @@ def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000
     def build(s):
         need(len(nodes)<node_limit,"Tree node budget exceeded")
         i=len(nodes);nodes.append(None)
-        aa=actions(s,sizings) if s.pending else ()
+        aa=sized_actions(s,sizings,pot_bps) if s.pending else ()
         ch=tuple(build(step(s,s.actor,a,b)) for a,b in aa)
         nodes[i]=(s,aa,ch)
         return i
@@ -73,7 +82,7 @@ def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000
     for i,(s,aa,ch) in enumerate(nodes):
         if not aa:
             for d,(_,_,r) in enumerate(chance):
-                terminal[i,d]=tuple(v/bb for v in settlement(s,r))
+                terminal[i,d]=tuple(v/bb for v in settlement(s,r,config))
         else:
             p=s.pending[0]
             for h in {h[p] for h,w,r in chance}:
@@ -130,7 +139,7 @@ def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000
                 best_response_bb=br,unilateral_gain_bb=gains,nashconv_bb=sum(gains),
                 target_reached=sum(gains)<=target_bb,gto_solution=False,
                 certificate_scope="finite supplied chance support and restricted sizing tree only",
-                continuation="showdown_only",rake_modeled=False,
+                continuation="showdown_only",rake_modeled=True,rake=config,pot_bps=list(pot_bps),
                 policy=[dict(node=i,holding=list(h),position=nodes[i][0].actor,
                              actions=[dict(action=a,amount=b,frequency=x) for (a,b),x in zip(nodes[i][1],v)])
                         for (i,h),v in sorted(policy.items())],
@@ -148,6 +157,8 @@ def selftest():
     r=solve({"BTN":2,"SB":2,"BB":2},1,2,[dict(hands=hands,board=board,weight=1)],iterations=50)
     assert abs(sum(r["value_bb"]))<1e-8
     assert all(abs(sum(a["frequency"] for a in x["actions"])-1)<1e-9 for x in r["policy"])
+    s=replace(s,paid=(5,10,15),pending=())
+    assert settlement(s,(3,2,1),rake_config(1000,2))==(8.,0.,-10.)
     print("Multiway solver analytical checks passed")
 
 if __name__=="__main__":selftest()
