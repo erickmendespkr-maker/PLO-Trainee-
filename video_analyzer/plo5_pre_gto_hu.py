@@ -9,7 +9,7 @@ from plo5_pre_gto_context import cards, need
 from plo5_pre_gto_tree import start, actions, step
 from plo5_pre_gto_equity import equity
 
-VERSION="pre-gto-hu-cfr-v2"
+VERSION="pre-gto-hu-cfr-v3"
 
 def prepare(ranges, *, trials=1000, seed=42, pair_limit=256, native=None, threads=2):
     need(type(ranges) in (list,tuple) and len(ranges)==2,"HU only")
@@ -38,9 +38,10 @@ def prepare(ranges, *, trials=1000, seed=42, pair_limit=256, native=None, thread
     return rows,pairs
 
 def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
-          max_work=20000000,sizings=()):
+          max_work=20000000,sizings=(),check_every=0):
     need(set(stacks)=={"SB","BB"},"HU only")
     need(type(iterations) is int and 1<=iterations<=50000,"Invalid iterations")
+    need(type(check_every) is int and 0<=check_every<=50000,"Invalid convergence interval")
     need(type(node_limit) is int and 1<=node_limit<=10000,"Invalid node limit")
     need(type(max_work) is int and 1<=max_work<=100000000,"Invalid work budget")
     need(type(target) in (int,float) and isfinite(target) and 0<=target<=1,"Invalid target")
@@ -64,27 +65,33 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
             nodes[n]=(s,aa,children)
         return n
     build(start(stacks,sb,bb))
-    need(len(nodes)*len(deals)*(iterations+4)<=max_work,"Traversal work budget exceeded")
+    checks=(iterations-1)//check_every if check_every else 0
+    need(len(nodes)*len(deals)*(iterations+4+3*checks)<=max_work,"Traversal work budget exceeded")
+    holdings=tuple({d[p] for d in deals} for p in range(2))
     regrets={}; sums={}
     for n,(s,aa,ch) in enumerate(nodes):
         if aa:
             actor=s.pending[0]
-            for h in {d[actor] for d in deals}:
+            for h in holdings[actor]:
                 regrets[n,h]=[0.]*len(aa);sums[n,h]=[0.]*len(aa)
     def normalize(v):
         total=sum(v)
         return [x/total for x in v] if total else [1/len(v)]*len(v)
-    def terminal(s,q):
-        a,b=s.paid
-        if s.folded[0]:return -a/bb
-        if s.folded[1]:return b/bb
-        return (2*q-1)*min(a,b)/bb
+    # Cache only two coefficients per terminal; no dense node x deal table.
+    coefficients={}
+    for n,(s,aa,ch) in enumerate(nodes):
+        if aa is None:
+            a,b=s.paid
+            coefficients[n]=(-a/bb,0.) if s.folded[0] else (b/bb,0.) if s.folded[1] else (-min(a,b)/bb,2*min(a,b)/bb)
+    def terminal(n,q):
+        offset,slope=coefficients[n]
+        return offset+slope*q
     def evaluate_policy(policy):
         # Aggregate best-response action values per private holding and public node.
         def br(player):
             def rec(n,weighted):
                 s,aa,ch=nodes[n]
-                if aa is None:return sum(w*terminal(s,q) for i,j,w,q in weighted)
+                if aa is None:return sum(w*terminal(n,q) for i,j,w,q in weighted)
                 actor=s.pending[0]
                 if actor==player:
                     groups=defaultdict(list)
@@ -95,12 +102,13 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
             return rec(0,deals)
         def value(n,d):
             s,aa,ch=nodes[n];i,j,w,q=d
-            if aa is None:return terminal(s,q)
+            if aa is None:return terminal(n,q)
             return sum(p*value(c,d) for p,c in zip(policy[n,(i,j)[s.pending[0]]],ch))
         v=sum(d[2]*value(0,d) for d in deals)
         lo,hi=br(1),br(0)
         need(lo-1e-8<=v<=hi+1e-8,"Invalid best-response certificate")
         return v,lo,hi
+    convergence=[]
     for t in range(1,iterations+1):
         policy={k:normalize(v) for k,v in regrets.items()}
         delta={k:[0.]*len(v) for k,v in regrets.items()}
@@ -108,7 +116,7 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
         # fixed across iterations and cancel within each infoset.
         def walk(n,d,r0,r1):
             s,aa,ch=nodes[n];i,j,w,q=d
-            if aa is None:return terminal(s,q)
+            if aa is None:return terminal(n,q)
             actor=s.pending[0];key=(n,(i,j)[actor]);p=policy[key]
             vals=[walk(c,d,r0*x if actor==0 else r0,r1*x if actor==1 else r1) for x,c in zip(p,ch)]
             v=sum(x*y for x,y in zip(p,vals))
@@ -120,6 +128,12 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
         for d in deals:walk(0,d,1.,1.)
         for k,v in regrets.items():
             regrets[k]=[max(0.,a+b) for a,b in zip(v,delta[k])]
+        if check_every and t%check_every==0 and t<iterations:
+            candidate={k:normalize(v) for k,v in sums.items()}
+            _,lower,upper=evaluate_policy(candidate)
+            gap=max(0.,upper-lower)
+            convergence.append(dict(iteration=t,gap_bb=gap))
+            if gap<=target:break
     average={k:normalize(v) for k,v in sums.items()}
     v,lo,hi=evaluate_policy(average)
     # Conditional on opponent reach, not own historical action probability.
@@ -127,7 +141,7 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
     masses=defaultdict(float); totals={k:[0.]*len(p) for k,p in average.items()}
     def collect(n,d,r0,r1):
         state,aa,ch=nodes[n];i,j,w,q=d
-        if aa is None:return terminal(state,q)
+        if aa is None:return terminal(n,q)
         actor=state.pending[0];key=(n,(i,j)[actor]);p=average[key]
         vals=[collect(c,d,r0*x if actor==0 else r0,r1*x if actor==1 else r1) for x,c in zip(p,ch)]
         weight=w*(r1 if actor==0 else r0)
@@ -138,7 +152,8 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
     for d in deals:collect(0,d,1.,1.)
     def action_ev(key,k):
         return totals[key][k]/masses[key] if masses[key]>0 else None
-    return dict(version=VERSION,variant=5,iterations=iterations,nodes=len(nodes),
+    return dict(version=VERSION,variant=5,iterations=t,iteration_budget=iterations,nodes=len(nodes),
+                convergence_checks=convergence,early_stopped=t<iterations,
                 ev_baseline="decision_sunk_contributions_excluded",
                 ev_scope="fixed_average_policy_and_supplied_equity_matrix",
                 value_sb_bb=v,best_response_lower_bb=lo,best_response_upper_bb=hi,
@@ -167,6 +182,8 @@ def selftest():
     r=solve({"SB":2,"BB":2},1,2,[(0,0,1,.75)],iterations=100)
     root=r["policy"][0]["actions"]
     assert abs(next(a["ev_bb"] for a in root if a["action"]=="call")-1.)<1e-9
+    r=solve({"SB":2,"BB":2},1,2,[(0,0,1,.75)],iterations=500,check_every=50)
+    assert r["early_stopped"] and r["target_reached"] and r["iterations"]<500
     print("HU CFR checks passed")
 
 if __name__=="__main__":selftest()
