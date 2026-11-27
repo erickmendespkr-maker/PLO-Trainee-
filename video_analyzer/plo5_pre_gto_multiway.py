@@ -5,6 +5,7 @@ Configurable capped rake; showdown-only continuation; discrete legal raises.
 No convergence guarantee in multiplayer games.
 """
 from collections import defaultdict
+from array import array
 from math import isfinite
 from plo5_pre_gto_context import cards, need
 from plo5_pre_gto_tree import start, actions, step
@@ -12,7 +13,7 @@ from plo5_pre_gto_equity import DECK
 from plo5_pre_gto_rules import rake_config, rake_amount, sized_actions
 from plo5_evaluator import evaluate
 
-VERSION="pre-gto-multiway-v3"
+VERSION="pre-gto-multiway-v4"
 
 def settlement(state,ranks,config=None):
     """Net chip EV, fractional split pots, uncalled excess returned."""
@@ -81,14 +82,20 @@ def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000
     need(len(nodes)*len(chance)*(iterations+n+3)<=max_work,"Traversal budget exceeded")
     terminal={}
     regret={};avg={}
+    dcount=len(chance)
+    terminal_bytes=sum((1 if len(s.active)==1 else dcount)*n*8 for s,aa,ch in nodes if not aa)
+    need(terminal_bytes<=128*1024*1024,"Terminal cache memory budget exceeded")
     for i,(s,aa,ch) in enumerate(nodes):
         if not aa:
-            for d,(_,_,r) in enumerate(chance):
-                terminal[i,d]=tuple(v/bb for v in settlement(s,r,config))
+            ranks=[chance[0][2]] if len(s.active)==1 else [r for _,_,r in chance]
+            terminal[i]=array("d",(v/bb for r in ranks for v in settlement(s,r,config)))
         else:
             p=s.pending[0]
             for h in {h[p] for h,w,r in chance}:
                 regret[i,h]=[0.]*len(aa);avg[i,h]=[0.]*len(aa)
+    def payoff(i,d):
+        a=terminal[i];offset=0 if len(a)==n else d*n
+        return a[offset:offset+n]
     def norm(v):
         t=sum(v)
         return [x/t for x in v] if t else [1/len(v)]*len(v)
@@ -97,7 +104,7 @@ def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000
         delta={k:[0.]*len(v) for k,v in regret.items()}
         def walk(i,d,reach):
             s,aa,ch=nodes[i];h,w,r=chance[d]
-            if not aa:return terminal[i,d]
+            if not aa:return payoff(i,d)
             p=s.pending[0];key=(i,h[p]);probs=policy[key]
             values=[]
             for c,x in zip(ch,probs):
@@ -115,7 +122,7 @@ def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000
     policy={k:norm(v) for k,v in avg.items()}
     def expected(i,d):
         s,aa,ch=nodes[i];h,w,r=chance[d]
-        if not aa:return terminal[i,d]
+        if not aa:return payoff(i,d)
         probs=policy[i,h[s.pending[0]]];vals=[expected(c,d) for c in ch]
         return tuple(sum(x*y[j] for x,y in zip(probs,vals)) for j in range(n))
     value=[0.]*n
@@ -124,7 +131,7 @@ def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000
     def best_response(p):
         def rec(i,weighted):
             s,aa,ch=nodes[i]
-            if not aa:return sum(w*terminal[i,d][p] for d,w in weighted)
+            if not aa:return sum(w*terminal[i][p if len(terminal[i])==n else d*n+p] for d,w in weighted)
             actor=s.pending[0]
             if actor==p:
                 groups=defaultdict(list)
@@ -140,7 +147,7 @@ def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000
     totals={key:[0.]*len(probs) for key,probs in policy.items()}
     def collect(i,d,reach):
         s,aa,ch=nodes[i];h,w,r=chance[d]
-        if not aa:return terminal[i,d]
+        if not aa:return payoff(i,d)
         p=s.pending[0];key=(i,h[p]);probs=policy[key]
         vals=[]
         for c,x in zip(ch,probs):
@@ -156,7 +163,7 @@ def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000
         return totals[key][k]/masses[key] if masses[key]>0 else None
 
     return dict(version=VERSION,variant=5,positions=list(root.order),nodes=len(nodes),
-                chance_deals=len(chance),iterations=iterations,value_bb=value,
+                chance_deals=len(chance),iterations=iterations,value_bb=value,terminal_cache_bytes=terminal_bytes,
                 best_response_bb=br,unilateral_gain_bb=gains,nashconv_bb=sum(gains),
                 target_reached=sum(gains)<=target_bb,gto_solution=False,
                 certificate_scope="finite supplied chance support and restricted sizing tree only",
