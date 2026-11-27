@@ -1,0 +1,41 @@
+PokerStars Hand #1: 5 Card Omaha Pot Limit ($1/$2 USD) - 2026/11/27
+Table 'Example' 6-max Seat #2 is the button
+Seat 2: Hero ($200 in chips)
+Seat 5: Villain ($200 in chips)
+Hero: posts small blind $1
+Villain: posts big blind $2
+*** HOLE CARDS ***
+Dealt to Hero [As Ks Qh Jd Tc]
+Hero: folds
+Uncalled bet ($1) returned to Villain
+Villain collected $2 from pot
+*** SUMMARY ***
+Total pot $2 | Rake $0
+
+PokerStars Hand #2: 5 Card Omaha Pot Limit ($1/$2 USD) - 2026/11/27
+Table 'Example' 6-max Seat #2 is the button
+Seat 2: Hero ($200 in chips)
+Seat 5: Villain ($200 in chips)
+Hero: posts small blind $1
+Villain: posts big blind $2
+*** HOLE CARDS ***
+Dealt to Hero [As Ks Qh Jd Tc]
+Hero: calls $1
+Villain: checks
+*** FLOP *** [2c 3d 4h]
+Villain: bets $4
+Hero: calls $4
+*** TURN *** [2c 3d 4h] [5s]
+Villain: checks
+Hero: checks
+*** RIVER *** [2c 3d 4h 5s] [6s]
+Villain: checks
+Hero: checks
+*** SHOW DOWN ***
+Hero: shows [As Ks Qh Jd Tc]
+Villain: shows [Ah Kh Qs Jc Td]
+Hero collected $5.50 from pot
+Villain collected $5.50 from pot
+*** SUMMARY ***
+Total pot $12 | Rake $1
+Board [2c 3d 4h 5s 6s]
