@@ -23,7 +23,18 @@ int main(){try{
  }
  for(int i=1;i<n;++i)if(parents[i]!=1)throw std::runtime_error("unreachable");
  for(int j:used)if(!j)throw std::runtime_error("unused info");
- std::string extra;if(std::cin>>extra)throw std::runtime_error("extra input");
+ std::string extra;
+ if(std::cin>>extra){
+  if(extra!="CONT1")throw std::runtime_error("extra input");
+  int count;if(!(std::cin>>count)||count<0||count>n||1LL*count*d>2000000)throw std::runtime_error("continuation budget");
+  x.continuation.resize(n);
+  for(int j=0;j<count;++j){
+   int id;if(!(std::cin>>id)||id<0||id>=n||x.nodes[id].actor!=-1||!x.continuation[id].empty())throw std::runtime_error("continuation node");
+   auto& v=x.continuation[id];v.resize(d);
+   for(double& a:v)if(!(std::cin>>a)||!std::isfinite(a)||std::abs(a)>1e12)throw std::runtime_error("continuation value");
+  }
+  if(std::cin>>extra)throw std::runtime_error("extra input");
+ }
  x.run(t);std::cout<<std::setprecision(17);
  for(int j=0;j<k;++j){std::cout<<j;for(double p:Kernel::normalize(x.info[j].average))std::cout<<" "<<p;std::cout<<"\n";}
  return 0;
