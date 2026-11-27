@@ -12,7 +12,7 @@ from plo5_pre_gto_equity import DECK
 from plo5_pre_gto_rules import rake_config, rake_amount, sized_actions
 from plo5_evaluator import evaluate
 
-VERSION="pre-gto-multiway-v2"
+VERSION="pre-gto-multiway-v3"
 
 def settlement(state,ranks,config=None):
     """Net chip EV, fractional split pots, uncalled excess returned."""
@@ -59,7 +59,7 @@ def prepare(deals,n):
         raw.append((hands,w,ranks));mass+=w
     return [(h,w/mass,r) for h,w,r in raw]
 
-def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000,sizings=(),target_bb=.01,pot_bps=(),rake_bps=0,rake_cap=0,rake_on_fold=False):
+def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000,sizings=(),target_bb=.01,pot_bps=(),rake_bps=0,rake_cap=0,rake_on_fold=False,profile=None):
     root=start(stacks,sb,bb);n=len(root.order)
     need(2<=n<=6,"Expected 2-6 seats")
     config=rake_config(rake_bps,rake_cap,rake_on_fold)
@@ -68,15 +68,17 @@ def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000
     need(type(max_work) is int and 1<=max_work<=100000000,"Invalid work budget")
     need(type(target_bb) in (float,int) and isfinite(target_bb) and target_bb>=0,"Invalid target")
     chance=prepare(deals,n);nodes=[]
-    def build(s):
+    from plo5_pre_gto_profile import profile_actions
+    need(profile is None or (not sizings and not pot_bps),"Ambiguous sizing configuration")
+    def build(s,raises=0):
         need(len(nodes)<node_limit,"Tree node budget exceeded")
         i=len(nodes);nodes.append(None)
-        aa=sized_actions(s,sizings,pot_bps) if s.pending else ()
-        ch=tuple(build(step(s,s.actor,a,b)) for a,b in aa)
+        aa=(sized_actions(s,sizings,pot_bps) if profile is None else profile_actions(s,raises,profile)) if s.pending else ()
+        ch=tuple(build(step(s,s.actor,a,b),raises+(a=="raise")) for a,b in aa)
         nodes[i]=(s,aa,ch)
         return i
     build(root)
-    need(len(nodes)*len(chance)*(iterations+n+2)<=max_work,"Traversal budget exceeded")
+    need(len(nodes)*len(chance)*(iterations+n+3)<=max_work,"Traversal budget exceeded")
     terminal={}
     regret={};avg={}
     for i,(s,aa,ch) in enumerate(nodes):
@@ -134,14 +136,35 @@ def solve(stacks,sb,bb,deals,*,iterations=100,node_limit=10000,max_work=10000000
     br=[best_response(p) for p in range(n)]
     need(all(b>=v-1e-8 for b,v in zip(br,value)),"Best response inconsistency")
     gains=[max(0,b-v) for b,v in zip(br,value)]
+    masses=defaultdict(float)
+    totals={key:[0.]*len(probs) for key,probs in policy.items()}
+    def collect(i,d,reach):
+        s,aa,ch=nodes[i];h,w,r=chance[d]
+        if not aa:return terminal[i,d]
+        p=s.pending[0];key=(i,h[p]);probs=policy[key]
+        vals=[]
+        for c,x in zip(ch,probs):
+            rr=list(reach);rr[p]*=x;vals.append(collect(c,d,rr))
+        weight=w
+        for j in range(n):
+            if j!=p:weight*=reach[j]
+        masses[key]+=weight
+        for k,v in enumerate(vals):totals[key][k]+=weight*(v[p]+s.paid[p]/bb)
+        return tuple(sum(x*v[j] for x,v in zip(probs,vals)) for j in range(n))
+    for d in range(len(chance)):collect(0,d,[1.]*n)
+    def action_ev(key,k):
+        return totals[key][k]/masses[key] if masses[key]>0 else None
+
     return dict(version=VERSION,variant=5,positions=list(root.order),nodes=len(nodes),
                 chance_deals=len(chance),iterations=iterations,value_bb=value,
                 best_response_bb=br,unilateral_gain_bb=gains,nashconv_bb=sum(gains),
                 target_reached=sum(gains)<=target_bb,gto_solution=False,
                 certificate_scope="finite supplied chance support and restricted sizing tree only",
-                continuation="showdown_only",rake_modeled=True,rake=config,pot_bps=list(pot_bps),
+                continuation="showdown_only",rake_modeled=True,rake=config,pot_bps=list(pot_bps),sizing_profile=profile,
+                ev_baseline="decision_sunk_contributions_excluded",
                 policy=[dict(node=i,holding=list(h),position=nodes[i][0].actor,
-                             actions=[dict(action=a,amount=b,frequency=x) for (a,b),x in zip(nodes[i][1],v)])
+                             opponent_reach_mass=masses[i,h],
+                             actions=[dict(action=a,amount=b,frequency=x,ev_bb=action_ev((i,h),k)) for k,((a,b),x) in enumerate(zip(nodes[i][1],v))])
                         for (i,h),v in sorted(policy.items())],
                 tree=[dict(node=i,position=s.actor,children=list(ch),paid=list(s.paid),status=s.status)
                       for i,(s,aa,ch) in enumerate(nodes)])
