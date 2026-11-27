@@ -59,9 +59,12 @@ def save(db,context,report,*,hu_holdings=None,source_manifest):
     data=export(report,context["stacks"],context["sb"],context["bb"],hu_holdings=hu_holdings)
     declared_rake=dict(bps=context["rake_bps"],cap=context["rake_cap"],on_fold=context["rake_on_fold"])
     need(report.get("rake",dict(bps=0,cap=0,on_fold=False))==declared_rake,"Rake mismatch")
+    continuation=report.get("continuation_manifest")
+    need(context["continuation_version"]==("showdown_only_v1" if continuation is None else "pre-gto-continuation-table-v1"),"Continuation version mismatch")
+    need(source_manifest.get("continuation")==continuation,"Continuation provenance mismatch")
     metadata=dict(schema=VERSION,context_key=ident["key"],source_manifest=source_manifest,
                   report_sha256=digest(report),hu_mapping_sha256=digest(hu_holdings),
-                  solver_version=report.get("version"),gap_bb=data["source_gap_bb"],
+                  solver_version=report.get("version"),training_backend=report.get("training_backend"),continuation=continuation,gap_bb=data["source_gap_bb"],
                   target_reached=data["source_target_reached"],gto_solution=False)
     model=digest(metadata)
     by_hand={}
