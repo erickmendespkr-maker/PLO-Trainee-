@@ -43,6 +43,20 @@ def prior(context, joint=None, max_deals=4096, max_candidates=1000000):
     return sorted(out)
 
 
+def model_identity(context, rows, rake_on_fold, pot_bps):
+    model=dict(context_key=identity(context),joint=rows,rake_on_fold=rake_on_fold,pot_bps=sorted(set(pot_bps)),version=VERSION)
+    return sha256(json.dumps(model,sort_keys=True).encode()).hexdigest()
+
+
+def support_diagnostics(rows, seats):
+    out={}
+    for p,seat in enumerate(seats):
+        counts=defaultdict(int)
+        for h,w in rows:counts[h[p]]+=1
+        out[seat]=dict(holdings=len(counts),singleton_holdings=sum(v==1 for v in counts.values()),min_joint_support=min(counts.values()))
+    return out
+
+
 def solve(context, iterations=100, pot_bps=(), *, rake_on_fold, joint=None,
           max_deals=4096, max_outcomes=100000, node_limit=100000, max_work=20000000,
           cfr_executable=None, native_timeout=120):
@@ -140,8 +154,8 @@ def solve(context, iterations=100, pot_bps=(), *, rake_on_fold, joint=None,
         return rec(0,[(d,x[1]) for d,x in enumerate(deals)])
     best=[br(p) for p in range(n)];need(all(isfinite(x) for x in values+best) and all(b>=v-1e-8 for b,v in zip(best,values)),'Best response inconsistency')
     gains=[max(0.,b-v) for b,v in zip(best,values)]
-    model=dict(context_key=identity(context),joint=rows,rake_on_fold=rake_on_fold,pot_bps=sorted(set(pot_bps)),version=VERSION)
-    return dict(variant=5,engine_version=VERSION,model_key=sha256(json.dumps(model,sort_keys=True).encode()).hexdigest(),
+    return dict(variant=5,engine_version=VERSION,model_key=model_identity(context,rows,rake_on_fold,pot_bps),
+                context_key=identity(context),rake_on_fold=rake_on_fold,pot_bps=sorted(set(pot_bps)),root_support=support_diagnostics(rows,c['seats']),
                 backend='native' if cfr_executable is not None else 'python',seats=c['seats'],iterations=iterations,nodes=len(nodes),legal_deals=len(rows),chance_outcomes=len(deals),work_per_iteration=work,
                 values_bb=values,best_responses_bb=best,unilateral_gains_bb=gains,nashconv_bb=sum(gains),expected_rake_bb=max(0.,c['pot']/c['bb']-sum(values)),gto_solution=False,
                 scope='Restricted exact-chance multiway CFR+ heuristic; no general Nash guarantee',
