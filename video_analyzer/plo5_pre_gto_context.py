@@ -6,9 +6,9 @@ import hashlib
 import json
 import re
 
-VERSION = "plo5-pre-gto-context-v1"
+VERSION = "plo5-pre-gto-context-v2"
 ORDERS = {2: ("SB","BB"), 3: ("BTN","SB","BB"),
-          4: ("CO","BTN","SB","BB"), 5: ("MP","CO","BTN","SB","BB"),
+          4: ("CO","BTN","SB","BB"), 5: ("UTG","CO","BTN","SB","BB"),
           6: ("UTG","MP","CO","BTN","SB","BB")}
 
 def need(ok, message):
