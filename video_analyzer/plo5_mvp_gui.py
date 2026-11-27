@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parent
 def gui(smoke=False):
     app=tk.Tk();app.title('PLO Trainee — Revisão offline PLO5');app.geometry('780x500');app.minsize(680,420)
     panel=ttk.Frame(app,padding=16);panel.pack(fill='both',expand=True);panel.columnconfigure(1,weight=1);panel.rowconfigure(8,weight=1)
-    mode=tk.StringVar(value='video');source=tk.StringVar();output=tk.StringVar();start=tk.StringVar(value='0');seconds=tk.StringVar(value='20');status=tk.StringVar(value='Selecione uma operação offline.');state={'process':None,'log':None,'report':None}
+    mode=tk.StringVar(value='video');use_cards=tk.BooleanVar(value=False);source=tk.StringVar();output=tk.StringVar();start=tk.StringVar(value='0');seconds=tk.StringVar(value='20');status=tk.StringVar(value='Selecione uma operação offline.');state={'process':None,'log':None,'report':None}
     ttk.Label(panel,text='PLO Trainee | PLO5',font=('TkDefaultFont',18,'bold')).grid(row=0,column=0,columnspan=3,sticky='w')
     ttk.Label(panel,text='Candidato de revisão: vídeo e históricos não confirmados não recebem EV.').grid(row=1,column=0,columnspan=3,sticky='w')
     ttk.Label(panel,text='Modo').grid(row=2,column=0,sticky='w');ttk.Combobox(panel,textvariable=mode,values=('video','history','models'),state='readonly').grid(row=2,column=1,sticky='ew')
@@ -28,6 +28,7 @@ def gui(smoke=False):
     for i,label,var,choose in ((3,'Entrada',source,choose_input),(4,'Nova saída',output,choose_output)):
         ttk.Label(panel,text=label).grid(row=i,column=0,sticky='w');ttk.Entry(panel,textvariable=var).grid(row=i,column=1,sticky='ew',padx=4);ttk.Button(panel,text='Selecionar',command=choose).grid(row=i,column=2)
     ttk.Label(panel,text='Início (s) / duração (2–120 s)').grid(row=5,column=0,sticky='w');f=ttk.Frame(panel);f.grid(row=5,column=1,sticky='w');ttk.Entry(f,textvariable=start,width=10).pack(side='left');ttk.Entry(f,textvariable=seconds,width=10).pack(side='left',padx=4)
+    ttk.Checkbutton(panel,text='Cartas PPPoker (experimental)',variable=use_cards).grid(row=5,column=2,sticky='w')
     log=tk.Text(panel,height=10,wrap='word');log.grid(row=8,column=0,columnspan=3,sticky='nsew')
     def poll():
         p=state['process'];code=p.poll()
@@ -40,6 +41,10 @@ def gui(smoke=False):
             if not src.is_file() or not output.get() or out.exists():raise ValueError('Selecione entrada válida e saída nova.')
             args=[sys.executable,str(ROOT/'plo5_mvp.py'),kind,str(src),str(out)]
             if kind=='video':args+=['--start',str(int(start.get())),'--seconds',str(int(seconds.get()))]
+            if kind=='video' and use_cards.get():
+                bank=ROOT.parent/'calibration'/'ppp_bank.json'
+                if not bank.is_file():raise ValueError('Banco experimental PPPoker não encontrado.')
+                args+=['--ppp-card-bank',str(bank)]
             if kind=='models':
                 cache=Path.home()/'.plo_trainee';cache.mkdir(exist_ok=True);args+=['--cache',str(cache/'strategies.sqlite')]
                 for flag,name in (('--native','multiway'),('--rank','rank_worker')):
