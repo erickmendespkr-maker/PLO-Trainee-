@@ -1,0 +1,13 @@
+# Bloco 11 — recalibração de cartas escurecidas PPPoker
+
+Novo plo5_dim_recalibration.py estende o banco anterior com glifos anotados de cartas privadas escurecidas. Exige imagem 1504x696, plataforma correta, cinco cartas distintas, partição train, SHA256 do frame, fundo neutro escurecido nas duas ROIs, concordância de cor entre rank e naipe e guardas existentes. Não altera o leitor original nem seus limiares (.34 distância, .075 margem); o novo banco é opcional, compatível com a interface existente, e não substitui automaticamente o banco de produção.
+
+Treinamento: três mãos anotadas visualmente pelo assistente em dois frames auditados da Poker_Parte_01.mp4 (frame_00001 mesas 1 e 3; frame_00051 mesa 2) extraídos no bloco 11. Sete novos modelos únicos, de 353 para 360. Banco base SHA256 475097841a6d71b875c263dcca9c6eb80ff4ac74f65678119788cb37af096806; novo banco a95774c461b642e5a628cd0eacdb792a7c140d2c2dee8e0d7ed35eea35bd3144. Banco e anotações no pacote local, nenhum frame privado publicado.
+
+Reexecução das 53 comparações do bloco 11: 51 concordantes, 2 abstenções (board durante animação e premiação amarela), nenhum valor incorreto aceito. Hero completo 4/8 -> 8/8; demais campos mantidos. Um dos frames de validação original foi usado na calibração e os demais são da mesma mão: não considerar avaliação independente.
+
+Amostra separada da calibração: dois recortes auditados (frame_00056 mesa 1 e frame_00063 mesa 3) e seis recortes de exploração do trecho 1200–1300 s com fps=1/5 (001 mesa 2, 005 mesa 2, 009 mesa 3, 017 mesa 1, 018 mesa 3, 019 mesa 1; sem auditoria de PTS nesta extração). 40 cartas anotadas: 34 -> 35 corretas, 6 -> 5 abstenções, zero erros aceitos nos dois bancos, 2 -> 3 conjuntos completos de cinco cartas. Dois recortes do mesmo estado de mão (017/019); mesma gravação, sem revisão independente. O banco maior afeta também cartas claras e board quando usado; regressão visual ampla ainda necessária antes de substituir o banco original.
+
+60 testes locais selecionados: 59 passaram, incluindo os cinco novos; um erro de importação em test_plo5_card_review.test_exact_slot_cache pela ausência de plo5_suprema_cards no overlay local. Não suite integral; falta plo5_session_export também registrada anteriormente. Blobs locais/remotos iguais: 9fe3e9801792ddbadfc587b24794cbeeaa69756c e d9ae6b47e03ae6be0551182eef93edf188f80b0b. Main preservada.
+
+Próximo: avaliar cartas e histórico em mão Suprema distinta; recuperar dependências faltantes e avançar bloco 12 (base estratégica) sem eliminar pendências 03–11. Não usar acertos em amostras repetidas como garantia de precisão global.
