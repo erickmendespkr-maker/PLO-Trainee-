@@ -24,7 +24,7 @@ class FlopChanceTests(unittest.TestCase):
         turn=distribution(dict(c,board=BOARD[:4]))
         self.assertEqual({r:p/mass for r,p in m.items()},{b['card']:Fraction(*b['probability']) for b in turn['branches']})
     def test_budgets(self):
-        c=dict(polar(),board=BOARD[:3])
+        c=dict(polar(),board=BOARD[:3]);
         with self.assertRaises(ValueError):list(ordered_runouts(c,max_outcomes=2963))
         with self.assertRaises(ValueError):list(ordered_runouts(polar()))
 
