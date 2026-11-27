@@ -1,0 +1,48 @@
+{
+  "decisions": [
+    {
+      "hand_id": "1",
+      "event_index": 10,
+      "ranges": {
+        "SB": [
+          {
+            "cards": [
+              "As",
+              "Jd",
+              "Ks",
+              "Qh",
+              "Tc"
+            ],
+            "weight": 1
+          }
+        ],
+        "BB": [
+          {
+            "cards": [
+              "Ah",
+              "Jc",
+              "Kh",
+              "Qs",
+              "Td"
+            ],
+            "weight": 1
+          },
+          {
+            "cards": [
+              "7c",
+              "8d",
+              "9h",
+              "Js",
+              "Ts"
+            ],
+            "weight": 1
+          }
+        ]
+      },
+      "iterations": 100,
+      "rake_bps": 0,
+      "rake_cap": 0,
+      "rake_on_fold": false
+    }
+  ]
+}
