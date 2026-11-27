@@ -29,14 +29,20 @@ class EvidenceReader:
         return row['observations']
 
 
-def review_video(source,output,*,start=0,seconds=20,workers=2,ppp_card_bank=None):
+def review_video(source,output,*,start=0,seconds=20,workers=2,ppp_card_bank=None,suprema_card_bank=None,action_bank=None):
     out=Path(output);need(not out.exists() and not out.is_symlink() and out.parent.is_dir(),'New output directory required')
-    if ppp_card_bank is None:first=scan(source,start,seconds,workers=workers)
+    banks={'ppp_card_bank':ppp_card_bank,'suprema_card_bank':suprema_card_bank,'action_bank':action_bank}
+    need(action_bank is None or ppp_card_bank is not None or suprema_card_bank is not None,'Action bank requires a card bank')
+    if ppp_card_bank is None and suprema_card_bank is None:first=scan(source,start,seconds,workers=workers)
     else:
-        from plo5_ppp_card_reader import PPPCardReader
-        bank_hash=digest(ppp_card_bank);reader_cards=PPPCardReader(ppp_card_bank)
+        from plo5_mixed_cards_v2 import MixedCardReader
+        from plo5_seat_evidence import SeatReader
+        hashes={k:digest(v) for k,v in banks.items() if v is not None}
+        seat_reader=SeatReader(workers=workers,action_bank=action_bank) if action_bank is not None else None
+        reader_cards=MixedCardReader(ppp_card_bank,suprema_card_bank,seat_reader=seat_reader)
         first=scan(source,start,seconds,workers=workers,card_reader=reader_cards)
-        need(digest(ppp_card_bank)==bank_hash,'Card bank changed');first['ppp_card_bank_sha256']=bank_hash
+        for k,h in hashes.items():
+            need(digest(banks[k])==h,'Visual bank changed');first[k+'_sha256']=h
     changes=first['evidence']['display_changes'];need(len(changes)<=100,'Too many changes; use a shorter window')
     wanted={c[k] for c in changes for k in ('before_file','after_file')}
     segments=first['evidence']['card_segments'];need(len(segments)<=100,'Too many card segments; use a shorter window')
@@ -79,14 +85,14 @@ def preflight():
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='mode',required=True)
-    sub.add_parser('check');h=sub.add_parser('history');h.add_argument('source');h.add_argument('output');v=sub.add_parser('video');v.add_argument('source');v.add_argument('output');v.add_argument('--start',type=int,default=0);v.add_argument('--seconds',type=int,default=20);v.add_argument('--workers',type=int,choices=(1,2,3),default=2);v.add_argument('--ppp-card-bank')
+    sub.add_parser('check');h=sub.add_parser('history');h.add_argument('source');h.add_argument('output');v=sub.add_parser('video');v.add_argument('source');v.add_argument('output');v.add_argument('--start',type=int,default=0);v.add_argument('--seconds',type=int,default=20);v.add_argument('--workers',type=int,choices=(1,2,3),default=2);v.add_argument('--ppp-card-bank');v.add_argument('--suprema-card-bank');v.add_argument('--action-bank')
     m=sub.add_parser('models');m.add_argument('source');m.add_argument('output');m.add_argument('--cache',required=True);m.add_argument('--native');m.add_argument('--rank')
     a=p.parse_args(argv)
     if a.mode=='check':r=preflight()
     elif a.mode=='history':
         from plo5_history_intake import report
         r=report(a.source,a.output)
-    elif a.mode=='video':r=review_video(a.source,a.output,start=a.start,seconds=a.seconds,workers=a.workers,ppp_card_bank=a.ppp_card_bank)
+    elif a.mode=='video':r=review_video(a.source,a.output,start=a.start,seconds=a.seconds,workers=a.workers,ppp_card_bank=a.ppp_card_bank,suprema_card_bank=a.suprema_card_bank,action_bank=a.action_bank)
     else:r=review_models(a.source,a.output,a.cache,native=a.native,rank=a.rank)
     print(json.dumps(r,ensure_ascii=True));return 0 if a.mode!='check' or r['visual_ready'] else 1
 
