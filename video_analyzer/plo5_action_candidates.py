@@ -110,10 +110,16 @@ def episodes(rows, *, max_gap=10.):
     return sorted(output,key=lambda r:(r['table_id'],r['first_seen_pts'],r['seat'])),duplicates
 
 
-def analyze_job(database,job_id,profile_path,*,threshold=.75,max_tasks=1024,max_gap=10.):
+def analyze_job(database,job_id,profile_path,*,threshold=.75,max_tasks=1024,max_gap=10.,cache_capacity=0):
     require(type(threshold) in (int,float) and math.isfinite(threshold) and 0<=threshold<=1,'Invalid OCR threshold')
     require(type(max_tasks) is int and 1<=max_tasks<=4096,'Invalid task budget')
     episodes([],max_gap=max_gap)
+    require(type(cache_capacity) is int and 0<=cache_capacity<=2048,'Invalid action cache capacity')
+    cache=None
+    if cache_capacity:
+        from plo5_action_cache import ActionCache
+        cache=ActionCache(read_action,cache_capacity)
+    action_reader=cache.read if cache is not None else read_action
     binding=read_bound_evidence(database,job_id)
     job=OfflineJobStore(database).get(job_id)
     folder=Path(job['result_path']).parent/'evidence/ingest'
@@ -130,7 +136,7 @@ def analyze_job(database,job_id,profile_path,*,threshold=.75,max_tasks=1024,max_
         with Image.open(io.BytesIO(data)) as im:
             image=im.convert('RGB')
         t=tables[s['table_id']]
-        labels=[(seat,read_action(image,seat['action'],threshold)) for seat in t['seats']]
+        labels=[(seat,action_reader(image,seat['action'],threshold)) for seat in t['seats']]
         tasks+=len(labels)
         pot=blinds=None
         if any(r['candidate'] is not None for _,r in labels):
@@ -154,7 +160,7 @@ def analyze_job(database,job_id,profile_path,*,threshold=.75,max_tasks=1024,max_
             'manifest_sha256':binding['reports']['evidence/ingest/manifest.json'],'profile_sha256':hashlib.sha256(raw).hexdigest(),
             'status':'unverified_action_label_episodes','observations':observations,'episodes':labels,
             'duplicate_pts_observations_excluded':duplicates,'roi_tasks':tasks,'worst_case_roi_tasks':budget,
-            'threshold':threshold,'max_gap_seconds':max_gap,'actions_verified':False,'order_verified':False,
+            'threshold':threshold,'max_gap_seconds':max_gap,'action_cache':cache.stats() if cache is not None else None,'actions_verified':False,'order_verified':False,
             'hands_reconstructed':False,'equity_ev_authorized':False,'automatic_clip_selection_authorized':False}
 
 
@@ -163,10 +169,10 @@ def main(argv=None):
     for name in ('database','job_id','profile','output'):
         p.add_argument(name)
     p.add_argument('--threshold',type=float,default=.75); p.add_argument('--max-tasks',type=int,default=1024)
-    p.add_argument('--max-gap',type=float,default=10.)
+    p.add_argument('--max-gap',type=float,default=10.);p.add_argument('--cache-capacity',type=int,default=0)
     a=p.parse_args(argv); target=Path(a.output)
     require(target.suffix=='.json' and not target.exists() and not target.is_symlink(),'New JSON output required')
-    result=analyze_job(a.database,a.job_id,a.profile,threshold=a.threshold,max_tasks=a.max_tasks,max_gap=a.max_gap)
+    result=analyze_job(a.database,a.job_id,a.profile,threshold=a.threshold,max_tasks=a.max_tasks,max_gap=a.max_gap,cache_capacity=a.cache_capacity)
     with target.open('x',encoding='utf-8') as f:
         json.dump(result,f,indent=2,allow_nan=False)
     return 0
