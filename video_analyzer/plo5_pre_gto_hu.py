@@ -9,7 +9,7 @@ from plo5_pre_gto_context import cards, need
 from plo5_pre_gto_tree import start, actions, step
 from plo5_pre_gto_equity import equity
 
-VERSION="pre-gto-hu-cfr-v1"
+VERSION="pre-gto-hu-cfr-v2"
 
 def prepare(ranges, *, trials=1000, seed=42, pair_limit=256):
     need(type(ranges) in (list,tuple) and len(ranges)==2,"HU only")
@@ -120,11 +120,30 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
             regrets[k]=[max(0.,a+b) for a,b in zip(v,delta[k])]
     average={k:normalize(v) for k,v in sums.items()}
     v,lo,hi=evaluate_policy(average)
+    # Conditional on opponent reach, not own historical action probability.
+    # EV is measured from this decision: add back the actor's sunk contribution.
+    masses=defaultdict(float); totals={k:[0.]*len(p) for k,p in average.items()}
+    def collect(n,d,r0,r1):
+        state,aa,ch=nodes[n];i,j,w,q=d
+        if aa is None:return terminal(state,q)
+        actor=state.pending[0];key=(n,(i,j)[actor]);p=average[key]
+        vals=[collect(c,d,r0*x if actor==0 else r0,r1*x if actor==1 else r1) for x,c in zip(p,ch)]
+        weight=w*(r1 if actor==0 else r0)
+        masses[key]+=weight
+        for k,value in enumerate(vals):
+            totals[key][k]+=weight*((value if actor==0 else -value)+state.paid[actor]/bb)
+        return sum(x*y for x,y in zip(p,vals))
+    for d in deals:collect(0,d,1.,1.)
+    def action_ev(key,k):
+        return totals[key][k]/masses[key] if masses[key]>0 else None
     return dict(version=VERSION,variant=5,iterations=iterations,nodes=len(nodes),
+                ev_baseline="decision_sunk_contributions_excluded",
+                ev_scope="fixed_average_policy_and_supplied_equity_matrix",
                 value_sb_bb=v,best_response_lower_bb=lo,best_response_upper_bb=hi,
                 nash_gap_bb=max(0.,hi-lo),target_reached=hi-lo<=target,
                 policy=[dict(node=n,holding=h,position=nodes[n][0].actor,
-                             actions=[dict(action=a,amount=b,frequency=p) for (a,b),p in zip(nodes[n][1],freq)])
+                             opponent_reach_mass=masses[n,h],
+                             actions=[dict(action=a,amount=b,frequency=p,ev_bb=action_ev((n,h),k)) for k,((a,b),p) in enumerate(zip(nodes[n][1],freq))])
                         for (n,h),freq in sorted(average.items())],
                 tree=[dict(node=n,position=s.actor,children=list(ch),paid=list(s.paid),status=s.status)
                       for n,(s,aa,ch) in enumerate(nodes)],
@@ -139,6 +158,13 @@ def selftest():
     r=solve({"SB":10,"BB":10},1,2,[(0,0,1,.8),(1,0,1,.2)],iterations=500)
     assert r["best_response_lower_bb"]<=r["value_sb_bb"]+1e-8
     assert all(abs(sum(a["frequency"] for a in p["actions"])-1)<1e-9 for p in r["policy"])
+    for row in r["policy"]:
+        for action in row["actions"]:
+            if action["action"]=="fold" and action["ev_bb"] is not None:
+                assert abs(action["ev_bb"])<1e-9
+    r=solve({"SB":2,"BB":2},1,2,[(0,0,1,.75)],iterations=100)
+    root=r["policy"][0]["actions"]
+    assert abs(next(a["ev_bb"] for a in root if a["action"]=="call")-1.)<1e-9
     print("HU CFR checks passed")
 
 if __name__=="__main__":selftest()
