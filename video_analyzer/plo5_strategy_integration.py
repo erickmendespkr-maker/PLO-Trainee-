@@ -29,10 +29,10 @@ def amount(value, bb, target):
     return type(value) is int and Fraction(value,bb)==Fraction(target)
 
 
-def integrate(binding,manifest,drafts,review,dh,edb,sdb,extension,*,trials=2000,seed=0,iterations=10000,river_solver=None):
+def integrate(binding,manifest,drafts,review,dh,edb,sdb,extension,*,trials=2000,seed=0,iterations=10000,river_solver=None,pre_gto_db=None):
     need(type(extension) is dict and set(extension)=={'variant','review_digest','kind','scenario','seat_map'} and type(extension['variant']) is int and extension['variant']==5 and extension['review_digest']==digest(review),'Extension review mismatch')
     kind=extension['kind'];s=extension['scenario'];mapping=extension['seat_map']
-    need(kind in ('none','preflop','stackoff','multiway','river') and type(mapping) is dict,'Unknown model extension')
+    need(kind in ('none','preflop','stackoff','multiway','river','pre_gto') and type(mapping) is dict,'Unknown model extension')
     need(kind=='none' or not review['hypotheses'],'Do not combine distinct model families')
     base=bridge.analyze_review(binding,manifest,drafts,review,dh,edb,sdb,trials=trials,seed=seed)
     result={'variant':5,'review_digest':digest(review),'extension_digest':digest(extension),'base_decision':base,'model_kind':kind,'model_status':'NOT_REQUESTED','extension_result':None,'chosen_conditional_model':None,'frequency':None,'ev_loss_bb':None,'financial_result_bb':None,'gto_solution':False,'video_verified':False,'strategic_error_established':False,'automatic_clip_selection_authorized':False}
@@ -50,7 +50,29 @@ def integrate(binding,manifest,drafts,review,dh,edb,sdb,extension,*,trials=2000,
         need(all(amount(v,bb,c[k]) for v,k in ((pot,'pot'),(stack,'stack'),(call,'to_call'),(cap,'rake_cap'))) and type(rate) is int and Fraction(rate,100)==Fraction(c['rake_percent']),'Monetary context mismatch')
     def cards(h,b):
         need(sorted(h)==c['hero'] and sorted(b[:3])+b[3:]==c['board'],'Card context mismatch')
-    if kind in ('preflop','stackoff'):
+    if kind=='pre_gto':
+        from plo5_pre_gto_review import review_policy
+        from plo5_pre_gto_tree import replay,bounds,step
+        need(pre_gto_db is not None,'Explicit preflop model database required')
+        need(set(s)=={'variant','bb','context','history','hero','chosen','model'},'Invalid preflop policy scenario')
+        root=s['context']
+        need(type(root) is dict and root.get('variant')==5 and root.get('bb')==bb and root.get('history')==[],'Invalid root context')
+        need(c['street']=='preflop' and len(root['stacks'])==c['players'],'Preflop context mismatch')
+        cards(s['hero'],[])
+        need(set(mapping)==set(root['stacks']) and all(type(x) is int for x in mapping.values()) and len(set(mapping.values()))==len(mapping) and set(mapping.values())==seats and mapping[c['position']]==hero_seat,'Seat map mismatch')
+        state=replay(root['stacks'],root['sb'],bb,s['history']);b=bounds(state)
+        need(state.actor==c['position'],'Actor mismatch')
+        common(state.pot,b['stack'],b['to_call'],root['rake_bps'],root['rake_cap'])
+        need(all(amount(v,bb,observed(mapping[p])) for p,v in zip(state.order,state.remaining)),'Replay stack mismatch')
+        ch=s['chosen']
+        need(type(ch) is dict and set(ch)=={'action','amount'},'Invalid chosen action')
+        step(state,state.actor,ch['action'],ch['amount'])
+        need((ch['action'],ch['amount']-b['to_call'] if ch['action']=='raise' else 0)==chosen,'Chosen action/sizing mismatch')
+        report=review_policy(pre_gto_db,s['model'],root,s['history'],s['hero'],ch,position=state.actor,pot=state.pot,stack=b['stack'],to_call=b['to_call'])
+        result['model_status']=report['status']
+        if report['status']=='RESTRICTED_POLICY_MATCH':
+            result['chosen_conditional_model']={'action':ch['action'],'frequency':report['chosen_frequency'],'ev_bb':report['chosen_ev_bb'],'conditional_ev_loss_bb':report['conditional_ev_loss_bb'],'scope':report['scope']}
+    elif kind in ('preflop','stackoff'):
         need(c['street']=='preflop' and s['position']==c['position'] and len(s['stacks'])==c['players'],'Preflop context mismatch');cards(s['hero'],[])
         need(set(mapping)==set(s['stacks']) and all(type(x) is int for x in mapping.values()) and set(mapping.values())==seats and mapping[c['position']]==hero_seat,'Declared seat map mismatch')
         # Calculate descriptive replay first; conditional models remain separate.
@@ -79,7 +101,7 @@ def integrate(binding,manifest,drafts,review,dh,edb,sdb,extension,*,trials=2000,
     return result
 
 
-def run(database,job_id,drafts,review,equity_db,strategy_db,extension,*,river_engine='vanilla',river_cache_path=None,**options):
+def run(database,job_id,drafts,review,equity_db,strategy_db,extension,*,river_engine='vanilla',river_cache_path=None,pre_gto_path=None,**options):
     need(river_engine in ('vanilla','cfr-plus') and (river_cache_path is None or river_engine=='cfr-plus'),'Invalid river backend options')
     b=read_bound_evidence(database,job_id);j=OfflineJobStore(database).get(job_id);m=read_manifest(Path(j['result_path']).parent/'evidence/ingest/manifest.json')
     d,dh=load(drafts);r,rh=load(review);e,eh=load(extension)
@@ -94,6 +116,10 @@ def run(database,job_id,drafts,review,equity_db,strategy_db,extension,*,river_en
                 from plo5_river_cache_open import open_cache
                 cache=stack.enter_context(closing(open_cache(river_cache_path,protected=(database,drafts,review,equity_db,strategy_db,extension,j['source_path'],j['result_path']))))
             options['river_solver']=partial(accelerated,cache=cache)
+        if e['kind']=='pre_gto':
+            need(pre_gto_path is not None,'Preflop database required')
+            pdb=stack.enter_context(closing(bridge.open_readonly(pre_gto_path)))
+            pdb.execute('BEGIN');options['pre_gto_db']=pdb
         sdb.execute('BEGIN');out=integrate(b,m,d,r,dh,edb,sdb,e,**options)
     need(read_bound_evidence(database,job_id)==b and all(sha256(p)==h for p,h in ((drafts,dh),(review,rh),(extension,eh),(equity_db,bridge.EQUITY_DB_SHA256))),'Inputs changed')
     return {**out,'review_sha256':rh,'extension_sha256':eh,'equity_database_sha256':bridge.EQUITY_DB_SHA256}
@@ -102,10 +128,10 @@ def run(database,job_id,drafts,review,equity_db,strategy_db,extension,*,river_en
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     for k in ('database','job_id','drafts','review','equity_db','strategy_db','extension','output'):p.add_argument(k)
-    p.add_argument('--river-engine',choices=('vanilla','cfr-plus'),default='vanilla');p.add_argument('--river-cache')
+    p.add_argument('--river-engine',choices=('vanilla','cfr-plus'),default='vanilla');p.add_argument('--river-cache');p.add_argument('--pre-gto-db')
     a=p.parse_args(argv);out=Path(a.output);need(out.suffix=='.json' and not out.exists() and not out.is_symlink(),'New JSON output required')
     need(a.river_cache is None or Path(a.river_cache).resolve()!=out.resolve(),'Cache and output must be distinct')
-    write(out,run(a.database,a.job_id,a.drafts,a.review,a.equity_db,a.strategy_db,a.extension,river_engine=a.river_engine,river_cache_path=a.river_cache));return 0
+    write(out,run(a.database,a.job_id,a.drafts,a.review,a.equity_db,a.strategy_db,a.extension,river_engine=a.river_engine,river_cache_path=a.river_cache,pre_gto_path=a.pre_gto_db));return 0
 
 
 if __name__=='__main__':raise SystemExit(main())
