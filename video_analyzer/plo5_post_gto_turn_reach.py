@@ -1,4 +1,4 @@
-"""Offline conditional joint turn/river ranges from observed public history."""
+"""Offline conditional joint postflop ranges from observed public history."""
 from fractions import Fraction
 from math import isfinite
 from plo5_post_gto_context import normalize, identity
@@ -7,7 +7,7 @@ from plo5_pre_gto_context import cards, need
 
 def condition_path(context,result,history,known=None):
     c=normalize(context)
-    need(len(c['seats'])==2 and len(c['board'])==4,'HU turn only')
+    need(len(c['seats'])==2 and len(c['board']) in (3,4,5),'HU postflop only')
     need(result['context_key']==identity(context),'Context mismatch')
     need(type(history) is list,'Invalid history')
     known={} if known is None else known
@@ -28,7 +28,7 @@ def condition_path(context,result,history,known=None):
         for h,k,w in pairs:
             if position=='chance':
                 # One public draw conditional on the physical deal. Never apply future cards early.
-                factor=Fraction(0) if action in h or action in k else Fraction(1,38)
+                factor=Fraction(0) if action in h or action in k else Fraction(1,42-len(paths[path[:idx]]['board']))
             else:
                 p=c['seats'].index(position)
                 row=policy.get((node,(h,k)[p]))
