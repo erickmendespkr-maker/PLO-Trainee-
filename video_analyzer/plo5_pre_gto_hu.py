@@ -9,7 +9,7 @@ from plo5_pre_gto_context import cards, need
 from plo5_pre_gto_tree import start, actions, step
 from plo5_pre_gto_equity import equity
 
-VERSION="pre-gto-hu-cfr-v3"
+VERSION="pre-gto-hu-cfr-v4"
 
 def prepare(ranges, *, trials=1000, seed=42, pair_limit=256, native=None, threads=2, reuse_symmetry=False):
     need(type(ranges) in (list,tuple) and len(ranges)==2,"HU only")
@@ -44,7 +44,7 @@ def prepare(ranges, *, trials=1000, seed=42, pair_limit=256, native=None, thread
     return rows,pairs
 
 def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
-          max_work=20000000,sizings=(),check_every=0,cfr_executable=None):
+          max_work=20000000,sizings=(),check_every=0,cfr_executable=None,continuation_table=None,continuation_source=None):
     need(set(stacks)=={"SB","BB"},"HU only")
     need(type(iterations) is int and 1<=iterations<=50000,"Invalid iterations")
     need(type(check_every) is int and 0<=check_every<=50000,"Invalid convergence interval")
@@ -89,7 +89,15 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
         if aa is None:
             a,b=s.paid
             coefficients[n]=(-a/bb,0.) if s.folded[0] else (b/bb,0.) if s.folded[1] else (-min(a,b)/bb,2*min(a,b)/bb)
-    def terminal(n,q):
+    continuation={}; continuation_manifest=None
+    need((continuation_table is None)==(continuation_source is None),"Continuation table and source required together")
+    if continuation_table is not None:
+        need(cfr_executable is None,"Native kernel does not support pair-specific continuation")
+        from plo5_pre_gto_continuation import validate
+        continuation,continuation_manifest=validate(nodes,deals,bb,continuation_table,continuation_source)
+    def terminal(n,i,j,q):
+        key=(n,i,j)
+        if key in continuation:return continuation[key]
         offset,slope=coefficients[n]
         return offset+slope*q
     def evaluate_policy(policy):
@@ -97,7 +105,7 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
         def br(player):
             def rec(n,weighted):
                 s,aa,ch=nodes[n]
-                if aa is None:return sum(w*terminal(n,q) for i,j,w,q in weighted)
+                if aa is None:return sum(w*terminal(n,i,j,q) for i,j,w,q in weighted)
                 actor=s.pending[0]
                 if actor==player:
                     groups=defaultdict(list)
@@ -108,7 +116,7 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
             return rec(0,deals)
         def value(n,d):
             s,aa,ch=nodes[n];i,j,w,q=d
-            if aa is None:return terminal(n,q)
+            if aa is None:return terminal(n,i,j,q)
             return sum(p*value(c,d) for p,c in zip(policy[n,(i,j)[s.pending[0]]],ch))
         v=sum(d[2]*value(0,d) for d in deals)
         lo,hi=br(1),br(0)
@@ -123,7 +131,7 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
         # fixed across iterations and cancel within each infoset.
         def walk(n,d,r0,r1):
             s,aa,ch=nodes[n];i,j,w,q=d
-            if aa is None:return terminal(n,q)
+            if aa is None:return terminal(n,i,j,q)
             actor=s.pending[0];key=(n,(i,j)[actor]);p=policy[key]
             vals=[walk(c,d,r0*x if actor==0 else r0,r1*x if actor==1 else r1) for x,c in zip(p,ch)]
             v=sum(x*y for x,y in zip(p,vals))
@@ -153,7 +161,7 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
     masses=defaultdict(float); totals={k:[0.]*len(p) for k,p in average.items()}
     def collect(n,d,r0,r1):
         state,aa,ch=nodes[n];i,j,w,q=d
-        if aa is None:return terminal(n,q)
+        if aa is None:return terminal(n,i,j,q)
         actor=state.pending[0];key=(n,(i,j)[actor]);p=average[key]
         vals=[collect(c,d,r0*x if actor==0 else r0,r1*x if actor==1 else r1) for x,c in zip(p,ch)]
         weight=w*(r1 if actor==0 else r0)
@@ -176,8 +184,8 @@ def solve(stacks,sb,bb,pairs,*,iterations=2000,target=.01,node_limit=2000,
                         for (n,h),freq in sorted(average.items())],
                 tree=[dict(node=n,position=s.actor,children=list(ch),paid=list(s.paid),status=s.status)
                       for n,(s,aa,ch) in enumerate(nodes)],
-                scope="HU preflop restricted sizings, zero rake, showdown-only continuation",
-                certificate_conditional_on_equity_matrix=True,gto_solution=False)
+                scope="HU preflop restricted sizings, zero rake, "+("showdown-only continuation" if continuation_manifest is None else "supplied continuation utilities"),
+                certificate_conditional_on_equity_matrix=True,continuation_manifest=continuation_manifest,gto_solution=False)
 
 def selftest():
     for q in (0.,.5,1.):
