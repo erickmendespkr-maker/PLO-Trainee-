@@ -45,6 +45,36 @@ class NativeRiverTests(unittest.TestCase):
                                  r['best_response_upper_bb']), oracle(r)):
                     self.assertAlmostEqual(x, y, delta=1e-9)
 
+    def test_independent_action_ev(self):
+        # Cash-flow oracle for each information set of the fixed nine-node game.
+        for backend in (None, EXE):
+            for n in (1, 100, 5000):
+                r = solve(polar(), iterations=n, pot_bps=(), cfr_executable=backend)
+                rows = {(x['node'], tuple(x['holding'])): x for x in r['policy']}
+                hs = [tuple(sorted(h)) for h in (NUT, BLUFF)]
+                v = tuple(sorted(CATCH))
+                def freq(node, hand, action):
+                    return next(a['frequency'] for a in rows[node, hand]['actions'] if a['action'] == action)
+                def check(node, hand, action, expected):
+                    actual = next(a['ev_bb'] for a in rows[node, hand]['actions'] if a['action'] == action)
+                    self.assertAlmostEqual(actual, expected, delta=1e-9)
+                vb, vc = freq(1, v, 'bet'), freq(6, v, 'call')
+                checks, bets = [], []
+                for h, q, w in zip(hs, (1, 0), (1/3, 2/3)):
+                    c, b = freq(3, h, 'call'), freq(0, h, 'bet')
+                    sd = 6*q-2
+                    check(0, h, 'check', (1-vb)*2*q+vb*c*sd)
+                    check(0, h, 'bet', (1-vc)*2+vc*sd)
+                    check(3, h, 'fold', 0)
+                    check(3, h, 'call', sd)
+                    checks.append((w*(1-b), 2-2*q, 2-c*sd))
+                    bets.append((w*b, 4-6*q))
+                mass = sum(x[0] for x in checks)
+                check(1, v, 'check', sum(w*x for w,x,_ in checks)/mass)
+                check(1, v, 'bet', sum(w*y for w,_,y in checks)/mass)
+                check(6, v, 'fold', 0)
+                check(6, v, 'call', sum(w*x for w,x in bets)/sum(w for w,_ in bets))
+
     def test_known_outcomes_and_blockers(self):
         cases = [context([(NUT, 1)], [(CATCH, 1)]),
                  context([(CATCH, 1)], [(NUT, 1)]),
