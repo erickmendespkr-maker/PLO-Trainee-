@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 from PIL import Image,ImageDraw,ImageFont
 from plo5_fast_money import FastMoneyReader,NativeOCR
-from plo5_bounded_session import windows,run
+from plo5_bounded_session import windows,run,load_interval
 from plo5_rank_lru import CachedRankWorker
 from plo5_visual_codes import MixedReader,pixels
 from plo5_mixed_money import read,REGIONS
@@ -49,6 +49,15 @@ class OptimizationTests(unittest.TestCase):
                 data=(out/w['file']).read_bytes();self.assertEqual(hashlib.sha256(data).hexdigest(),w['sha256']);m=json.loads(data);ids.extend(f['file'] for f in m['frames'])
             self.assertEqual(len(set(ids)),5);self.assertEqual(r['ocr_calls'],0);self.assertEqual(list(out.glob('*.png')),[])
             with self.assertRaises(ValueError):run(v,out,0,5,chunk=3)
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'),'FFmpeg absent')
+    def test_interval_binding_and_tamper(self):
+        with tempfile.TemporaryDirectory() as t:
+            p=Path(t);v=p/'v.mp4';subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=black:s=1504x696:r=4','-t','5','-c:v','libx264','-threads','1','-pix_fmt','yuv420p',str(v)],check=True,timeout=30)
+            out=p/'report';run(v,out,0,5,chunk=3,workers=1);m=load_interval(out/'session.json',2,2)
+            self.assertEqual([f['pts'] for f in m['frames']],['2','3']);self.assertEqual(len(m['checked_windows']),2);self.assertFalse(m['strategy_authorized'])
+            (out/'window_00002.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError,'Window hash mismatch'):load_interval(out/'session.json',2,2)
+            with self.assertRaises(ValueError):load_interval(out/'session.json',5,1)
     def test_rank_cache_eviction_and_validation(self):
         class Worker:
             def __init__(self):self.calls=[]
