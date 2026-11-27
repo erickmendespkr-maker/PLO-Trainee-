@@ -11,7 +11,7 @@ from plo5_pre_gto_equity import equity
 
 VERSION="pre-gto-hu-cfr-v2"
 
-def prepare(ranges, *, trials=1000, seed=42, pair_limit=256):
+def prepare(ranges, *, trials=1000, seed=42, pair_limit=256, native=None, threads=2):
     need(type(ranges) in (list,tuple) and len(ranges)==2,"HU only")
     need(type(pair_limit) is int and 1<=pair_limit<=4096,"Invalid pair budget")
     need(all(type(r) is list and r for r in ranges),"Explicit ranges required")
@@ -30,7 +30,9 @@ def prepare(ranges, *, trials=1000, seed=42, pair_limit=256):
         for j,(v,z) in enumerate(rows[1]):
             if set(h)&set(v):continue
             specs=[{"kind":"weighted_holdings","holdings":[{"cards":list(k),"weight":1}]} for k in (h,v)]
-            result=equity(specs,trials=trials,seed=seed+i*len(rows[1])+j,max_attempts=trials)
+            pair_seed=seed+i*len(rows[1])+j
+            result=(equity(specs,trials=trials,seed=pair_seed,max_attempts=trials) if native is None
+                    else native.equity([h,v],trials=trials,seed=pair_seed,threads=threads))
             pairs.append((i,j,w*z,result["equity"][0]))
     need(pairs,"No legal deals")
     return rows,pairs
