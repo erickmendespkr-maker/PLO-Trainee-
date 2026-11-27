@@ -13,7 +13,8 @@ MAX_BYTES = 32 * 1024 * 1024
 SOURCES = ('plo5_post_gto_store.py', 'plo5_post_gto_river.py',
            'plo5_post_gto_context.py', 'plo5_post_gto_tree.py',
            'plo5_pre_gto_context.py', 'plo5_pre_gto_cfr_native.py',
-           'plo5_evaluator.py', 'plo5_rank_cache.py', 'offline_omaha_showdown.py')
+           'plo5_evaluator.py', 'plo5_rank_cache.py', 'offline_omaha_showdown.py',
+           'plo5_post_gto_rake.py', 'plo5_post_gto_rake_solver.py')
 
 
 def encode(obj):
@@ -29,17 +30,22 @@ def file_digest(path):
         return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
-def specification(context, iterations=500, pot_bps=(5000, 10000), *, cfr_executable=None):
+def specification(context, iterations=500, pot_bps=(5000, 10000), *, cfr_executable=None, rake_on_fold=None):
     c = normalize(context)
-    need(len(c['board']) == 5 and len(c['seats']) == 2 and c['rake_bps'] == 0
-         and all(c['stacks'].values()), 'HU zero-rake river only')
+    need(len(c['board']) == 5 and len(c['seats']) == 2
+         and all(c['stacks'].values()), 'HU river only')
+    need(rake_on_fold is None or type(rake_on_fold) is bool, 'Invalid fold rake rule')
+    need(c['rake_bps'] == 0 or rake_on_fold is not None, 'Explicit fold rake rule required')
+    use_rake = rake_on_fold is not None
+    need(not use_rake or cfr_executable is None, 'Rake solver requires Python backend')
     need(type(iterations) is int and 1 <= iterations <= 50000, 'Invalid iterations')
     need(type(pot_bps) in (tuple, list) and len(pot_bps) <= 16 and
          all(type(x) is int and 1 <= x <= 10000 for x in pot_bps), 'Invalid sizings')
     sources = {p: file_digest(Path(__file__).with_name(p)) for p in SOURCES}
     spec = dict(schema=VERSION, context_key=identity(context), iterations=iterations,
                 pot_bps=sorted(set(pot_bps)), source_sha256=sources,
-                backend='native' if cfr_executable is not None else 'python',
+                backend='python-rake' if use_rake else ('native' if cfr_executable is not None else 'python'),
+                rake_on_fold=rake_on_fold,
                 executable_sha256=file_digest(cfr_executable) if cfr_executable is not None else None)
     return digest(encode(spec)), spec
 
@@ -70,8 +76,8 @@ def _connection(path):
 
 
 def solve_cached(path, context, iterations=500, pot_bps=(5000, 10000), *,
-                 cfr_executable=None, node_limit=2000, max_work=20000000, native_timeout=120):
-    key, spec = specification(context, iterations, pot_bps, cfr_executable=cfr_executable)
+                 cfr_executable=None, node_limit=2000, max_work=20000000, native_timeout=120, rake_on_fold=None):
+    key, spec = specification(context, iterations, pot_bps, cfr_executable=cfr_executable, rake_on_fold=rake_on_fold)
     need(type(node_limit) is int and 1 <= node_limit <= 10000, 'Invalid node budget')
     need(type(max_work) is int and 1 <= max_work <= 100000000, 'Invalid work budget')
     spec_json = encode(spec)
@@ -90,10 +96,15 @@ def solve_cached(path, context, iterations=500, pot_bps=(5000, 10000), *,
             need(r['nodes'] <= node_limit and r['nodes']*r['legal_pairs']*(iterations+5) <= max_work, 'Cached result exceeds budget')
             return dict(data, cache_hit=True)
         tree = manifest(context, spec['pot_bps'], node_limit)
-        r = solve(context, iterations=iterations, pot_bps=spec['pot_bps'], node_limit=node_limit,
-                  max_work=max_work, cfr_executable=cfr_executable, native_timeout=native_timeout)
+        if rake_on_fold is not None:
+            from plo5_post_gto_rake_solver import solve as solve_rake
+            r = solve_rake(context, iterations=iterations, pot_bps=spec['pot_bps'], node_limit=node_limit,
+                           max_work=max_work, rake_on_fold=rake_on_fold)
+        else:
+            r = solve(context, iterations=iterations, pot_bps=spec['pot_bps'], node_limit=node_limit,
+                      max_work=max_work, cfr_executable=cfr_executable, native_timeout=native_timeout)
         need(len(tree) == r['nodes'], 'Tree mismatch')
-        need(specification(context, iterations, pot_bps, cfr_executable=cfr_executable)[0] == key, 'Model changed during solve')
+        need(specification(context, iterations, pot_bps, cfr_executable=cfr_executable, rake_on_fold=rake_on_fold)[0] == key, 'Model changed during solve')
         data = dict(model_key=key, specification=spec, tree=tree, result=r)
         payload = encode(data)
         need(len(payload.encode('utf-8')) <= MAX_BYTES, 'Cache payload budget exceeded')
@@ -118,4 +129,4 @@ def lookup(data, history, holding):
     if rows[0]['opponent_reach_mass'] <= 0:
         return dict(status='ZERO_OPPONENT_REACH')
     return dict(status='CONDITIONAL_POLICY', model_key=data['model_key'], policy=rows[0],
-                gap_bb=data['result']['nash_gap_bb'], gto_solution=False)
+                gap_bb=data['result'].get('nash_gap_bb'), nashconv_bb=data['result'].get('nashconv_bb'), gto_solution=False)
