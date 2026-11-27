@@ -9,7 +9,7 @@ from plo5_post_gto_tree import start,actions,step
 from plo5_evaluator import evaluate
 from plo5_pre_gto_context import need
 
-def solve(context,iterations=500,pot_bps=(5000,10000),node_limit=2000,max_work=20000000):
+def solve(context,iterations=500,pot_bps=(5000,10000),node_limit=2000,max_work=20000000,*,cfr_executable=None,native_timeout=120):
     c=normalize(context)
     need(len(c["seats"])==2 and len(c["board"])==5 and c["rake_bps"]==0,"HU zero-rake river only")
     need(type(iterations) is int and 1<=iterations<=50000,"Invalid iterations")
@@ -54,22 +54,31 @@ def solve(context,iterations=500,pot_bps=(5000,10000),node_limit=2000,max_work=2
                 regret[n,h]=[0.]*len(aa);avg[n,h]=[0.]*len(aa)
     def norm(x):
         t=sum(x);return [v/t for v in x] if t else [1/len(x)]*len(x)
-    for t in range(1,iterations+1):
-        pol={k:norm(v) for k,v in regret.items()}
-        delta={k:[0.]*len(v) for k,v in regret.items()}
-        def walk(n,d,r0,r1):
-            s,aa,ch=nodes[n];i,j,w,q=pairs[d]
-            if not aa:return terminal[n][d]
-            p=s.pending[0];key=(n,(i,j)[p]);pr=pol[key]
-            vals=[walk(k,d,r0*x if p==0 else r0,r1*x if p==1 else r1) for k,x in zip(ch,pr)]
-            v=sum(x*y for x,y in zip(pr,vals))
-            for k,x in enumerate(pr):
-                delta[key][k]+=w*(r1 if p==0 else -r0)*(vals[k]-v)
-                avg[key][k]+=t*w*(r0 if p==0 else r1)*x
-            return v
-        for d in range(len(pairs)):walk(0,d,1.,1.)
-        for k in regret:regret[k]=[max(0.,a+b) for a,b in zip(regret[k],delta[k])]
-    pol={k:norm(v) for k,v in avg.items()}
+    if cfr_executable is not None:
+        from plo5_pre_gto_cfr_native import train
+        native_nodes=[(s,aa if aa else None,ch) for s,aa,ch in nodes]
+        coefficients={}
+        for n,(s,aa,ch) in enumerate(nodes):
+            if not aa:
+                coefficients[n]=(utility(s,0.),utility(s,1.)-utility(s,0.))
+        pol=train(cfr_executable,native_nodes,pairs,coefficients,regret,iterations,timeout=native_timeout)
+    else:
+        for t in range(1,iterations+1):
+            pol={k:norm(v) for k,v in regret.items()}
+            delta={k:[0.]*len(v) for k,v in regret.items()}
+            def walk(n,d,r0,r1):
+                s,aa,ch=nodes[n];i,j,w,q=pairs[d]
+                if not aa:return terminal[n][d]
+                p=s.pending[0];key=(n,(i,j)[p]);pr=pol[key]
+                vals=[walk(k,d,r0*x if p==0 else r0,r1*x if p==1 else r1) for k,x in zip(ch,pr)]
+                v=sum(x*y for x,y in zip(pr,vals))
+                for k,x in enumerate(pr):
+                    delta[key][k]+=w*(r1 if p==0 else -r0)*(vals[k]-v)
+                    avg[key][k]+=t*w*(r0 if p==0 else r1)*x
+                return v
+            for d in range(len(pairs)):walk(0,d,1.,1.)
+            for k in regret:regret[k]=[max(0.,a+b) for a,b in zip(regret[k],delta[k])]
+        pol={k:norm(v) for k,v in avg.items()}
     masses=defaultdict(float);totals={k:[0.]*len(v) for k,v in pol.items()}
     def collect(n,d,r0,r1):
         s,aa,ch=nodes[n];i,j,w,q=pairs[d]
@@ -97,4 +106,4 @@ def solve(context,iterations=500,pot_bps=(5000,10000),node_limit=2000,max_work=2
         return rec(0,[(d,w) for d,(_,_,w,_) in enumerate(pairs)])
     upper,lower=br(0),br(1)
     need(all(isfinite(x) for x in (value,upper,lower)) and lower<=value+1e-8 and value<=upper+1e-8,"Best response inconsistency")
-    return dict(variant=5,context_key=identity(context),iterations=iterations,nodes=len(nodes),legal_pairs=len(pairs),value_bb=value,best_response_lower_bb=lower,best_response_upper_bb=upper,nash_gap_bb=max(0.,upper-lower),gap_fraction_of_pot=max(0.,upper-lower)/(c["pot"]/c["bb"]),gto_solution=False,scope="Restricted HU zero-rake river, explicit ranges and discrete sizings",policy=[dict(node=n,position=nodes[n][0].actor,holding=list(hs[nodes[n][0].pending[0]][h]),opponent_reach_mass=masses[n,h],actions=[dict(action=a,amount=b,frequency=x,ev_bb=totals[n,h][k]/masses[n,h] if masses[n,h]>0 else None) for k,((a,b),x) in enumerate(zip(nodes[n][1],v))]) for (n,h),v in sorted(pol.items())])
+    return dict(variant=5,backend="native" if cfr_executable is not None else "python",context_key=identity(context),iterations=iterations,nodes=len(nodes),legal_pairs=len(pairs),value_bb=value,best_response_lower_bb=lower,best_response_upper_bb=upper,nash_gap_bb=max(0.,upper-lower),gap_fraction_of_pot=max(0.,upper-lower)/(c["pot"]/c["bb"]),gto_solution=False,scope="Restricted HU zero-rake river, explicit ranges and discrete sizings",policy=[dict(node=n,position=nodes[n][0].actor,holding=list(hs[nodes[n][0].pending[0]][h]),opponent_reach_mass=masses[n,h],actions=[dict(action=a,amount=b,frequency=x,ev_bb=totals[n,h][k]/masses[n,h] if masses[n,h]>0 else None) for k,((a,b),x) in enumerate(zip(nodes[n][1],v))]) for (n,h),v in sorted(pol.items())])
