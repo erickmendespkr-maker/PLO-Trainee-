@@ -7,7 +7,11 @@ import plo5_pre_gto_tree as pre
 import plo5_post_gto_tree as post
 
 
-def recover(state, remaining, pot, *, folded=None, max_actions=6, max_nodes=20000):
+UNKNOWN_ACTOR = object()
+
+
+def recover(state, remaining, pot, *, folded=None, expected_actor=UNKNOWN_ACTOR,
+            expected_status=None, max_actions=6, max_nodes=20000):
     need(isinstance(state,(pre.State,post.State)), 'Invalid betting state')
     need(type(remaining) is dict and set(remaining)==set(state.order),'Complete stack roster required')
     target=tuple(integer(remaining[p]) for p in state.order);integer(pot)
@@ -19,6 +23,8 @@ def recover(state, remaining, pot, *, folded=None, max_actions=6, max_nodes=2000
         target_fold=tuple(folded[p] for p in state.order)
         need(all(not a or b for a,b in zip(state.folded,target_fold)),'Fold reversal')
     else:target_fold=None
+    need(expected_actor is UNKNOWN_ACTOR or expected_actor is None or expected_actor in state.order,'Invalid expected actor')
+    need(expected_status is None or expected_status in ('decision','fold_terminal','flop_transition','chance_transition','all_in_showdown','river_showdown'),'Invalid expected status')
     rules=pre if isinstance(state,pre.State) else post
     visited=0;truncated=False;hits=[]
     def visit(s,path):
@@ -26,7 +32,9 @@ def recover(state, remaining, pot, *, folded=None, max_actions=6, max_nodes=2000
         if len(hits)>=2:return
         if visited>=max_nodes:truncated=True;return
         visited+=1
-        if s.remaining==target and s.pot==pot and (target_fold is None or s.folded==target_fold):hits.append(path)
+        if (s.remaining==target and s.pot==pot and (target_fold is None or s.folded==target_fold)
+            and (expected_actor is UNKNOWN_ACTOR or s.actor==expected_actor)
+            and (expected_status is None or s.status==expected_status)):hits.append(path)
         if len(hits)>=2 or not s.pending:return
         if len(path)>=max_actions:
             # A depth limit is part of the declared model, not proof about real history.
