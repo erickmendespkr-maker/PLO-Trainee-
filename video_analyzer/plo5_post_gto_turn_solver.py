@@ -10,7 +10,7 @@ VERSION = 'turn-river-cfr-v1'
 
 
 def solve(context, iterations=100, pot_bps=(), *, rake_on_fold, node_limit=5000,
-          max_work=20000000, max_pairs=256):
+          max_work=20000000, max_pairs=256, cfr_executable=None, native_timeout=120):
     c = normalize(context)
     need(len(c['board']) == 4 and len(c['seats']) == 2 and all(c['stacks'].values()), 'HU turn only')
     need(type(rake_on_fold) is bool, 'Explicit fold rake rule required')
@@ -72,15 +72,19 @@ def solve(context, iterations=100, pot_bps=(), *, rake_on_fold, node_limit=5000,
         mean=tuple(sum(x*v[z] for x,v in zip(pr,vals)) for z in (0,1))
         visit(key,p,s,w,r0,r1,pr,vals,mean)
         return mean
-    for t in range(1,iterations+1):
-        pol={k:norm(v) for k,v in regret.items()}; delta={k:[0.]*len(v) for k,v in regret.items()}
-        def update(key,p,s,w,r0,r1,pr,vals,mean):
-            for a,x in enumerate(pr):
-                delta[key][a]+=w*(r1 if p==0 else r0)*(vals[a][p]-mean[p])
-                avg[key][a]+=t*w*(r0 if p==0 else r1)*x
-        for d in range(len(deals)):walk(0,d,1.,1.,update)
-        for k in regret:regret[k]=[max(0.,x+y) for x,y in zip(regret[k],delta[k])]
-    pol={k:norm(v) for k,v in avg.items()}
+    if cfr_executable is not None:
+        from plo5_multistreet_native import train
+        pol=train(cfr_executable,nodes,deals,terminal,regret,iterations,timeout=native_timeout)
+    else:
+        for t in range(1,iterations+1):
+            pol={k:norm(v) for k,v in regret.items()}; delta={k:[0.]*len(v) for k,v in regret.items()}
+            def update(key,p,s,w,r0,r1,pr,vals,mean):
+                for a,x in enumerate(pr):
+                    delta[key][a]+=w*(r1 if p==0 else r0)*(vals[a][p]-mean[p])
+                    avg[key][a]+=t*w*(r0 if p==0 else r1)*x
+            for d in range(len(deals)):walk(0,d,1.,1.,update)
+            for k in regret:regret[k]=[max(0.,x+y) for x,y in zip(regret[k],delta[k])]
+        pol={k:norm(v) for k,v in avg.items()}
     masses=defaultdict(float); totals={k:[0.]*len(v) for k,v in pol.items()}
     def collect(key,p,s,w,r0,r1,pr,vals,mean):
         weight=w*(r1 if p==0 else r0);masses[key]+=weight
@@ -106,7 +110,7 @@ def solve(context, iterations=100, pot_bps=(), *, rake_on_fold, node_limit=5000,
         return rec(0,[(d,x[2]) for d,x in enumerate(deals)])
     best=[br(0),br(1)]; need(all(isfinite(x) for x in values+best) and all(b>=v-1e-8 for b,v in zip(best,values)), 'Best response inconsistency')
     gains=[max(0.,b-v) for b,v in zip(best,values)]
-    return dict(variant=5,engine_version=VERSION,context_key=identity(context),rake_on_fold=rake_on_fold,
+    return dict(variant=5,engine_version=VERSION,backend="native" if cfr_executable is not None else "python",context_key=identity(context),rake_on_fold=rake_on_fold,
                 iterations=iterations,pot_bps=list(pot_bps),nodes=len(nodes),legal_pairs=len(pairs),chance_outcomes=len(deals),work_per_iteration=work,
                 values_bb=values,best_responses_bb=best,unilateral_gains_bb=gains,nashconv_bb=sum(gains),
                 nashconv_fraction_of_pot=sum(gains)/(c['pot']/c['bb']),expected_rake_bb=max(0.,c['pot']/c['bb']-sum(values)),gto_solution=False,
