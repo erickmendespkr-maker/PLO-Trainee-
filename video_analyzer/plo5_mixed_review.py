@@ -131,6 +131,8 @@ def run(source,output,*,start=0,seconds=60,capacity=512,workers=3,card_bank=None
             if cards is not None:
                 from plo5_preflop_roster import candidates
                 report['preflop_roster_candidates']=candidates(frames)
+                from plo5_hand_boundaries import analyze as analyze_boundaries
+                report['visual_hand_transitions']=analyze_boundaries(frames)
         with (stage/'manifest.json').open('x',encoding='utf-8') as f:json.dump(report,f,ensure_ascii=False,indent=2,allow_nan=False)
         page=['<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>PLO5 — Revisão de valores</title><style>body{font:16px system-ui;max-width:1200px;margin:auto;padding:20px}img{max-width:100%}article{border-top:1px solid #aaa;padding:12px}</style><h1>Revisão de valores PLO5</h1><p>Quedas entre amostras consecutivas, não perdas de mãos. Nenhuma mão, ação ou estratégia foi confirmada.</p>']
         for r in priority:
@@ -153,6 +155,14 @@ def run(source,output,*,start=0,seconds=60,capacity=512,workers=3,card_bank=None
             for r in report['preflop_roster_candidates']:
                 pos=r['positions_if_standard_blinds_and_full_roster']['hero_bottom']
                 page.append(f'<li>Mesa {r["table_id"]} — <a href="prints/{r["first"]["file"]}">{html.escape(r["first"]["pts"])} s</a> até <a href="prints/{r["last"]["file"]}">{html.escape(r["last"]["pts"])} s</a>: {len(r["visible_dealt_seats"])} participantes visíveis, Hero {html.escape(pos)} (condicional), {r["samples"]} amostras.</li>')
+            page.append('</ul>')
+        if 'visual_hand_transitions' in report:
+            page.append('<h2>Transições visuais das mãos</h2><p>Estados candidatos, sem certificação de início/fim ou resultado. Intervalos incertos não são unidos.</p><ul>')
+            for r in report['visual_hand_transitions']['transitions']:
+                page.append(f'<li>Mesa {r["table_id"]} — <a href="prints/{r["before"]["file"]}">{html.escape(r["before"]["pts"])} s</a> até <a href="prints/{r["after"]["file"]}">{html.escape(r["after"]["pts"])} s</a>: {html.escape(r["transition_candidate"])} ({html.escape(r["status"])}).</li>')
+            for r in report['visual_hand_transitions']['possible_new_hand_intervals']:
+                a,b=r['last_old_state'],r['first_new_state']
+                page.append(f'<li>Mesa {r["table_id"]} — possível nova mão entre <a href="prints/{a["file"]}">{html.escape(a["pts"])} s</a> e <a href="prints/{b["file"]}">{html.escape(b["pts"])} s</a>.</li>')
             page.append('</ul>')
         page.append('<h2>Amostras disponíveis</h2><ul>')
         for f in frames:page.append(f'<li><a href="prints/{f["file"]}">{html.escape(f["pts"])} s</a></li>')
