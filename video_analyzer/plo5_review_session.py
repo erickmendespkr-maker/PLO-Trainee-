@@ -68,8 +68,17 @@ def visual_session(manifest_path,source=None,*,max_changes=100):
             if k not in crops:crops[k]=table_crop(root,f,t)
             body.append(f'<figure><img loading="lazy" alt="Primeiro print da mesa {t}" src="data:image/png;base64,{crops[k]}"></figure>')
         body.append('</details></article>')
+    seat_stats={}
+    if any('seat_evidence' in c for f in m['frames'] for c in f.get('cards',[])):
+        from plo5_seat_evidence import summarize
+        evidence=summarize(m['frames']);details=evidence.pop('details');seat_stats=evidence
+        body.append(f'<h2>Observações por assento</h2><p>{evidence["stack_candidates"]} stacks candidatos; {evidence["label_candidates"]} rótulos visíveis; {evidence["dealer_candidates"]} marcadores de dealer. Não são posições, ações distintas nem resultados certificados.</p><details><summary>Ver leituras por frame</summary><table><tr><th>Tempo / mesa</th><th>Assento</th><th>Stack (BB)</th><th>Rótulo</th><th>Dealer candidato</th></tr>')
+        for row in details:
+            for seat in row['seats']:
+                body.append('<tr><td>'+text(row['pts'])+' / '+text(row['table_id'])+'</td><td>'+text(seat['seat'])+'</td><td>'+text(seat['stack']['candidate'] or '—')+'</td><td>'+text(seat['action']['candidate'] or '—')+'</td><td>'+('D' if seat['seat']==row['dealer'] else '—')+'</td></tr>')
+        body.append('</table></details>')
     body.append('<small>Manifesto SHA-256: <code>'+mhash+'</code>. Vídeo: '+('hash conferido' if source_checked else 'hash não rechecado')+'. Não houve nova auditoria de extração de frames neste relatório.</small>')
-    return page(body),dict(status='VISUAL_EVIDENCE_ONLY',changes=len(r['changes']),card_segments=len(r['segments']),unique_crops=len(crops),source_hash_checked=source_checked,manifest_sha256=mhash,ev_authorized=False)
+    return page(body),dict(status='VISUAL_EVIDENCE_ONLY',changes=len(r['changes']),card_segments=len(r['segments']),unique_crops=len(crops),seat_evidence=seat_stats,source_hash_checked=source_checked,manifest_sha256=mhash,ev_authorized=False)
 
 
 def review_batch(cache,models,*,cfr_executable=None,rank_executables=None,rank_reader=None,rank_worker=None):
