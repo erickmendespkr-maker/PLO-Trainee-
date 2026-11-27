@@ -83,7 +83,7 @@ def changes(frames,threshold='30'):
     return rows
 
 
-def run(source,output,*,start=0,seconds=60,capacity=512,workers=3,card_bank=None,suprema_card_bank=None,suprema_soft_bank=None,seat_candidates=False):
+def run(source,output,*,start=0,seconds=60,capacity=512,workers=3,card_bank=None,suprema_card_bank=None,suprema_soft_bank=None,seat_candidates=False,visual_codes=False,money_codebook=None):
     need(suprema_card_bank is None or suprema_soft_bank is None,"Conflicting Suprema profiles")
     if seat_candidates:
         from plo5_seat_candidates import observe as observe_seats
@@ -91,6 +91,11 @@ def run(source,output,*,start=0,seconds=60,capacity=512,workers=3,card_bank=None
     need(source.suffix.lower()=='.mp4' and source.is_file() and not source.is_symlink(),'Local MP4 required')
     need(out.parent.is_dir() and not out.exists() and not out.is_symlink(),'New output directory required')
     t=time.perf_counter();h=digest(source);reader=Reader(capacity,workers)
+    money_hash=None
+    if visual_codes or money_codebook is not None:
+        from plo5_visual_codes import MixedReader, Codebook
+        money_hash=digest(money_codebook) if money_codebook is not None else None
+        reader=MixedReader(capacity,workers,bank=Codebook.load(money_codebook) if money_codebook is not None else None)
     cards=None;bank_hash=None;suprema_hash=None;soft_hash=None
     if card_bank is not None or suprema_card_bank is not None or suprema_soft_bank is not None:
         from plo5_fourcolor_cards import load_bank
@@ -124,6 +129,9 @@ def run(source,output,*,start=0,seconds=60,capacity=512,workers=3,card_bank=None
             if suprema_soft_bank is not None:need(digest(suprema_soft_bank)==soft_hash,'Suprema soft bank changed')
         a=time.perf_counter();need(digest(source)==h and all(digest(media/f['file'])==f['sha256'] for f in frames),'Input or print changed');verify_s=time.perf_counter()-a
         report={'variant':5,'status':'MIXED_LAYOUT_DISPLAY_REVIEW_ONLY','source_sha256':h,'start':start,'seconds':seconds,'sampled_seconds':len(frames),'missing_source_seconds':sorted(set(range(start,start+seconds))-{int(Fraction(f['pts'])//1) for f in frames}),'frames':frames,'priority':priority,'cache':reader.cache.stats(),'stage_seconds':{'extract':extract_s,'recognition':ocr_s,'final_recheck':verify_s},'wall_seconds':time.perf_counter()-t,'hands_reconstructed':False,'financial_result_verified':False,'gto_solution':False,'independent_pixel_reextraction_verified':False}
+        if visual_codes or money_codebook is not None:
+            if money_codebook is not None:need(digest(money_codebook)==money_hash,'Money codebook changed')
+            report.update(visual_codes_enabled=True,money_codebook_sha256=money_hash,layout_cache=reader.layout.stats())
         if cards is not None:
             report.update(card_bank_sha256=bank_hash,suprema_card_bank_sha256=suprema_hash,suprema_soft_bank_sha256=soft_hash,card_cache=cards.cache.stats(),card_segments=groups,cards_verified=False,card_recognition_seconds=card_seconds)
         if seat_candidates:
@@ -172,8 +180,8 @@ def run(source,output,*,start=0,seconds=60,capacity=512,workers=3,card_bank=None
 
 
 def main(argv=None):
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('source');p.add_argument('output');p.add_argument('--start',type=int,default=0);p.add_argument('--seconds',type=int,default=60);p.add_argument('--capacity',type=int,default=512);p.add_argument('--workers',type=int,default=3);p.add_argument('--card-bank');p.add_argument('--suprema-card-bank');p.add_argument('--suprema-soft-bank');p.add_argument('--seat-candidates',action='store_true');a=p.parse_args(argv)
-    r=run(a.source,a.output,start=a.start,seconds=a.seconds,capacity=a.capacity,workers=a.workers,card_bank=a.card_bank,suprema_card_bank=a.suprema_card_bank,suprema_soft_bank=a.suprema_soft_bank,seat_candidates=a.seat_candidates);print(json.dumps({k:v for k,v in r.items() if k!='frames'},ensure_ascii=False));return 0
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('source');p.add_argument('output');p.add_argument('--start',type=int,default=0);p.add_argument('--seconds',type=int,default=60);p.add_argument('--capacity',type=int,default=512);p.add_argument('--workers',type=int,default=3);p.add_argument('--card-bank');p.add_argument('--suprema-card-bank');p.add_argument('--suprema-soft-bank');p.add_argument('--seat-candidates',action='store_true');p.add_argument('--visual-codes',action='store_true');p.add_argument('--money-codebook');a=p.parse_args(argv)
+    r=run(a.source,a.output,start=a.start,seconds=a.seconds,capacity=a.capacity,workers=a.workers,card_bank=a.card_bank,suprema_card_bank=a.suprema_card_bank,suprema_soft_bank=a.suprema_soft_bank,seat_candidates=a.seat_candidates,visual_codes=a.visual_codes,money_codebook=a.money_codebook);print(json.dumps({k:v for k,v in r.items() if k!='frames'},ensure_ascii=False));return 0
 
 
 if __name__=='__main__':raise SystemExit(main())
