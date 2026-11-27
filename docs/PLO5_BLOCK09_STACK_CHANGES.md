@@ -1,0 +1,11 @@
+# Bloco 09 — aumentos de stack e evidência candidata de recompra
+
+Adicionado plo5_stack_changes.py: reaproveita manifestos mixed-video com cartas e assentos. Detecta aumentos de stack entre amostras adjacentes da mesma mesa/plataforma, sem atravessar lacunas ou valores ausentes. Prioriza revisão de aumentos repetidos em dois frames de cada lado, com reset candidato do board, mudança candidata do dealer e coincidência com alvo de recompra explicitamente configurado. Confere SHA256 dos prints e relê os quatro stacks com OCR. Não verifica novamente os pixels de cartas/dealer, não autentica manifesto contra vídeo, não distingue automaticamente pagamento, devolução e transferência. Não assume stack de 100 BB, não atribui valor de recompra ou resultado líquido. Sem alvo explícito, permanece inconclusivo. A coincidência com alvo não prova recompra.
+
+Uso: python video_analyzer/plo5_stack_changes.py PASTA_MIXED_VIDEO NOVO_JSON --target-bb 100 (opcional; outros alvos permitidos).
+
+Teste real nos manifestos da gravação Poker_Parte_01.mp4, janelas 435–475 e 1120–1180 s, 100 frames/400 observações possíveis de mesa. Dois aumentos: PPPoker mesa 3, 460–461 s, 83,5 para 100 BB (+16,5 BB exibidos); PPPoker mesa 2, 1141–1142,033 s, 97,5 para 100 BB (+2,5 BB exibidos). Ambos repetidos, com reset/dealer candidato e alvo explícito de 100 BB. Oito releituras concordantes usando o mesmo OCR, não verificação independente. Zero rebuys ou devoluções confirmados; os valores +16,5 e +2,5 não são transferências confirmadas. Nenhuma gravação nova baixada.
+
+295 testes locais selecionados aprovados em 3,802 s (8 novos + 287 regressões). Checkout integral ainda pendente. Blobs locais/remotos coincidentes: plo5_stack_changes.py 7b99cb94e0e5c8e8e5a03c8d031bc2bfea2ce4e8; test_plo5_stack_changes.py ea721444d8ec8b098c176633786dbf415142dc9c. Main preservada, nenhum print privado publicado.
+
+Próxima tarefa: buscar marcadores explícitos de recompra/devolução e pagamentos em janelas dirigidas ao redor dos aumentos; ligar evidências ao ledger financeiro existente, sem confundir aumento exibido e transferência. Avançar bloco 10 (liquidação) se essa frente bloquear. Preservar todas as pendências 03–09 e validação independente.
