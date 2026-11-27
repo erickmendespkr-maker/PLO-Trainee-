@@ -34,9 +34,20 @@ def intake(path):
 
 def report(source,output):
     result=intake(source);out=Path(output);need(out.suffix.lower()=='.html' and not out.exists() and not out.is_symlink(),'New HTML required')
-    body=[f'<p>Históricos candidatos: {len(result["hands"])} | Rejeitados: {len(result["rejected"])}. Ações e resultados ainda não reconciliados; EV indisponível.</p>']
+    from plo5_history_replay import reconstruct
+    body=[f'<p>Históricos candidatos: {len(result["hands"])} | Rejeitados na entrada: {len(result["rejected"])}. A conciliação do texto não comprova a origem da mão. EV indisponível sem modelo de ranges.</p>'];consistent=0
     for h in result['hands']:
-        body.append('<article><h2>Mão '+text(h['id'])+'</h2><p>'+text(h['hero'])+' — '+text(' '.join(h['holding']))+'</p><details><summary>Histórico original</summary><pre style="white-space:pre-wrap">'+text(h['raw'])+'</pre></details></article>')
+        body.append('<article><h2>Mão '+text(h['id'])+'</h2><p>'+text(h['hero'])+' — '+text(' '.join(h['holding']))+'</p>')
+        try:r=reconstruct(h)
+        except ValueError as exc:body.append('<p>Histórico não conciliado: '+text(str(exc))+'</p>')
+        else:
+            consistent+=1
+            body.append('<p><strong>Resultado líquido no histórico: '+text(f'{r["hero_net_bb"]:+.2f}')+' BB</strong> | Posição: '+text(r['hero_position'])+'</p><p>Board: '+text(' '.join(r['board']))+' | Rake registrado: '+text(f'{r["rake_cents"]/100:.2f}')+' USD</p><details><summary>Decisões do Hero e pot odds brutas</summary><table><tr><th>Street</th><th>Ação</th><th>Pagamento (USD)</th><th>Pot odds</th></tr>')
+            for d in r['hero_decisions']:
+                q=d['pot_odds_gross'];odds=f'{100*q[0]/q[1]:.2f}%' if q is not None else '—'
+                body.append('<tr><td>'+text(d['street'])+'</td><td>'+text(d['action'])+'</td><td>'+text(f'{d["amount"]/100:.2f}')+'</td><td>'+text(odds)+'</td></tr>')
+            body.append('</table><p>Pot odds brutas: não ajustadas por rake, potes laterais ou apostas futuras. Rebuy não inferido. Rake por pote não certificado.</p></details>')
+        body.append('<details><summary>Histórico original</summary><pre style="white-space:pre-wrap">'+text(h['raw'])+'</pre></details></article>')
     for r in result['rejected']:body.append('<p>Rejeitado: '+text(r['header'])+' — '+text(r['reason'])+'</p>')
     with out.open('x',encoding='utf-8') as f:f.write(page(body))
-    return dict(hands=len(result['hands']),rejected=len(result['rejected']),report=str(out),strategy_authorized=False)
+    return dict(hands=len(result['hands']),rejected=len(result['rejected']),consistent_text_replays=consistent,report=str(out),strategy_authorized=False)
