@@ -61,7 +61,8 @@ def visual_session(manifest_path,source=None,*,max_changes=100):
     return page(body),dict(status='VISUAL_EVIDENCE_ONLY',changes=len(r['changes']),unique_crops=len(crops),source_hash_checked=source_checked,manifest_sha256=mhash,ev_authorized=False)
 
 
-def review_batch(cache,models,*,cfr_executable=None,rank_executables=None,rank_reader=None):
+def review_batch(cache,models,*,cfr_executable=None,rank_executables=None,rank_reader=None,rank_worker=None):
+    need(rank_worker is None or rank_executables is None and rank_reader is None,'Conflicting rank backends')
     need(type(models) is list and 1<=len(models)<=64,'Invalid model batch')
     required={'id','context','history','holding','action','rake_on_fold'};optional={'iterations','pot_bps','joint'}
     seen=set();rows=[]
@@ -70,6 +71,12 @@ def review_batch(cache,models,*,cfr_executable=None,rank_executables=None,rank_r
         ident=m['id'];need(type(ident) is str and 0<len(ident)<=100 and ident not in seen,'Duplicate or invalid decision ID');seen.add(ident)
         r=postflop(cache,**{k:v for k,v in m.items() if k!='id'},cfr_executable=cfr_executable)
         rows.append(dict(id=ident,result=r))
+    if rank_worker is not None:
+        for street in (3,4,5):
+            selected=[x['result'] for x in rows if len(x['result']['board'])==street]
+            if selected:
+                ranks=rank_worker.lookup(street,[(r['holding'],r['board']) for r in selected])
+                for r,v in zip(selected,ranks):r['rank']=v
     if rank_executables is not None:
         from plo5_rank_service import lookup_states
         need(type(rank_executables) in (tuple,list) and len(rank_executables)==2,'Invalid rank executables')
@@ -95,13 +102,19 @@ def model_page(rows):
 
 
 def main(argv=None):
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=('visual','models'));p.add_argument('input');p.add_argument('output');p.add_argument('--video');p.add_argument('--cache');p.add_argument('--native');p.add_argument('--index');p.add_argument('--rank');a=p.parse_args(argv)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=('visual','models'));p.add_argument('input');p.add_argument('output');p.add_argument('--video');p.add_argument('--cache');p.add_argument('--native');p.add_argument('--index');p.add_argument('--rank');p.add_argument('--persistent-rank');a=p.parse_args(argv)
     out=Path(a.output);need(out.suffix=='.html' and not out.exists() and not out.is_symlink(),'New HTML required')
     if a.mode=='visual':html,stats=visual_session(a.input,a.video)
     else:
         need(a.cache is not None and bool(a.index)==bool(a.rank),'Cache and paired rank executables required')
         d,_=read_json(a.input);need(set(d)=={'decisions'},'Invalid batch fields')
-        rows=review_batch(a.cache,d['decisions'],cfr_executable=a.native,rank_executables=(a.index,a.rank) if a.index else None)
+        need(not a.persistent_rank or not a.index,'Conflicting rank backends')
+        if a.persistent_rank:
+            from plo5_rank_worker import RankWorker
+            with RankWorker(a.persistent_rank) as worker:
+                rows=review_batch(a.cache,d['decisions'],cfr_executable=a.native,rank_worker=worker)
+        else:
+            rows=review_batch(a.cache,d['decisions'],cfr_executable=a.native,rank_executables=(a.index,a.rank) if a.index else None)
         html=model_page(rows);stats=dict(status='DECLARED_MODELS_ONLY',decisions=len(rows),cache_hits=sum(x['result']['cache_hit'] for x in rows),gto_solution=False)
     with out.open('x',encoding='utf-8') as f:f.write(html)
     print(json.dumps(stats,ensure_ascii=False));return 0
