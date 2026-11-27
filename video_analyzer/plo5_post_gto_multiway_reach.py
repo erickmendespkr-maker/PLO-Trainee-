@@ -8,7 +8,7 @@ from plo5_post_gto_context import normalize
 from plo5_post_gto_multiway import prior, model_identity
 
 
-def condition_path(context,result,history,*,joint=None,known=None):
+def condition_path(context,result,history,*,joint=None,known=None,intervene=None):
     c=normalize(context);seats=c['seats'];n=len(seats)
     rows=prior(context,joint)
     need(result['model_key']==model_identity(context,rows,result['rake_on_fold'],result['pot_bps']),'Model mismatch')
@@ -18,6 +18,7 @@ def condition_path(context,result,history,*,joint=None,known=None):
     if path not in paths:return dict(status='UNMODELED_HISTORY',deals=[])
     known={} if known is None else known
     need(type(known) is dict and set(known)<=set(seats),'Invalid known holdings')
+    need(intervene is None or type(intervene) is str and intervene in known,'Intervention requires a known holding')
     known={seats.index(p):tuple(cards(h)) for p,h in known.items()}
     rows=[(h,Fraction(w)) for h,w in rows if all(h[p]==k for p,k in known.items())]
     initial=sum(w for h,w in rows)
@@ -29,6 +30,10 @@ def condition_path(context,result,history,*,joint=None,known=None):
             if seat=='chance':
                 # Folded cards are still unavailable for a public draw.
                 f=Fraction(0) if any(action in k for k in h) else Fraction(1,52-5*n-len(node['board']))
+            elif seat==intervene:
+                # A known player's actual earlier action is an intervention,
+                # not evidence about their fixed private holding.
+                f=Fraction(1)
             else:
                 p=seats.index(seat);row=policies.get((node['node'],h[p]))
                 if row is None:return dict(status='INCOMPLETE_POLICY',deals=[])
@@ -43,4 +48,5 @@ def condition_path(context,result,history,*,joint=None,known=None):
     def ratio(f):return [f.numerator,f.denominator]
     return dict(status='CONDITIONAL_JOINT_RANGE',seats=seats,node=paths[path]['node'],board=paths[path]['board'],
                 path_probability=ratio(total/initial),deals=[dict(holdings=[list(k) for k in h],exact_probability=ratio(w/total)) for h,w in rows],
-                folded_cards_retained=True,range_assumptions_verified=False,gto_solution=False)
+                folded_cards_retained=True,range_assumptions_verified=False,gto_solution=False,
+                intervened_seat=intervene,path_probability_scope='interventional' if intervene is not None else 'observational')
