@@ -1,4 +1,4 @@
-PLO Trainee — candidato de revisão offline PLO5 (Macrobloco 12)
+PLO Trainee — candidato de revisão offline PLO5 (Macrobloco 13)
 
 Este pacote é um subconjunto recuperado do projeto, validado no Linux.
 Não é instalador autônomo nem MVP Windows certificado. Não contém vídeos,
@@ -17,8 +17,12 @@ Valores e mudanças são candidatos, não resultados financeiros confirmados.
 Modo models: JSON com decisões declaradas, exemplo em examples/models.json.
 Exibe EV modelado, pot odds brutas, alternativas; não é GTO certificado.
 Modo history: TXT PokerStars-style explícito 5 Card Omaha Pot Limit ou
-Omaha 5 Cards Pot Limit; apenas intake de evidências, não reconcilia ações.
-Exemplo sintético em examples/history.txt. Exportações DriveHUD reais de
+Omaha 5 Cards Pot Limit; formato USD restrito, blinds normais, sem antes.
+Concilia ações, posições, potes, devoluções e resultado líquido se o registro
+for completo e compatível. Showdown exige cartas dos jogadores ativos;
+rake por pote, rebuy e origem não são certificados. EV não é inferido.
+Exemplo sintético completo em examples/history_complete.txt.
+Exportações DriveHUD reais de
 PPPoker/Suprema ainda precisam ser validadas. Não lê a database do DriveHUD.
 
 Pendências: reconstrução automática integral das mãos de vídeo, cartas,
