@@ -57,7 +57,8 @@ def _condition(context, likelihoods):
     return c,state,pairs,mass/prior,maps
 
 
-def prepare_flop(context, flop, likelihoods):
+def prepare_flop(context, flop, likelihoods, *, approximate_joint=False):
+    need(type(approximate_joint) is bool,'Invalid approximation flag')
     c,state,pairs,history_prob,maps=_condition(context,likelihoods)
     need(type(flop) is list and len(flop)==3 and all(type(x) is str and x in DECK for x in flop)
          and len(set(flop))==3,'Invalid flop')
@@ -69,13 +70,28 @@ def prepare_flop(context, flop, likelihoods):
     # Each legal physical pair has C(42,3) equiprobable unordered flops.
     flop_prob=survive/(mass*comb(42,3))
     normalized=[(h,w/survive) for h,w in legal]
-    den=1
+    den=1; exact=True
     for h,p in normalized:
         den=lcm(den,p.denominator)
-        need(den<=len(normalized)*10**12,'EXACT_WEIGHT_BUDGET_EXCEEDED')
-    weights=[int(p*den) for h,p in normalized];div=gcd(*weights)
-    weights=[w//div for w in weights]
-    need(max(weights)<=10**12,'EXACT_WEIGHT_BUDGET_EXCEEDED')
+        if den>len(normalized)*10**12:
+            exact=False;break
+    if exact:
+        weights=[int(p*den) for h,p in normalized];div=gcd(*weights)
+        weights=[w//div for w in weights]
+        exact=max(weights)<=10**12
+    if not exact:
+        need(approximate_joint,'EXACT_WEIGHT_BUDGET_EXCEEDED')
+        # Reserve one unit for each positive holding pair; distribute remaining
+        # units by largest remainders, preserving support deterministically.
+        budget=10**12;left=budget-len(normalized)
+        quotas=[p*left for h,p in normalized];floors=[int(q) for q in quotas]
+        weights=[1+x for x in floors]
+        missing=budget-sum(weights)
+        order=sorted(range(len(weights)),key=lambda i:(-(quotas[i]-floors[i]),i))
+        for i in order[:missing]:weights[i]+=1
+    total=sum(weights)
+    tv=sum(abs(Fraction(w,total)-p) for w,(h,p) in zip(weights,normalized))/2
+    need(tv<=Fraction(1,10**6),'APPROXIMATION_ERROR_EXCEEDED')
     # HU button/SB acts last postflop. Reorder from preflop SB,BB to BB,SB.
     seats=['BB','SB'];order=[state.order.index(p) for p in seats]
     joint=[dict(holdings=[list(h[i]) for i in order],weight=w) for (h,p),w in zip(normalized,weights)]
@@ -87,13 +103,13 @@ def prepare_flop(context, flop, likelihoods):
     info=dict(version=VERSION,preflop_context_key=identity(context)['key'],likelihood_sha256=_hash(maps),
               history_probability=_ratio(history_prob),flop_given_history_probability=_ratio(flop_prob),
               preflop_paid_chips=dict(zip(state.order,state.paid)),rake_on_fold=c['rake_on_fold'],
-              post_context=post,joint=joint,scope='observed_flop_conditional_reach',
+              post_context=post,joint=joint,joint_weights_exact=exact,joint_weight_tv=_ratio(tv),scope='observed_flop_conditional_reach',
               likelihoods_model_verified=False,preflop_continuation_certified=False)
     return dict(info,bridge_key=_hash(info))
 
 
-def solve_observed_flop(context, flop, likelihoods, **kwargs):
-    b=prepare_flop(context,flop,likelihoods)
+def solve_observed_flop(context, flop, likelihoods, *, approximate_joint=False, **kwargs):
+    b=prepare_flop(context,flop,likelihoods,approximate_joint=approximate_joint)
     r=solve(b['post_context'],joint=b['joint'],rake_on_fold=b['rake_on_fold'],include_deal_values=True,**kwargs)
     seats=r['seats'];bb=b['post_context']['bb'];paid=b['preflop_paid_chips']
     # Whole-hand net utility: subtract preflop paid once, from root-pot-inclusive EV.
