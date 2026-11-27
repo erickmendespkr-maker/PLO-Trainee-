@@ -1,4 +1,6 @@
 import unittest
+import os
+import subprocess
 from fractions import Fraction
 from test_plo5_post_gto_river import context, polar, NUT, BLUFF, CATCH, BOARD
 from plo5_post_gto_turn_solver import solve
@@ -48,6 +50,26 @@ class TurnSolverTests(unittest.TestCase):
             self.assertGreater(r['expected_rake_bb'],0)
             self.assertAlmostEqual(sum(r['values_bb'])+r['expected_rake_bb'],2,places=9)
             self.assertTrue(all(x>=0 for x in r['unilateral_gains_bb']))
+    @unittest.skipUnless(os.environ.get('PLO5_MULTISTREET_EXE'),'native executable not provided')
+    def test_native_parity(self):
+        exe=os.environ['PLO5_MULTISTREET_EXE']
+        for bps,cap,fold in ((0,0,False),(5000,3,False),(5000,3,True)):
+            c=dict(polar(),board=BOARD[:4],rake_bps=bps,rake_cap=cap)
+            for n in (1,20,100):
+                a=solve(c,n,rake_on_fold=fold);b=solve(c,n,rake_on_fold=fold,cfr_executable=exe)
+                self.assertEqual(b['backend'],'native');self.assertEqual(a['tree'],b['tree'])
+                for x,y in zip(a['values_bb']+a['best_responses_bb'],b['values_bb']+b['best_responses_bb']):self.assertAlmostEqual(x,y,delta=1e-8)
+                self.assertEqual(len(a['policy']),len(b['policy']))
+                for x,y in zip(a['policy'],b['policy']):
+                    self.assertEqual((x['node'],x['holding']),(y['node'],y['holding']))
+                    for u,v in zip(x['actions'],y['actions']):
+                        self.assertAlmostEqual(u['frequency'],v['frequency'],delta=1e-8)
+                        if u['ev_bb'] is None:self.assertIsNone(v['ev_bb'])
+                        else:self.assertAlmostEqual(u['ev_bb'],v['ev_bb'],delta=1e-8)
+        for payload in ('0 1 1 1\n','3 1 1 1\n0 1\n0 0 2 1 1\n','1 1 1 1\n0 1\n-1 0 0\n'):
+            r=subprocess.run([exe],input=payload,text=True,capture_output=True,timeout=5)
+            self.assertNotEqual(r.returncode,0)
+
     def test_invalid_context_and_budgets(self):
         c=dict(polar(),board=BOARD[:4])
         for kwargs in (dict(max_pairs=1),dict(node_limit=2),dict(max_work=10),dict(iterations=0)):
