@@ -4,6 +4,8 @@ No full-session frame list, no OCR rerun for prints, no verified hand inference.
 import argparse
 import json
 import os
+import hashlib
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -64,6 +66,35 @@ def run(source,output,start,seconds,*,chunk=120,capacity=512,workers=2,backend='
         (stage/'session.json').write_text(json.dumps(result,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
         need(not out.exists() and not out.is_symlink(),'Output appeared');os.rename(stage,out)
     return result
+
+
+
+def load_interval(session_path,start,seconds):
+    """Load only overlapping verified window manifests for replay/print binding.
+    Source pixels still require Macro17 validation; no semantic hand claim.
+    """
+    need(type(start) is int and start>=0 and type(seconds) is int and 1<=seconds<=512,'Invalid interval')
+    p=Path(session_path);need(p.is_file() and not p.is_symlink() and 0<p.stat().st_size<=16*1024**2,'Invalid session index')
+    m=json.loads(p.read_text('utf-8'));need(type(m) is dict and m.get('version')=='plo5-windowed-candidates-v1' and m.get('variant')==5,'Invalid session index version')
+    source=m.get('source_sha256');need(type(source) is str and re.fullmatch(r'[0-9a-f]{64}',source) is not None,'Invalid source hash')
+    rows=m.get('windows');need(type(rows) is list and 1<=len(rows)<=43200,'Invalid window roster');end=start+seconds;prev=None;first=None;frames=[];checked=[]
+    from plo5_error_prints import frame_index
+    for i,w in enumerate(rows,1):
+        a,n=w['start'],w['seconds'];name=w['file'];need(type(a) is int and a>=0 and type(n) is int and 2<=n<=120 and (prev is None or a==prev) and name==f'window_{i:05d}.json','Invalid window sequence')
+        if first is None:first=a
+        prev=a+n
+        if a>=end or prev<=start:continue
+        f=p.parent/name;need(f.is_file() and not f.is_symlink() and 0<f.stat().st_size<=64*1024**2,'Missing window manifest')
+        raw=f.read_bytes();need(hashlib.sha256(raw).hexdigest()==w['sha256'],'Window hash mismatch');r=json.loads(raw)
+        need(r.get('source_sha256')==source and r.get('window_start')==a and r.get('window_seconds')==n and r.get('card_bank_sha256')==m.get('card_bank_sha256') and len(r['frames'])==w['frames'],'Window scope mismatch')
+        for pts,frame in frame_index(r).items():
+            need(a<=pts<prev,'Frame outside window')
+            if start<=pts<end:frames.append(frame)
+        checked.append(name)
+    need(first<=start and end<=prev,'Interval outside session')
+    need(len(frames)<=512,'Frame budget exceeded');out=dict(variant=5,status='WINDOWED_INTERVAL_CANDIDATES',source_sha256=source,frames=frames,checked_windows=checked,missing_sample_seconds=sorted(set(range(start,end))-{int(Fraction(f['pts'])//1) for f in frames}),hands_reconstructed=False,strategy_authorized=False)
+    frame_index(out)
+    return out
 
 
 def main(argv=None):
