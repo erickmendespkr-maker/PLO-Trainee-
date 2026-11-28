@@ -190,4 +190,15 @@ class AutoTests(unittest.TestCase):
         self.assertEqual(r['hands'][0]['end_reason'],'UNANCHORED_STREET')
         self.assertFalse(r['decision_records'])
 
+    def test_stack_rise_with_missing_pot_preserves_payout_rebuy_uncertainty(self):
+        first=frame(0,9.5,9,1.5)
+        payout=frame(1,9.5,12,1.5)
+        payout['observations'][1]['value_bb']=None
+        payout['cards'][0]['board_cards']=None
+        r=reconstruct(manifest(first,payout),1)
+        self.assertEqual(r['hands'][0]['end_reason'],'PAYOUT_OR_REBUY_UNRESOLVED')
+        self.assertFalse(r['hands'][0]['hand_verified'])
+        self.assertFalse(r['financial_result_verified'])
+        self.assertFalse(r['decision_records'])
+
 if __name__=='__main__':unittest.main()
