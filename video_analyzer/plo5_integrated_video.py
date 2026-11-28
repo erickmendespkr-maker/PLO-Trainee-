@@ -17,7 +17,7 @@ from plo5_error_prints import frame_index, groups, decode, capture, read
 from plo5_video_stream import digest
 from plo5_selective_review import select, street_filter, STREETS, VERSION, action_key
 from plo5_selective_study_report import build
-from plo5_auto_reconstruct import reconstruct, hero_turn
+from plo5_auto_reconstruct import ReconstructionStream, hero_turn
 from plo5_seat_evidence import SeatReader, SEATS, STACKS, ACTIONS, STARTS, detect, dealer
 from plo5_terminal_bounds import review as terminal_review
 from plo5_snapshot_replay import positions, reveal
@@ -138,23 +138,26 @@ def run(source,output,*,start=None,seconds=None,session=None,chunk=20,tables=(1,
             from plo5_native_seats import NativeSeatPool
             decoder=NativeSeatPool(workers);stack.callback(decoder.close);seat_opts['decoder']=decoder
         seat=SharedSeatReader(workers=workers,**seat_opts);stack.callback(seat.close)
+        streams={t:ReconstructionStream(t) for t in tables}
         for i,(a,length) in enumerate(parts,1):
             cancel();begin=perf_counter();coarse=load_interval(session,a,length);d=stage/f'window_{i:05d}';d.mkdir();timing={};t=perf_counter()
             refined=refine(source,coarse,a,length,card,budget=refine_budget) if refine_budget else None;timing['refinement']=perf_counter()-t;cancel();t=perf_counter()
-            obs=observe_shared(source,coarse,refined,tables,money,card,seat,dealt,cancel=cancel);timing['observation']=perf_counter()-t;t=perf_counter();records=[];hands=[];metrics=[];models=[];counters={}
+            obs=observe_shared(source,coarse,refined,tables,money,card,seat,dealt,cancel=cancel);timing['observation']=perf_counter()-t;t=perf_counter();records=[];hands=[];metrics=[];models=[];counters={};anchors={};active_tables=[]
             for table in sorted(tables):
-                cancel();m=table_manifest(obs,table);r=reconstruct(m,table);ids={h['seed']['hand_id'] for h in r['hands']};need(not used&ids,'Duplicate candidate hand identity');used.update(ids)
+                cancel();m=table_manifest(obs,table);r=streams[table].feed(m,final=i==len(parts));anchors.update({f['pts']:f for f in r['anchor_frames']});active_tables.extend([table] if r['active_hand'] else []);ids={h['seed']['hand_id'] for h in r['hands']};need(not used&ids,'Duplicate candidate hand identity');used.update(ids)
                 terminal=terminal_review(r,{k:v for k,v in cfg['terminal'].items() if k in ids},selected,rank_worker=ranker);models.extend(terminal['estimates']);metrics.extend(cfr_review(r,cfg['cfr'],selected,cache,native=native,rank=ranker,cancel=cancel));records.extend(r['decision_records']);hands.extend(r['hands']);counters[str(table)]=r['counts']
             timing['reconstruction_math']=perf_counter()-t;t=perf_counter();selection=select(records,selected);need(not selection['errors'] and not selection['adequate_count'],'Unexpected verified result from candidate path');cancel()
-            cap=capture(source,obs,records,d/'capture',selected);report=build(records,d/'study',selected,prints=d/'capture'/'manifest.json');timing['capture_report']=perf_counter()-t
-            write_json(d/'candidates.json',dict(observations=obs,hands=hands,decision_contract=dict(version=VERSION,decisions=records),metrics=metrics,terminal_models=models,table_counts=counters,refinement=refined,strategic_certification=False))
+            current_pts={f['pts'] for f in obs['frames']};carried=[f for p,f in anchors.items() if p not in current_pts];carried.sort(key=lambda f:Fraction(f['pts']))
+            evidence=dict(obs,frames=carried+obs['frames']);frame_index(evidence)
+            cap=capture(source,evidence,records,d/'capture',selected);report=build(records,d/'study',selected,prints=d/'capture'/'manifest.json');timing['capture_report']=perf_counter()-t
+            write_json(d/'candidates.json',dict(observations=obs,carried_anchors=carried,active_tables=active_tables,hands=hands,decision_contract=dict(version=VERSION,decisions=records),metrics=metrics,terminal_models=models,table_counts=counters,refinement=refined,strategic_certification=False))
             row=dict(window=d.name,start=a,seconds=length,coarse_frames=len(coarse['frames']),refined_frames=len(refined['frames']) if refined else 0,decoded_frames=len(obs['frames']),table_observations=sum(len(f['cards']) for f in obs['frames']),candidate_hands=len(hands),candidate_decisions=len(records),selected_pending=report['unresolved'],errors=report['errors'],prints=cap['unique_crops'],wall_seconds=perf_counter()-begin,stage_seconds=timing);rows.append(row)
             for k in ('coarse_frames','refined_frames','decoded_frames','table_observations','candidate_hands','candidate_decisions','selected_pending','errors','prints'):counts[k]+=row[k]
-            notify(phase='reconstruction',completed=i,total=len(parts),**row);del obs,coarse,refined,records,hands,metrics,models
+            notify(phase='reconstruction',completed=i,total=len(parts),**row);del obs,coarse,refined,records,hands,metrics,models,evidence,carried,anchors
         cancel();need(digest(source)==h and all(digest(v)==banks[k] for k,v in [('pppoker',ppp),('suprema',suprema)] if v),'Source or bank changed')
-        summary=dict(version='plo5-integrated-candidate-v1',source_sha256=h,bank_sha256=banks,streets=list(selected),tables=list(tables),windows=rows,counts=dict(counts),unused_config_hands=sorted((set(cfg['terminal'])|set(cfg['cfr']))-used),money_backend=backend,seat_backend=seat_backend,money_cache=money.cache.stats(),seat_cache=seat.stats(),rank_cache=ranker.stats() if ranker else None,wall_seconds=perf_counter()-t0,window_boundaries_split_hands=True,beta_ready=False,strategy_verified=False,drivehud_beta=False)
+        summary=dict(version='plo5-integrated-candidate-v1',source_sha256=h,bank_sha256=banks,streets=list(selected),tables=list(tables),windows=rows,counts=dict(counts),unused_config_hands=sorted((set(cfg['terminal'])|set(cfg['cfr']))-used),money_backend=backend,seat_backend=seat_backend,money_cache=money.cache.stats(),seat_cache=seat.stats(),rank_cache=ranker.stats() if ranker else None,wall_seconds=perf_counter()-t0,window_boundaries_split_hands=False,beta_ready=False,strategy_verified=False,drivehud_beta=False)
         write_json(stage/'summary.json',summary)
-        page=['<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PLO Trainee</title><style>body{font:16px system-ui;max-width:860px;margin:auto;padding:24px}section{border:1px solid #ddd;padding:16px;border-radius:8px;margin:12px 0}</style><h1>PLO Trainee — revisão offline PLO5</h1><p><strong>Candidato experimental, não beta validado.</strong> Não há certificação automática de estratégia; zero erros não significa jogo correto. Mãos podem ser interrompidas nos limites das janelas. DriveHUD em standby.</p>']
+        page=['<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PLO Trainee</title><style>body{font:16px system-ui;max-width:860px;margin:auto;padding:24px}section{border:1px solid #ddd;padding:16px;border-radius:8px;margin:12px 0}</style><h1>PLO Trainee — revisão offline PLO5</h1><p><strong>Candidato experimental, não beta validado.</strong> Não há certificação automática de estratégia; zero erros não significa jogo correto. O estado candidato continua entre janelas; lacunas, conflitos e limites de segurança ainda interrompem mãos. As decisões aparecem na janela de encerramento do candidato. DriveHUD em standby.</p>']
         for r in rows:page.append(f'<section><h2>{r["start"]}–{r["start"]+r["seconds"]} s</h2><p>Decisões candidatas: {r["candidate_decisions"]}; pendentes selecionadas: {r["selected_pending"]}; erros demonstrados: {r["errors"]}</p><a href="{r["window"]}/study/index.html">Relatório seletivo</a> · <a href="{r["window"]}/candidates.json">Diagnóstico técnico</a></section>')
         page.append('<p><a href="summary.json">Resumo técnico</a></p></html>');(stage/'index.html').write_text(''.join(page),encoding='utf-8');need(not out.exists() and not out.is_symlink(),'Output appeared');os.rename(stage,out)
     return summary
