@@ -12,7 +12,7 @@ from plo5_snapshot_replay import positions, chips, reveal, SEATS, STREET
 from plo5_error_prints import frame_index, groups, decode, bind, stamp, read
 from plo5_video_stream import digest
 from plo5_selective_review import action_key, select
-from plo5_visual_continuity import continuity_flags
+from plo5_visual_continuity import continuity_chain_flags
 import plo5_pre_gto_tree as pre
 import plo5_post_gto_tree as post
 
@@ -131,11 +131,11 @@ def recover(s,target,pot,*,active=(),folded=(),labels=None,expected_actor=None,c
 def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
     """Scan without annotations; all seeds and actions remain conditional."""
     integer(sb,1);integer(bb,1);need(sb<bb and type(table) is int and 1<=table<=4,'Invalid blinds/table');need(0<max_gap<=3,'Invalid gap')
-    records=[];anchors={};current=None;last_seed=None;pending=[];old_frame=None
+    records=[];anchors={};current=None;last_seed=None;pending=[];old_frame=None;last_seen=None
     def close(reason):
-        nonlocal current,pending,records,anchors,old_frame
+        nonlocal current,pending,records,anchors,old_frame,last_seen
         if current is not None:
-            current['end_reason']=reason;current['unresolved_checkpoint_pts']=[c['pts'] for c in pending];current['terminal_candidate']=s.status;current['hand_verified']=False;counts['END_'+reason]+=1;emit(current,records,anchors);current=None;pending=[];records=[];anchors={};old_frame=None
+            current['end_reason']=reason;current['unresolved_checkpoint_pts']=[c['pts'] for c in pending];current['terminal_candidate']=s.status;current['hand_verified']=False;counts['END_'+reason]+=1;emit(current,records,anchors);current=None;pending=[];records=[];anchors={};old_frame=None;last_seen=None
     while True:
         item=yield current is not None
         if isinstance(item,str):close(item);return
@@ -146,11 +146,12 @@ def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
         complete=x['holding'] is not None and x['board'] is not None and x['pot'] is not None and x['button'] is not None
         counts['complete_snapshots' if complete else 'partial_snapshots']+=1
         if current is not None:
-            flags=continuity_flags(old,x,max_gap)
+            flags=continuity_chain_flags(old,last_seen,x,max_gap)
             if flags:
                 for flag in flags:counts['CONTINUITY_'+flag]+=1
                 close('CONTINUITY_UNKNOWN')
             elif x['board'] is not None and x['board'][:len(old['board'])]!=old['board']:close('BOARD_RESET_OR_CONFLICT')
+            else:last_seen=x
         if current is None:
             if not complete:continue
             signature=(x['platform'],x['profile'],x['button'],tuple(x['holding']))
@@ -158,7 +159,7 @@ def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
             try:sd=seed_from(x,table,sb,bb);mapping=positions(sd['dealt'],sd['button']);s=pre.start({v:sd['initial'][k] for k,v in mapping.items()},sb,bb)
             except ValueError as exc:counts[str(exc)]+=1;continue
             if x['actor'] is not None and mapping[x['actor']]!=s.actor:counts['SEED_ACTOR_CONFLICT']+=1;continue
-            last_seed=signature;current=dict(seed=sd,positions=mapping,events=[],intervals=[],first_pts=x['pts'],last_pts=x['pts'],next_actor_candidate=s.actor);old=x;old_frame=f;counts['seed_candidates']+=1;continue
+            last_seed=signature;current=dict(seed=sd,positions=mapping,events=[],intervals=[],first_pts=x['pts'],last_pts=x['pts'],next_actor_candidate=s.actor);old=x;old_frame=f;last_seen=x;counts['seed_candidates']+=1;continue
         target={v:x['remaining'][k] for k,v in mapping.items()}
         if any(x['opponents'].get(k)==BACK for k in set(SEATS)-set(mapping)):close('ROSTER_CONFLICT');continue
         active=[v for k,v in mapping.items() if x['opponents'].get(k)==BACK]
