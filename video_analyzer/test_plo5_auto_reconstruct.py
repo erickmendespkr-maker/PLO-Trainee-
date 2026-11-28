@@ -201,4 +201,18 @@ class AutoTests(unittest.TestCase):
         self.assertFalse(r['financial_result_verified'])
         self.assertFalse(r['decision_records'])
 
+    def test_unique_flop_turn_and_river_boundaries_preserve_unverified_actions(self):
+        cards=['2c','3d','4h','5s','6s']
+        r=reconstruct(manifest(frame(0,9.5,9,1.5),
+                               frame(1,9,9,2,board=cards[:3]),
+                               frame(2,9,9,2,board=cards[:4]),
+                               frame(3,9,9,2,board=cards)),1)
+        self.assertEqual(r['counts']['BOUNDARY_UNIQUE_WITHIN_BOUNDS'],3)
+        self.assertEqual(r['counts']['BOUNDARY_ACTIONS_UNVERIFIED'],6)
+        self.assertEqual([e['cards'] for e in r['hands'][0]['events'] if 'cards' in e],
+                         [cards[:3],cards[3:4],cards[4:]])
+        self.assertEqual(r['hands'][0]['replay_audit']['status'],'LEGAL_PREFIX_CONSISTENT')
+        self.assertFalse(r['decision_records'])
+        self.assertFalse(r['hands'][0]['hand_verified'])
+
 if __name__=='__main__':unittest.main()
