@@ -100,4 +100,41 @@ class AutoTests(unittest.TestCase):
         self.assertEqual(r['hands'][0]['unresolved_checkpoint_pts'],['1'])
         self.assertFalse(r['decision_records'])
 
+
+    def test_many_identical_partial_frames_compact_and_resume(self):
+        from fractions import Fraction
+        a=frame(0,9.5,9,1.5)
+        repeats=[frame(Fraction(i,10),9.5,9,1.5) for i in range(1,12)]
+        for f in repeats:
+            f['cards'][0]['hero_cards']=None
+            f['cards'][0]['seat_evidence']['dealer']['seat']=None
+        z=frame('3/2',7,9,4,{'hero_bottom':'raise'})
+        r=reconstruct(manifest(a,*repeats,z),1)
+        self.assertEqual(r['counts']['DEFERRED_PARTIAL'],11)
+        self.assertEqual(r['counts']['DEFERRED_DUPLICATE'],10)
+        self.assertEqual(len(r['hands']),1)
+        self.assertEqual(r['hands'][0]['events'][0]['amount'],25)
+        self.assertEqual(r['hands'][0]['replay_audit']['status'],'LEGAL_PREFIX_CONSISTENT')
+
+    def test_partial_evidence_cannot_span_unbounded_time(self):
+        a=frame(0,9.5,9,1.5)
+        repeats=[frame(i,9.5,9,1.5) for i in range(1,7)]
+        for f in repeats:
+            f['cards'][0]['hero_cards']=None
+            f['cards'][0]['seat_evidence']['dealer']['seat']=None
+        r=reconstruct(manifest(a,*repeats),1)
+        self.assertEqual(r['hands'][0]['end_reason'],'CHECKPOINT_TIMEOUT')
+        self.assertFalse(r['decision_records'])
+
+    def test_replay_divergence_suppresses_candidate_decisions(self):
+        from unittest.mock import patch
+        a=frame(0,9.5,9,1.5)
+        b=frame(1,7,9,4,{'hero_bottom':'raise'})
+        c=frame(2,7,9,4,{'hero_bottom':'raise','top':'fold'},'unknown')
+        with patch('plo5_auto_reconstruct.audit_auto_events',return_value={'status':'TERMINAL_MISMATCH'}):
+            r=reconstruct(manifest(a,b,c),1)
+        self.assertEqual(r['counts']['REPLAY_AUDIT_REJECTED'],1)
+        self.assertFalse(r['decision_records'])
+        self.assertEqual(r['hands'][0]['replay_audit']['status'],'TERMINAL_MISMATCH')
+
 if __name__=='__main__':unittest.main()
