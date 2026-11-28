@@ -117,15 +117,19 @@ def recover(s,target,pot,*,active=(),folded=(),labels=None,expected_actor=None,c
     return dict(status=status,paths=hits,visited=visited)
 
 
-def reconstruct(manifest,table,*,sb=5,bb=10,max_gap=Fraction(2),max_actions=4,max_nodes=20000):
+def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
     """Scan without annotations; all seeds and actions remain conditional."""
     integer(sb,1);integer(bb,1);need(sb<bb and type(table) is int and 1<=table<=4,'Invalid blinds/table');need(0<max_gap<=3,'Invalid gap')
-    frames=frame_index(manifest);counts=Counter();hands=[];records=[];current=None;last_seed=None;pending=[]
+    records=[];anchors={};current=None;last_seed=None;pending=[];old_frame=None
     def close(reason):
-        nonlocal current,pending
+        nonlocal current,pending,records,anchors,old_frame
         if current is not None:
-            current['end_reason']=reason;current['unresolved_checkpoint_pts']=[c['pts'] for c in pending];current['terminal_candidate']=s.status;current['hand_verified']=False;counts['END_'+reason]+=1;hands.append(current);current=None;pending=[]
-    for p,f in frames.items():
+            current['end_reason']=reason;current['unresolved_checkpoint_pts']=[c['pts'] for c in pending];current['terminal_candidate']=s.status;current['hand_verified']=False;counts['END_'+reason]+=1;emit(current,records,anchors);current=None;pending=[];records=[];anchors={};old_frame=None
+    while True:
+        item=yield current is not None
+        if isinstance(item,str):close(item);return
+        manifest,p,f=item
+        if current is not None and (len(current['events'])>512-max_actions-1 or len(current['intervals'])>=2048):close('ACTIVE_HAND_BUDGET')
         try:x=snapshot(f,table,bb,partial=True)
         except ValueError as exc:counts[str(exc)]+=1;close('INCOMPLETE_OBSERVATION');continue
         complete=x['holding'] is not None and x['board'] is not None and x['pot'] is not None
@@ -140,7 +144,7 @@ def reconstruct(manifest,table,*,sb=5,bb=10,max_gap=Fraction(2),max_actions=4,ma
             try:sd=seed_from(x,table,sb,bb);mapping=positions(sd['dealt'],sd['button']);s=pre.start({v:sd['initial'][k] for k,v in mapping.items()},sb,bb)
             except ValueError as exc:counts[str(exc)]+=1;continue
             if x['actor'] is not None and mapping[x['actor']]!=s.actor:counts['SEED_ACTOR_CONFLICT']+=1;continue
-            last_seed=signature;current=dict(seed=sd,positions=mapping,events=[],intervals=[],first_pts=x['pts'],last_pts=x['pts'],next_actor_candidate=s.actor);old=x;counts['seed_candidates']+=1;continue
+            last_seed=signature;current=dict(seed=sd,positions=mapping,events=[],intervals=[],first_pts=x['pts'],last_pts=x['pts'],next_actor_candidate=s.actor);old=x;old_frame=f;counts['seed_candidates']+=1;continue
         target={v:x['remaining'][k] for k,v in mapping.items()}
         if any(x['opponents'].get(k)==BACK for k in set(SEATS)-set(mapping)):close('ROSTER_CONFLICT');continue
         active=[v for k,v in mapping.items() if x['opponents'].get(k)==BACK]
@@ -157,7 +161,7 @@ def reconstruct(manifest,table,*,sb=5,bb=10,max_gap=Fraction(2),max_actions=4,ma
             try:nxt=reveal(s,x['board'][len(old['board']):]);need(len(x['board'])==len(nxt.board),'Skipped street')
             except ValueError:close('UNANCHORED_STREET');continue
             if target!=dict(zip(nxt.order,nxt.remaining)) or x['pot']!=nxt.pot or x['actor'] is not None and mapping[x['actor']]!=nxt.actor or labels:close('UNANCHORED_STREET');continue
-            s=nxt;current['events'].append(dict(cards=x['board'][len(old['board']):]));old=x;current['last_pts']=x['pts'];current['next_actor_candidate']=s.actor;continue
+            s=nxt;current['events'].append(dict(cards=x['board'][len(old['board']):]));old=x;old_frame=f;current['last_pts']=x['pts'];current['next_actor_candidate']=s.actor;continue
         folded=[v for v,a in labels.items() if a=='fold']
         if set(active)&set(folded):close('CONFLICTING_FOLD_EVIDENCE');continue
         r=recover(s,target,x['pot'],active=active,folded=folded,labels=labels,expected_actor=mapping.get(x['actor']),checkpoints=pending,max_actions=max_actions,max_nodes=max_nodes)
@@ -170,12 +174,48 @@ def reconstruct(manifest,table,*,sb=5,bb=10,max_gap=Fraction(2),max_actions=4,ma
         for j,e in enumerate(r['paths'][0]):
             if e['position']==mapping['hero_bottom']:
                 b=engine.bounds(s);call=b['call_payment'];d=dict(hand_id=current['seed']['hand_id'],decision_id=str(len(current['events'])),street=STREET[len(old['board'])],action=action_key([e['action'],e['amount']]),pot_odds=call/(s.pot+call) if call else None,reconstruction_verified=False,strategy_verified=False,action_set_complete=False,action_ev_bounds={})
-                d['evidence']=bind(manifest,d,old['pts'],table,'before',index=frames) if j==0 else None;records.append(d)
+                d['evidence']=bind(manifest,d,old['pts'],table,'before',index={stamp(old['pts']):old_frame}) if j==0 else None;records.append(d)
+                if d['evidence'] is not None:anchors[stamp(old['pts'])]=old_frame
             s=engine.step(s,e['position'],e['action'],e['amount']);current['events'].append(e)
-        old=x;current['last_pts']=x['pts'];current['next_actor_candidate']=s.actor
+        old=x;old_frame=f;current['last_pts']=x['pts'];current['next_actor_candidate']=s.actor
         if s.status=='fold_terminal' or len(x['board'])==5 and s.status in ('all_in_showdown','river_showdown'):close('TERMINAL_CANDIDATE')
-    close('WINDOW_END')
-    return dict(version='plo5-auto-reconstruction-candidates-v1',counts=dict(counts),hands=hands,decision_records=records,selection=select(records),hands_reconstructed=False,strategy_authorized=False,financial_result_verified=False)
+
+
+class ReconstructionStream:
+    """One active legal state per table; release each candidate once, on closure.
+    Frames must arrive in strict PTS order from one source. No window-boundary reset.
+    Memory is bounded by one active hand (512 events, 2048 intervals, <=6 deferred
+    checkpoints and at most 512 distinct decision anchors) plus the current batch.
+    """
+    def __init__(self,table,*,sb=5,bb=10,max_gap=Fraction(2),max_actions=4,max_nodes=20000):
+        need(type(max_actions) is int and 0<=max_actions<=12,'Invalid action budget')
+        self.table=table;self.source=None;self.last=None;self.closed=False;self.active=False;self.counts=Counter();self.hands=[];self.records=[];self.anchors={}
+        self.machine=_machine(table,sb,bb,max_gap,max_actions,max_nodes,self.counts,self._emit);next(self.machine)
+    def _emit(self,hand,records,anchors):
+        self.hands.append(hand);self.records.extend(records);self.anchors.update(anchors)
+    def feed(self,manifest,*,final=False,end_reason='SESSION_END'):
+        need(not self.closed and type(final) is bool and end_reason in ('SESSION_END','WINDOW_END'),'Invalid stream lifecycle')
+        frames=frame_index(manifest);source=manifest['source_sha256'];need(self.source is None or self.source==source,'Stream source changed')
+        need(len(frames)<=512 and (not frames or self.last is None or next(iter(frames))>self.last),'Overlapping or oversized stream batch')
+        need(all(sum(c['table_id']==self.table for c in f['cards'])==1 for f in frames.values()),'Stream table missing or duplicated')
+        self.source=source;before=self.counts.copy()
+        # Pass only source identity to the coroutine, not the whole batch manifest.
+        identity=dict(variant=5,source_sha256=source)
+        for pts,frame in frames.items():
+            self.active=self.machine.send((identity,pts,frame));self.last=pts
+        if final:
+            try:self.machine.send(end_reason)
+            except StopIteration:pass
+            self.closed=True;self.active=False
+        result=dict(version='plo5-auto-reconstruction-candidates-v1',counts=dict(self.counts-before),hands=self.hands,decision_records=self.records,selection=select(self.records),anchor_frames=[self.anchors[k] for k in sorted(self.anchors)],active_hand=self.active,hands_reconstructed=False,strategy_authorized=False,financial_result_verified=False)
+        self.hands=[];self.records=[];self.anchors={}
+        return result
+
+
+def reconstruct(manifest,table,*,sb=5,bb=10,max_gap=Fraction(2),max_actions=4,max_nodes=20000):
+    """Backward-compatible one-window reconstruction."""
+    r=ReconstructionStream(table,sb=sb,bb=bb,max_gap=max_gap,max_actions=max_actions,max_nodes=max_nodes).feed(manifest,final=True,end_reason='WINDOW_END')
+    r.pop('anchor_frames');r.pop('active_hand');return r
 
 
 def main(argv=None):
