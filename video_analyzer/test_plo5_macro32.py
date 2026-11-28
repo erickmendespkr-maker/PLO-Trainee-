@@ -48,7 +48,9 @@ class PerformanceTests(unittest.TestCase):
                 c=Count(w);ref=envelopes(s,'BTN',deal,[('call',2)],**a);r=envelopes(s,'BTN',deal,[('call',2)],rank_worker=c,**a)
                 self.assertEqual(r,ref);self.assertLessEqual(c.calls,1)
 
-@unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'),'FFmpeg required')
+@unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe') and
+                     (Path(__file__).resolve().parents[1]/'calibration'/'ppp_bank.json').is_file(),
+                     'FFmpeg and validated PPPoker calibration bank required')
 class ReanalysisTests(unittest.TestCase):
     def test_no_ocr_and_scope_validation(self):
         from plo5_integrated_video import run
