@@ -13,6 +13,7 @@ from plo5_error_prints import frame_index, groups, decode, bind, stamp, read
 from plo5_video_stream import digest
 from plo5_selective_review import action_key, select
 from plo5_visual_continuity import continuity_chain_flags
+from plo5_observation_checkpoints import defer_checkpoint
 import plo5_pre_gto_tree as pre
 import plo5_post_gto_tree as post
 
@@ -167,9 +168,13 @@ def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
         cp=dict(pts=x['pts'],remaining={v:n for v,n in target.items() if n is not None},pot=x['pot'],active=active,actor=mapping.get(x['actor']))
         if not complete or any(v is None for v in target.values()):
             # Keep only compatible partial observations as constraints, never impute cards.
-            if labels or len(pending)>=6 or x['board'] is not None and x['board']!=old['board'] or any(cp['remaining'].get(v,0)>s.remaining[i] for i,v in enumerate(s.order)):
+            if labels or x['board'] is not None and x['board']!=old['board'] or any(cp['remaining'].get(v,0)>s.remaining[i] for i,v in enumerate(s.order)):
                 close('INCOMPLETE_OBSERVATION');continue
-            pending.append(cp);counts['DEFERRED_PARTIAL']+=1
+            deferred=defer_checkpoint(pending,cp,max_span=Fraction(max_gap)*2)
+            if deferred in ('LIMIT','TIMEOUT'):
+                close('CHECKPOINT_'+deferred);continue
+            if deferred=='DUPLICATE':counts['DEFERRED_DUPLICATE']+=1
+            counts['DEFERRED_PARTIAL']+=1
             if x['button'] is None:counts['DEFERRED_DEALER_MISSING']+=1
             continue
         if any(target[v]>s.remaining[i] for i,v in enumerate(s.order)):close('PAYOUT_OR_REBUY_UNRESOLVED');continue
@@ -183,8 +188,12 @@ def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
         if set(active)&set(folded):close('CONFLICTING_FOLD_EVIDENCE');continue
         r=recover(s,target,x['pot'],active=active,folded=folded,labels=labels,expected_actor=mapping.get(x['actor']),checkpoints=pending,max_actions=max_actions,max_nodes=max_nodes)
         counts[r['status']]+=1;current['intervals'].append(dict(before_pts=old['pts'],after_pts=x['pts'],status=r['status'],visited=r['visited'],checkpoint_pts=[c['pts'] for c in pending]))
-        if r['status']=='AMBIGUOUS' and not labels and len(pending)<6:
-            pending.append(cp);counts['DEFERRED_AMBIGUOUS']+=1;continue
+        if r['status']=='AMBIGUOUS' and not labels:
+            deferred=defer_checkpoint(pending,cp,max_span=Fraction(max_gap)*2)
+            if deferred in ('LIMIT','TIMEOUT'):
+                close('CHECKPOINT_'+deferred);continue
+            if deferred=='DUPLICATE':counts['DEFERRED_DUPLICATE']+=1
+            counts['DEFERRED_AMBIGUOUS']+=1;continue
         if r['status']!='UNIQUE_WITHIN_BOUNDS':close(r['status']);continue
         pending=[]
         engine=pre if isinstance(s,pre.State) else post
