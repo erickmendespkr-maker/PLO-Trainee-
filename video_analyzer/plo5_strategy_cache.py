@@ -16,6 +16,8 @@ from plo5_post_gto_multiway import prior, model_identity, solve
 VERSION = 'multiway-strategy-zlib-v1'
 MAX_RAW = 64*1024**2
 MAX_PACKED = 32*1024**2
+CACHE_MAX_BYTES = 128*1024**2
+CACHE_MAX_ENTRIES = 512
 SOURCES = ('plo5_strategy_cache.py','plo5_post_gto_multiway.py','plo5_post_gto_multiway_ledger.py',
            'plo5_post_gto_context.py','plo5_post_gto_tree.py','plo5_pre_gto_context.py',
            'plo5_multiway_native.py','plo5_evaluator.py','plo5_rank_cache.py','offline_omaha_showdown.py')
@@ -80,6 +82,20 @@ def _validate(r,spec):
     need(r['legal_deals']<=md and r['chance_outcomes']<=mo and r['nodes']<=nl and r['work_per_iteration']*(r['iterations']+5)<=mw,'Cache budget mismatch')
 
 
+def prune(con,*,max_bytes=CACHE_MAX_BYTES,max_entries=CACHE_MAX_ENTRIES):
+    """FIFO logical byte/row budget, caller owns write transaction. No VACUUM.
+    SQLite pages and journal can exceed the logical budget; free pages are reusable.
+    """
+    need(type(max_bytes) is int and 0<=max_bytes<=2**31 and type(max_entries) is int and 0<=max_entries<=100000,'Invalid cache quota')
+    total,count=con.execute('SELECT COALESCE(SUM(length(spec)+length(payload)+length(cache_key)+length(checksum)+8),0),COUNT(*) FROM strategy_zlib_v1').fetchone()
+    removed=0
+    while total>max_bytes or count>max_entries:
+        row=con.execute('SELECT rowid,length(spec)+length(payload)+length(cache_key)+length(checksum)+8 FROM strategy_zlib_v1 ORDER BY rowid LIMIT 1').fetchone()
+        if row is None:break
+        con.execute('DELETE FROM strategy_zlib_v1 WHERE rowid=?',(row[0],));total-=row[1];count-=1;removed+=1
+    return dict(entries=count,logical_bytes=total,removed=removed)
+
+
 def solve_cached(path,context,iterations=100,pot_bps=(),*,rake_on_fold,joint=None,
                  max_deals=4096,max_outcomes=100000,node_limit=100000,max_work=20000000,
                  cfr_executable=None,native_timeout=120,include_deal_values=False):
@@ -95,7 +111,9 @@ def solve_cached(path,context,iterations=100,pot_bps=(),*,rake_on_fold,joint=Non
         r=solve(context,iterations,sorted(set(pot_bps)),native_timeout=native_timeout,**opts);_validate(r,spec)
         need(specification(context,iterations,pot_bps,**opts)[0]==key,'Model changed during solve')
         blob,size,checksum=pack(r)
-        with con:con.execute('INSERT OR IGNORE INTO strategy_zlib_v1 VALUES (?,?,?,?,?)',(key,encoded,size,checksum,blob))
+        with con:
+            con.execute('INSERT OR IGNORE INTO strategy_zlib_v1 VALUES (?,?,?,?,?)',(key,encoded,size,checksum,blob))
+            prune(con)
         return dict(cache_key=key,cache_hit=False,result=r,raw_bytes=size,stored_bytes=len(blob))
 
 
