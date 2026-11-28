@@ -5,6 +5,7 @@ from fractions import Fraction
 from plo5_reconstruction_candidates import money, state
 from plo5_pre_gto_context import need
 from plo5_error_prints import frame_index
+from plo5_financial_bridge import display_balance
 
 
 class DisplayTransitions:
@@ -28,5 +29,5 @@ class DisplayTransitions:
                 drop=old['pot'] is not None and pot is not None and pot<old['pot'];reset=old['cards'] is not None and now['cards'] is not None and bool(old['cards'][1]) and not now['cards'][1]
                 if not (rises or drop or reset):continue
                 continuity=old['cards'] is not None and now['cards'] is not None and old['cards'][0]==now['cards'][0] and now['cards'][1][:len(old['cards'][1])]==old['cards'][1] and old['dealer'] is not None and old['dealer']==now['dealer']
-                out.append(dict(table_id=t,before_pts=str(old['pts']),after_pts=str(pts),before_rgb_sha256=old['sha'],after_rgb_sha256=now['sha'],stack_display_increases_bb=rises,pot_before_bb=None if old['pot'] is None else str(old['pot']),pot_after_bb=None if pot is None else str(pot),board_reset_candidate=reset,card_dealer_continuity_candidate=continuity,status='DISPLAY_CHANGE_UNATTRIBUTED',payout_verified=False,rebuy_verified=False,showdown_verified=False,financial_result_verified=False))
+                out.append(dict(table_id=t,before_pts=str(old['pts']),after_pts=str(pts),before_rgb_sha256=old['sha'],after_rgb_sha256=now['sha'],stack_display_increases_bb=rises,pot_before_bb=None if old['pot'] is None else str(old['pot']),pot_after_bb=None if pot is None else str(pot),board_reset_candidate=reset,card_dealer_continuity_candidate=continuity,screen_balance=display_balance(old['stacks'],stacks,old['pot'],pot),status='DISPLAY_CHANGE_UNATTRIBUTED',payout_verified=False,rebuy_verified=False,showdown_verified=False,financial_result_verified=False))
         return out
