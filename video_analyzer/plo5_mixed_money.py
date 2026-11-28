@@ -17,7 +17,7 @@ from PIL import Image, ImageOps
 
 STARTS=(0,378,755,1131)
 REGIONS={'pppoker':{'stack':(159,627,218,640),'pot':(151,261,230,279)},
-         'suprema':{'stack':(162,601,218,612),'pot':(151,232,230,251)}}
+         'suprema':{'stack':(160,598,220,611),'pot':(151,232,230,251)}}
 
 
 def parse(text,platform,field):
