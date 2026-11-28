@@ -73,10 +73,26 @@ class AutoTests(unittest.TestCase):
         self.assertEqual(r['hands'][0]['end_reason'],'CONTINUITY_UNKNOWN')
         self.assertFalse(r['decision_records'])
 
+    def test_partial_chain_stays_contiguous_without_losing_anchor(self):
+        a=frame(0,9.5,9,1.5);b=frame(1,9.5,9,1.5);c=frame(2,9.5,9,1.5)
+        for item in (b,c):
+            item['cards'][0]['seat_evidence']['dealer']['seat']=None
+            item['cards'][0]['hero_cards']=None
+        d=frame(3,7,9,4,{'hero_bottom':'raise'})
+        r=reconstruct(manifest(a,b,c,d),1)
+        self.assertEqual(r['counts'].get('CONTINUITY_PTS_GAP',0),0)
+        self.assertEqual(r['counts']['DEFERRED_PARTIAL'],2)
+        self.assertEqual(r['hands'][0]['events'][0],dict(position='SB',action='raise',amount=25))
+        self.assertEqual(r['hands'][0]['intervals'][-1]['checkpoint_pts'],['1','2'])
+        d['cards'][0]['seat_evidence']['dealer']['seat']='top'
+        r=reconstruct(manifest(a,b,c,d),1)
+        self.assertEqual(r['counts']['CONTINUITY_DEALER_CONFLICT'],1)
+        self.assertFalse(r['decision_records'])
+
     def test_dealer_dropout_cannot_bridge_gap_or_advance_street(self):
         a=frame(0,9.5,9,1.5);b=frame(1,9.5,9,1.5)
         b['cards'][0]['seat_evidence']['dealer']['seat']=None
-        c=frame(3,7,9,4,{'hero_bottom':'raise'})
+        c=frame(4,7,9,4,{'hero_bottom':'raise'})
         r=reconstruct(manifest(a,b,c),1)
         self.assertEqual(r['counts']['CONTINUITY_PTS_GAP'],1)
         self.assertFalse(r['decision_records'])
