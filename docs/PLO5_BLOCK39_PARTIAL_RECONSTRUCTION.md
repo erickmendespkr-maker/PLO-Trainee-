@@ -95,3 +95,47 @@ python -m unittest -q test_plo5_auto_reconstruct test_plo5_snapshot_replay test_
 ```
 
 **Result: 81 tests, 74 passed, 7 skipped, zero failures, 2.878s wall-time**, with actual original engines and selected tests recovered by GitHub. No authentic bank means no certified full-video reconstruction, no hand denominator and no financial +EV classification. Remaining blocker stays the authentic card-bank or validated observation set, followed by complete Parte01 and independent ground truth.
+
+
+## Recovered Macro32/Macro22 authentic calibration and manifest archive (2026-11-28)
+
+A later, successful **user Library → temporary private Google Drive copy → local Linux** transfer recovered the exact historical ZIP bytes. The Library originals were not modified.
+
+| Source | SHA-256 | Integrity |
+|---|---|---|
+| `PLO_Trainee_Macro32_Candidato_Integrado.zip` | `cf0f34240593a46f6a3a3cfe6251cf9bc1b7328651ff1636d7fcd6f85ae29b36` | All 168 files in the built-in SHA256SUMS matched |
+| `PLO_Trainee_Macro22_Parte01_Manifestos.zip` | `fd8eb6b0ee2d001b8c953cf59355db547ebe14f173e7da33b67a940edd3ca89d` | All 14 declared window SHA-256 hashes matched |
+| `Poker_Parte_01.mp4` | `c9aad5102a54941b8cb5f4bbc20eca45fc757ff96fd95de173c0ac0d95ac19eb` | Source hash matches the archived session |
+
+Three authentic rank-template files were restored to the **private development branch**:
+
+- `calibration/ppp_bank.json` SHA-256 `fb992caef5c4539486c74bca888a49f517c5ea9a2f7b1ba1439cd89397c8b95d` (42 original rank templates)
+- `calibration/ppp_macro18.json` SHA-256 `17ae09d9bb29ebd3b1c76e20f61047ad415a8eeaf74e5cd217d10f9f80a17c37` (102 templates)
+- `calibration/suprema_bank.json` SHA-256 `9850343ce83bc569695491fe42b3eff2a4b178209a0188f86a0e114dc7654c02` (47 templates; from `calibration_complementar/suprema_macro18.json` in Macro32).
+
+The Macro22 session explicitly declares the latter two SHA-256 hashes, PLO5, 14 windows, **1,604 sampled frames**, and `hands_reconstructed=false`. The original file-window bytes stay private and local; they are **not checked in**, nor are frames, player holdings, pot amounts, or individual session decisions. These hashes prove **file integrity and compatibility**, not visual-recognition accuracy.
+
+`video_analyzer/plo5_manifest_archive.py` now imports the original Macro22 ZIP safely: exact MP4 and bank SHA-256 matching, template structural checks, file roster, timestamp ordering, per-window hashes, bounded decompression, atomic local restore, and zero verification claims. A malicious extra path or tampered window is rejected. `test_plo5_manifest_archive.py` adds seven tests.
+
+Reproducible offline import (from the repository root):
+
+```bash
+python video_analyzer/plo5_manifest_archive.py Macro22_Parte01_Manifestos.zip Poker_Parte_01.mp4 observacoes_restauradas --ppp calibration/ppp_macro18.json --suprema calibration/suprema_bank.json
+python video_analyzer/plo5_integrated_video.py Poker_Parte_01.mp4 saida_diagnostica --session observacoes_restauradas/session.json --start 0 --seconds 60 --tables 2 --workers 2 --ppp calibration/ppp_macro18.json --suprema calibration/suprema_bank.json --refine-budget 0
+```
+
+The restored `session.json` passed the **actual current** `plo5_bounded_session.load_interval` for intervals `0:12`, `113:9`, `149:31`, `812:22`, `1503:17` (seconds). A real `plo5_integrated_video` run processed seat/dealt evidence on Parte01 with the matched banks; no synthetic game observations were substituted.
+
+**Conservative continuity improvement:** a complete, positive-identity, adjacent-PTS snapshot can remain visually unchanged for more than three seconds while a player thinks. The original ambiguity timeout prematurely closed actual candidates; ambiguous-complete snapshots now retain a bounded `min(30 seconds, 10 * max_gap)` grace interval, while incomplete observations keep their stricter existing timeout. The action-path and terminal-status audits, six distinct-checkpoint budget and absence of authorization remain unchanged. Two new tests cover continuation through a stable interval and an absolute timeout.
+
+A local comparison on the *same* archived enriched observations found, for table 2 around 0–60 seconds, one candidate prefix grew from **1 to 4 legal candidate events** before a genuine `UNANCHORED_STREET` conflict. This is **not** evidence that four true actions were verified. The longer pending window retains evidence for disambiguation; it does not force or certify a hand.
+
+**Extended Parte01 sample (real video, source-matched banks, original PLO5 engines):**
+
+- Table 2: 0–116 seconds, 116 observed frames; 2 candidate prefixes, 0 decision candidates, 0 terminal/verified hands. Closures: one `UNANCHORED_STREET`, one `SESSION_END`.
+- Table 1: 145–240 seconds, 95 observed frames; 2 candidate prefixes, **1 unverified** decision candidate, 0 terminal/verified hands. Closures: one `CHECKPOINT_TIMEOUT`, one `SESSION_END`.
+- **Total: 211 decoded frames, 4 replay-consistent incomplete prefixes, 1 unverified decision, 0 financially certified hands.** Do not confuse prefix legality with ground-truth actions or rake/rebuy reconciliation.
+
+The combined local regression was **90 tests, 87 passed, 3 skipped, 0 failures**. Skips depend on optional native functionality; authentic PPPoker calibration now makes the Macro32 integrated test runnable. A full Parte01 reconstruction and independent manual ground truth remains unresolved. No bankroll result, winner, 30-BB loss, showdown or +EV decision has been certified.
+
+Keep main, the Parte06 holdout, DriveHUD standby and post-session/offline scope unchanged. No RTA and no automation.
