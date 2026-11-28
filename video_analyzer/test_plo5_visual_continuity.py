@@ -1,7 +1,7 @@
 import unittest
 from fractions import Fraction
 from PIL import Image
-from plo5_visual_continuity import continuity_flags, seat_ocr_key
+from plo5_visual_continuity import continuity_flags, continuity_chain_flags, seat_ocr_key
 
 
 class VisualContinuityTests(unittest.TestCase):
@@ -23,6 +23,19 @@ class VisualContinuityTests(unittest.TestCase):
     def test_missing_holding_is_not_positive_conflict(self):
         self.assertEqual(self.flags(holding=None), ())
         self.assertEqual(self.flags(holding=['2s']), ('HOLDING_CONFLICT',))
+
+    def test_partial_chain_preserves_temporal_continuity(self):
+        partial=dict(self.old,pts='1',profile=None,button=None,holding=None)
+        restored=dict(self.old,pts='3')
+        self.assertEqual(continuity_chain_flags(self.old,partial,restored,Fraction(2)),())
+        self.assertEqual(continuity_chain_flags(self.old,partial,dict(restored,pts='4'),Fraction(2)),('PTS_GAP',))
+
+    def test_partial_chain_rejects_identity_conflicts(self):
+        partial=dict(self.old,pts='1',profile=None,button=None,holding=None)
+        for field,value,flag in [('button','hero_bottom','DEALER_CONFLICT'),('holding',['2s'],'HOLDING_CONFLICT'),('profile','q','PROFILE_CHANGE')]:
+            bad=dict(self.old,pts='2',**{field:value})
+            self.assertEqual(continuity_chain_flags(self.old,partial,bad,Fraction(2)),(flag,))
+        self.assertEqual(continuity_flags(partial,dict(self.old,pts='2'),Fraction(2)),())
 
     def test_effective_input_key(self):
         a=Image.new('RGB',(20,12),'black');b=a.copy();b.putpixel((0,0),(255,255,255))
