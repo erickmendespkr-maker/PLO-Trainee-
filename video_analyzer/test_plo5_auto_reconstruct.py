@@ -117,6 +117,23 @@ class AutoTests(unittest.TestCase):
         self.assertEqual(r['hands'][0]['events'][0]['amount'],25)
         self.assertEqual(r['hands'][0]['replay_audit']['status'],'LEGAL_PREFIX_CONSISTENT')
 
+    def test_stable_complete_ambiguity_does_not_timeout_at_three_seconds(self):
+        a=frame(0,9.5,9,1.5)
+        stable=[frame(i,9,9,2) for i in range(1,11)]
+        r=reconstruct(manifest(a,*stable),1)
+        self.assertEqual(r['hands'][0]['end_reason'],'WINDOW_END')
+        self.assertEqual(r['counts']['DEFERRED_AMBIGUOUS'],10)
+        self.assertEqual(r['counts']['DEFERRED_DUPLICATE'],9)
+        self.assertEqual(r['hands'][0]['unresolved_checkpoint_pts'],['1'])
+        self.assertFalse(r['decision_records'])
+
+    def test_complete_ambiguity_still_has_absolute_time_bound(self):
+        a=frame(0,9.5,9,1.5)
+        stable=[frame(i,9,9,2) for i in range(1,23)]
+        r=reconstruct(manifest(a,*stable),1)
+        self.assertEqual(r['hands'][0]['end_reason'],'CHECKPOINT_TIMEOUT')
+        self.assertFalse(r['decision_records'])
+
     def test_partial_evidence_cannot_span_unbounded_time(self):
         a=frame(0,9.5,9,1.5)
         repeats=[frame(i,9.5,9,1.5) for i in range(1,7)]
