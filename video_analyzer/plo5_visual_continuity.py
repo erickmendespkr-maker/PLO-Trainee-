@@ -23,5 +23,9 @@ def seat_ocr_key(patch, platform, field, *, effective_gray=False):
     """Only opt in for decoders that consume this exact grayscale interior."""
     if effective_gray:
         interior = patch.convert('L').crop((3, 1, patch.width-3, patch.height-2))
+        if interior.width and interior.height:
+            lo, hi = interior.getextrema()
+            if hi - lo < 15:
+                return (platform, field, 'gray-low-contrast-v1', b'')
         return (platform, field, 'gray-interior-v1', interior.size, interior.tobytes())
     return (platform, field, 'raw-v1', patch.mode, patch.size, patch.tobytes())

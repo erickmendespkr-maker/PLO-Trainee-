@@ -31,6 +31,12 @@ class VisualContinuityTests(unittest.TestCase):
         self.assertNotEqual(seat_ocr_key(a,'pppoker','stack'),seat_ocr_key(b,'pppoker','stack'))
         b.putpixel((5,5),(255,255,255));self.assertNotEqual(key(a),key(b))
 
+    def test_low_contrast_equivalence(self):
+        a=Image.new('RGB',(20,12),(40,40,40));b=Image.new('RGB',(20,12),(200,200,200))
+        k=lambda x:seat_ocr_key(x,'pppoker','stack',effective_gray=True)
+        b.putpixel((5,5),(214,214,214));self.assertEqual(k(a),k(b))
+        b.putpixel((5,5),(215,215,215));self.assertNotEqual(k(a),k(b))
+
     def test_scope_and_gray_parity(self):
         a=Image.new('RGB',(20,12),(255,0,0));b=Image.new('RGB',(20,12),(76,76,76))
         k=lambda x,p='pppoker',f='stack':seat_ocr_key(x,p,f,effective_gray=True)
