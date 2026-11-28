@@ -3,20 +3,31 @@ from fractions import Fraction
 
 
 def continuity_flags(previous, current, max_gap):
-    """Missing dealer is deferable; a positive contradiction is not."""
+    """Missing metadata is deferable; positive contradictions are not."""
     flags = []
     delta = Fraction(current['pts']) - Fraction(previous['pts'])
     if not 0 < delta <= max_gap:
         flags.append('PTS_GAP')
     if current['platform'] != previous['platform']:
         flags.append('PLATFORM_CHANGE')
-    if current['profile'] != previous['profile']:
+    if previous['profile'] is not None and current['profile'] is not None and current['profile'] != previous['profile']:
         flags.append('PROFILE_CHANGE')
-    if current['button'] is not None and current['button'] != previous['button']:
+    if previous['button'] is not None and current['button'] is not None and current['button'] != previous['button']:
         flags.append('DEALER_CONFLICT')
-    if current['holding'] is not None and current['holding'] != previous['holding']:
+    if previous['holding'] is not None and current['holding'] is not None and current['holding'] != previous['holding']:
         flags.append('HOLDING_CONFLICT')
     return tuple(flags)
+
+
+def continuity_chain_flags(anchor, previous, current, max_gap):
+    """Use adjacent PTS for gaps, while retaining identity at the last accepted anchor.
+
+    Partial snapshots establish temporal continuity but cannot overwrite the
+    anchored dealer, profile or cards. Never infer missing evidence as a change.
+    """
+    adjacent = continuity_flags(previous, current, max_gap)
+    anchored = continuity_flags(anchor, current, max_gap)
+    return tuple(dict.fromkeys((*adjacent, *(f for f in anchored if f != 'PTS_GAP'))))
 
 
 def seat_ocr_key(patch, platform, field, *, effective_gray=False):
