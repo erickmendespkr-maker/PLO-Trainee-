@@ -17,7 +17,7 @@ from plo5_error_prints import frame_index, groups, decode, capture, read
 from plo5_video_stream import digest
 from plo5_selective_review import select, street_filter, STREETS, VERSION, action_key
 from plo5_selective_study_report import build
-from plo5_auto_reconstruct import ReconstructionStream, hero_turn
+from plo5_auto_reconstruct import ReconstructionStream, hero_turn, panel_evidence
 from plo5_seat_evidence import SeatReader, SEATS, STACKS, ACTIONS, STARTS, detect, dealer
 from plo5_terminal_bounds import review as terminal_review
 from plo5_snapshot_replay import positions, reveal
@@ -65,7 +65,7 @@ def observe_shared(source,coarse,refined,tables,money,card,seat,dealt,*,cancel=l
         cancel();obs=money.scan(im);cr={x['table_id']:x for x in card.scan(im)};seats={x['table_id']:x for x in seat.scan(im,targets[p])};rows=[]
         for t in sorted(targets[p]):
             c=cr[t];s=seats[t];d=dealt(im,t);need(c['platform']==s['platform']==d['platform'],'Layout mismatch')
-            rows.append(dict(c,seat_evidence=s,opponent_evidence=d,actor_candidate=hero_turn(im,t,c['platform'])))
+            rows.append(dict(c,seat_evidence=s,opponent_evidence=d,actor_candidate=hero_turn(im,t,c['platform']),panel_evidence=panel_evidence(im,t,c['platform'])))
         out.append(dict(pts=str(p),file='observed_%05d.rgb'%len(out),rgb_sha256=frames[p]['rgb_sha256'],observations=obs,cards=rows))
     for batch in groups(frames):
         cancel();decode(source,batch,{p:frames[p]['rgb_sha256'] for p in batch},consume,120)
