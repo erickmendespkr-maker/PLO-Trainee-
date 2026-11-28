@@ -1,5 +1,9 @@
 import os
 import sqlite3
+import shutil
+import subprocess
+import json
+from unittest.mock import patch
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,5 +47,23 @@ class PerformanceTests(unittest.TestCase):
                 a=dict(rake_bps=0,rake_cap=0,rake_on_fold=False,max_nodes=n)
                 c=Count(w);ref=envelopes(s,'BTN',deal,[('call',2)],**a);r=envelopes(s,'BTN',deal,[('call',2)],rank_worker=c,**a)
                 self.assertEqual(r,ref);self.assertLessEqual(c.calls,1)
+
+@unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'),'FFmpeg required')
+class ReanalysisTests(unittest.TestCase):
+    def test_no_ocr_and_scope_validation(self):
+        from plo5_integrated_video import run
+        from plo5_acceptance import audit
+        bank=Path(__file__).resolve().parents[1]/'calibration'/'ppp_bank.json'
+        with tempfile.TemporaryDirectory() as t:
+            p=Path(t);v=p/'v.mp4';subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=black:s=1504x696:r=4','-t','4','-c:v','libx264','-threads','1','-pix_fmt','yuv420p',str(v)],check=True,timeout=30)
+            original=p/'original';a=run(v,original,ppp=bank,tables=[1],workers=1,chunk=2,refine_budget=0)
+            with patch('plo5_integrated_video.observe_shared') as obs,patch('plo5_integrated_video.scan_session') as scan,patch('plo5_integrated_video.refine') as ref:
+                out=p/'again';b=run(v,out,observations_from=original,tables=[1]);obs.assert_not_called();scan.assert_not_called();ref.assert_not_called()
+            self.assertTrue(b['observations_reused']);self.assertEqual(a['counts'],b['counts']);self.assertTrue(audit(v,out)['structural_audit_passed']);self.assertIsNone(b['seat_cache']);self.assertFalse(b['beta_ready'])
+            for args in ({'tables':[2]},{'tables':[1],'start':0},{'tables':[1],'ppp':bank}):
+                with self.assertRaises(ValueError):run(v,p/'bad',observations_from=original,**args)
+            f=original/'summary.json';data=json.loads(f.read_text());data['beta_ready']=True;f.write_text(json.dumps(data))
+            with self.assertRaises(ValueError):run(v,p/'bad',observations_from=original,tables=[1])
+            self.assertFalse((p/'bad').exists())
 
 if __name__=='__main__':unittest.main()
