@@ -38,3 +38,40 @@ Main observed unchanged: `d61417489da92a9535cd84c3a23c69f975e7056f`.
 5. Preserve unresolved work from blocks 35-38; do not mistake isolated legal-prefix consistency for accurate OCR, complete hands, or +EV decisions.
 
 Scope remains PLO5 offline post-session. Main untouched; DriveHUD on standby; no external AI or RTA. No scheduled automation requested for this execution.
+
+## Follow-up: real-engine regression and Parte01 pre-calibration evidence (2026-11-28)
+
+### Local source retrieval and tests
+
+A partial checkout of **66 original repository Python modules/test files** was recovered through the GitHub connector (the Linux container still could not resolve github.com DNS). Modules were transferred via a temporary private Drive document to the local Linux sandbox solely for validation. The temporary bridge is not a source repository or a calibration bank.
+
+The actual preflop, postflop, snapshot replay, financial bridge, auto reconstruction and integration modules executed together: `python -m unittest -q test_plo5_auto_reconstruct test_plo5_snapshot_replay test_plo5_replay_audit test_plo5_observation_checkpoints test_plo5_visual_continuity test_plo5_financial_bridge test_plo5_macro32 test_plo5_integrated_video test_plo5_post_gto_multiway test_plo5_post_gto_river`.
+
+**Result: 77 tests, 70 passed, 7 skipped, 0 failures (Linux Python 3.13.5).** The skipped tests depend on authentic card calibration and/or an optional compiled native worker. This verifies a **targeted subset**, not 1,800+ repository entries or a full Windows release. Pillow emitted non-fatal `Image.getdata` deprecation warnings.
+
+Previously published `test_partial_chain_stays_contiguous_without_losing_anchor` expected two checkpoints for identical pending observations. The new compaction deliberately retains one checkpoint and counts the duplicate. Corrected the test to require `['1']` and `DEFERRED_DUPLICATE==1` (commit `18cbd16720812bb9697436dba40cc1d8e46f212c`).
+
+The Macro32 reanalysis integration test used the missing `calibration/ppp_bank.json` unconditionally when FFmpeg was installed; this caused `FileNotFoundError` in a clean environment and masked the available tests. The test now explicitly skips if that **authentic** bank is missing, without generating substitutes or certifying pipeline success (commit `74490321c819d71790a3789fdec0d125bebadcf2`). The skipped end-to-end portion remains **unvalidated**.
+
+### Real Parte01 video checks (not certified hands)
+
+The original file `Poker_Parte_01.mp4` was recovered from the user's private Drive to the local sandbox. FFprobe returned **1618.000 seconds**, file size **167,993,622 bytes**. SHA-256 `c9aad5102a54941b8cb5f4bbc20eca45fc757ff96fd95de173c0ac0d95ac19eb` matches the prior documented checksum.
+
+With the existing `plo5_mixed_money.detect` implementation, OpenCV decoded **108 frames**, one every 15 seconds across Parte01, in **5.59 s** (excluding startup and transfer). Table-level candidate counts:
+
+| Table | PPPoker | Suprema | Undetected |
+| --- | ---: | ---: | ---: |
+| 1 | 108 | 0 | 0 |
+| 2 | 108 | 0 | 0 |
+| 3 | 107 | 0 | 1 |
+| 4 | 14 | 74 | 20 |
+
+This verifies **layout detection on sampled real frames**, not a ground-truth classification accuracy measure or a complete hand reconstruction. Screenshots, stacks, cards, and timestamps are not published.
+
+The existing `plo5_mixed_money.read` (Tesseract 5.5.0) was exercised for stack/pot OCR on six separate timestamps (**2, 20, 60, 300, 920, 1450 seconds**). Across active table/field pairs, 44 of **46** reads returned a numeric candidate, and 2 returned no numeric candidate (5.324 s wall-time for the six-frame batch). No comparison with human-reviewed values was performed: **44/46 is candidate availability, not accuracy**.
+
+### Calibration recovery evidence and remaining blockers
+
+`calibration/ppp_bank.json` and `calibration/suprema_bank.json` were absent from the complete GitHub tree (1,831 entries); Drive name searches did not return the bank files. The prior `PLO_Trainee_Macro32_Candidato_Integrado.zip` (375,098 bytes) and `PLO_Trainee_Macro22_Parte01_Manifestos.zip` (518,982 bytes) **were located in the user's Library**, but attempts to materialize their raw bytes failed with `This Project file does not have an authorized raw-byte materialization path.` Their internal calibration/observation files therefore have **not** been inspected or imported. Do not assert that those ZIP contents have been recovered.
+
+A complete Parte01 observation → event → legal reconstruction → financial reconciliation pass still requires authentic calibration banks (or verified prior observations). No real complete hands or strategic mistakes were certified in this follow-up. Preserve Parte06 as untouched holdout. DriveHUD remains in standby; no automation or RTA.
