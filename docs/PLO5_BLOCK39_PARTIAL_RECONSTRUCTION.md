@@ -139,3 +139,61 @@ A local comparison on the *same* archived enriched observations found, for table
 The combined local regression was **90 tests, 87 passed, 3 skipped, 0 failures**. Skips depend on optional native functionality; authentic PPPoker calibration now makes the Macro32 integrated test runnable. A full Parte01 reconstruction and independent manual ground truth remains unresolved. No bankroll result, winner, 30-BB loss, showdown or +EV decision has been certified.
 
 Keep main, the Parte06 holdout, DriveHUD standby and post-session/offline scope unchanged. No RTA and no automation.
+
+
+## Follow-up: bounded river transition and payout uncertainty (2026-11-28)
+
+Starting HEAD: \`e7cabfda5abea904fcb024fa332852244291337c\`. This round preserves the eight commits from that HEAD. \`main\` remains protected and Parte06 is not inspected.
+
+### Actual code change: conservative boundary closure
+
+\`plo5_auto_reconstruct.recover(..., required_status=...)\` now supports an optional betting-state terminal constraint. At an observed new community-card street, if the prior betting engine has pending actors, the reconstructor searches for a *unique* legal closed betting prefix whose pot, remaining stacks and prior deferred checkpoints match the observed screen, bounded by the existing maximum action/node budgets. Only then does it reveal community cards through \`plo5_snapshot_replay.reveal\` and append the inferred events. If the path is ambiguous, the pot does not conserve, or the actor/dealer/board mismatches, the hand remains \`UNANCHORED_STREET\`. Previously the reconstructor immediately rejected such changes even when a unique prior-street completion existed.
+
+The new \`BOUNDARY_UNIQUE_WITHIN_BOUNDS\` and \`BOUNDARY_ACTIONS_UNVERIFIED\` counters distinguish successful **legal-prefix reconstruction** from verified screen actions. Inferred actions crossing a street boundary deliberately do **not** produce strategic decision or print requests, and the hand and finances remain unverified. This supports flop, turn and river, with three negative/positive unit tests plus a river-progression regression.
+
+### Actual code change: missing-pot financial uncertainty
+
+When a *partial* visual observation shows an increase in a known dealt seat's stack, it now closes with \`PAYOUT_OR_REBUY_UNRESOLVED\` rather than generic \`INCOMPLETE_OBSERVATION\`, even if the pot OCR is unavailable. Neither payout nor rebuy is attributed; the classifier only acknowledges an unexplained stack increase that is impossible to obtain through a betting action alone. A new test asserts the uncertainty status and forbids financial, hand or strategic certification.
+
+### Actual original Parte01 comparison
+
+All frames here were already OCR-enriched from the original \`Poker_Parte_01.mp4\` with restored Macro32 rank banks and verified Macro22 session. They were **not generated from fabricated observations**, and no frames/cards/amounts are included in this Git history.
+
+For table 2, consecutive archived observations from 0–116 seconds (116 frames) were fed into a **single** \`ReconstructionStream\` across both previous 20-second segment boundaries, with final closure only after all frames. Comparing original \`e7cabfda...\` source vs updated source:
+
+| Measure | Before | After |
+| --- | --- | --- |
+| First candidate end reason | \`UNANCHORED_STREET\` | \`PAYOUT_OR_REBUY_UNRESOLVED\` |
+| First candidate events | 4 | 18 |
+| Distinct public street transitions recovered | 0 | 2 |
+| Additional unanchored legal betting actions | 0 | 4, explicitly unverified |
+| Replay audit of the prefix | \`LEGAL_PREFIX_CONSISTENT\` | \`LEGAL_PREFIX_CONSISTENT\` |
+| Certified hands / financial results | 0 / 0 | 0 / 0 |
+
+A second candidate from 115 seconds remains unverified. The first sequence has a river board with incomplete terminal betting. Independent local half-second money OCR probes at 107.5–114.0 seconds found readable pot values before the payout animation, a sustained interval where pot OCR returned \`None\`, then a new posted-blind pot. This missing visual interval prevents assigning a pot, rake or rebuy with independent certainty. At table 1 around 207.5–213.0 seconds, a similar pot-OCR blackout was observed during a stack increase. Those are still **financially unresolved**, not verified winners or 30-BB losses.
+
+At table 1, 180–240 seconds (60 existing OCR-enriched frames) yielded the same 5 legal-prefix candidate events before and after, one **unverified** decision candidate, and zero financially verified hands. No changes were forced where the additional boundary inference did not apply.
+
+### Executed regression
+
+The actual targeted test suite in Linux, using the original pre/post engines, authentic restored calibration banks and the source modules, was re-run **after both code changes**:
+
+\`\`\`bash
+cd video_analyzer
+python -m unittest -q test_plo5_auto_reconstruct test_plo5_snapshot_replay \
+  test_plo5_replay_audit test_plo5_observation_checkpoints \
+  test_plo5_visual_continuity test_plo5_financial_bridge \
+  test_plo5_macro32 test_plo5_integrated_video \
+  test_plo5_post_gto_multiway test_plo5_post_gto_river \
+  test_plo5_video_preflight test_plo5_manifest_archive
+\`\`\`
+
+**95 tests run: 93 passed, 2 skipped, zero failures** (Linux Python 3.13). The skipped cases require optional native dependencies. This is a targeted regression, not a full release/Windows test. No tests were run on Parte06.
+
+### Still required
+
+- Recover the final river/fold/showdown action from direct visual evidence where the pot is masked.
+- Separate awards, rake and rebuy using independent before-and-after seat balances, not merely a rising stack.
+- Compare uncertain OCR observations with manual source-video annotation before marking any complete hand, mistake or \`+EV\` result.
+- Run more of the 26:58 Parte01 session and full Windows 10 low-memory performance tests.
+- DriveHUD remains in standby; all operations are post-session/offline, no RTA, no automation.
