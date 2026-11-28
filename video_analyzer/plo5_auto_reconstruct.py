@@ -93,9 +93,10 @@ def seed_from(s,table,sb,bb):
     return dict(hand_id='candidate-%s-%s'%(table,s['pts']),table_id=table,dealt=dealt,button=s['button'],initial=initial,sb=sb,bb=bb,pot_includes_pending=True,holding=s['holding'])
 
 
-def recover(s,target,pot,*,active=(),folded=(),labels=None,expected_actor=None,checkpoints=(),max_actions=4,max_nodes=20000):
+def recover(s,target,pot,*,active=(),folded=(),labels=None,expected_actor=None,checkpoints=(),max_actions=4,max_nodes=20000,required_status=None):
     """Legal integer paths with partial fold evidence and fresh label constraints."""
     need(type(max_actions) is int and 0<=max_actions<=12 and type(max_nodes) is int and 1<=max_nodes<=100000,'Invalid search budget')
+    need(required_status is None or type(required_status) in (tuple, list) and required_status and all(type(v) is str for v in required_status),'Invalid terminal constraint')
     labels={} if labels is None else labels;need((set(active)|set(folded)|set(labels))<=set(s.order) and not set(active)&set(folded) and all(a in LABELS for a in labels.values()),'Invalid evidence constraints')
     need(expected_actor is None or expected_actor in s.order,'Invalid actor evidence');need(set(target)==set(s.order),'Incomplete stack roster');t=tuple(integer(target[p]) for p in s.order);integer(pot)
     if any(a<b for a,b in zip(s.remaining,t)):return dict(status='PAYOUT_OR_REBUY_UNRESOLVED',paths=[],visited=0)
@@ -113,7 +114,7 @@ def recover(s,target,pot,*,active=(),folded=(),labels=None,expected_actor=None,c
         visited+=1
         if any(st.folded[st.order.index(p)] for p in active):return
         while k<len(checkpoints) and matches(st,checkpoints[k]):k+=1
-        if k==len(checkpoints) and st.remaining==t and (expected_actor is None or st.actor==expected_actor) and all(st.folded[st.order.index(p)] for p in folded) and all(last.get(p)==v or v=='all_in' and last.get(p) in ('call','bet','raise') and st.remaining[st.order.index(p)]==0 for p,v in labels.items()):hits.append(path)
+        if k==len(checkpoints) and st.remaining==t and (expected_actor is None or st.actor==expected_actor) and all(st.folded[st.order.index(p)] for p in folded) and (required_status is None or st.status in required_status) and all(last.get(p)==v or v=='all_in' and last.get(p) in ('call','bet','raise') and st.remaining[st.order.index(p)]==0 for p,v in labels.items()):hits.append(path)
         if len(hits)>=2 or not st.pending or len(path)>=max_actions:return
         i=st.pending[0];p=st.actor;b=engine.bounds(st);cap=st.remaining[i]-t[i]
         aa=[('fold',0),('call',b['call_payment'])] if b['to_call'] else [('check',0)]
@@ -190,11 +191,38 @@ def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
             continue
         if any(target[v]>s.remaining[i] for i,v in enumerate(s.order)):close('PAYOUT_OR_REBUY_UNRESOLVED');continue
         if x['board']!=old['board']:
-            if pending:close('UNANCHORED_STREET');continue
-            try:nxt=reveal(s,x['board'][len(old['board']):]);need(len(x['board'])==len(nxt.board),'Skipped street')
+            # The first observed flop may arrive after the final preflop actions.
+            # Search *only* for a unique, legal CLOSED prior-street prefix that
+            # exactly conserves the displayed chips and deferred checkpoints.
+            # Never assign ambiguous actions to either street or infer payout.
+            extra=[];prior=s
+            if s.pending:
+                required=('flop_transition','all_in_showdown') if isinstance(s,pre.State) else ('chance_transition','all_in_showdown')
+                try:
+                    boundary=recover(s,target,x['pot'],active=active,labels=labels,
+                                     checkpoints=pending,required_status=required,
+                                     max_actions=max_actions,max_nodes=max_nodes)
+                except ValueError:
+                    close('UNANCHORED_STREET');continue
+                counts['BOUNDARY_'+boundary['status']]+=1
+                if boundary['status']!='UNIQUE_WITHIN_BOUNDS':
+                    close('UNANCHORED_STREET');continue
+                extra=boundary['paths'][0]
+                engine=pre if isinstance(s,pre.State) else post
+                try:
+                    for action in extra:prior=engine.step(prior,action['position'],action['action'],action['amount'])
+                except ValueError:
+                    close('UNANCHORED_STREET');continue
+            try:nxt=reveal(prior,x['board'][len(old['board']):]);need(len(x['board'])==len(nxt.board),'Skipped street')
             except ValueError:close('UNANCHORED_STREET');continue
-            if target!=dict(zip(nxt.order,nxt.remaining)) or x['pot']!=nxt.pot or x['actor'] is not None and mapping[x['actor']]!=nxt.actor or labels:close('UNANCHORED_STREET');continue
-            s=nxt;current['events'].append(dict(cards=x['board'][len(old['board']):]));old=x;old_frame=f;current['last_pts']=x['pts'];current['next_actor_candidate']=s.actor;continue
+            if target!=dict(zip(nxt.order,nxt.remaining)) or x['pot']!=nxt.pot or x['actor'] is not None and mapping[x['actor']]!=nxt.actor or labels:
+                close('UNANCHORED_STREET');continue
+            # These legal boundary actions have no individually bound before
+            # screenshot. Keep them as UNVERIFIED events; never create EV/print
+            # decision records from unanchored inferred actions.
+            current['events'].extend(extra)
+            if extra:counts['BOUNDARY_ACTIONS_UNVERIFIED']+=len(extra)
+            pending=[];s=nxt;current['events'].append(dict(cards=x['board'][len(old['board']):]));old=x;old_frame=f;current['last_pts']=x['pts'];current['next_actor_candidate']=s.actor;continue
         folded=[v for v,a in labels.items() if a=='fold']
         if set(active)&set(folded):close('CONFLICTING_FOLD_EVIDENCE');continue
         r=recover(s,target,x['pot'],active=active,folded=folded,labels=labels,expected_actor=mapping.get(x['actor']),checkpoints=pending,max_actions=max_actions,max_nodes=max_nodes)
