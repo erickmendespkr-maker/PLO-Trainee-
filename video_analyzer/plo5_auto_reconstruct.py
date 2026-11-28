@@ -22,11 +22,19 @@ LABELS={'fold','check','call','bet','raise','all_in'}
 
 def hero_turn(image,table,platform):
     """PPP three-button color signature; absence is unknown, not opponent turn."""
+    if platform=='suprema':
+        from plo5_suprema_panel import panel
+        return 'hero_bottom' if panel(image,table)['hero_turn_candidate'] else None
     if platform!='pppoker':return None
     x=STARTS[table-1]
     colors=[tuple(median(v[i] for v in image.crop((x+a,657,x+a+8,663)).getdata()) for i in range(3)) for a in (17,142,264)]
     (r,g,b),(r2,g2,b2),(r3,g3,b3)=colors
     return 'hero_bottom' if r>=g+35 and r>=b+35 and g2>=r2+30 and g2>=b2+5 and r3>=b3+45 and g3>=b3+35 and r3>=g3 else None
+
+def panel_evidence(image,table,platform):
+    if platform!='suprema':return None
+    from plo5_suprema_panel import panel
+    return panel(image,table)
 
 def observe(source,coarse,refined,table,money_reader,card_reader,seat_reader,dealt_reader,*,limit=128):
     """Re-read exact coarse/refined pixels; do not merge observations across PTS."""
@@ -43,7 +51,7 @@ def observe(source,coarse,refined,table,money_reader,card_reader,seat_reader,dea
         obs=money_reader.scan(im);cr=card_reader.scan(im);seats=seat_reader.scan(im)
         c=next(x for x in cr if x['table_id']==table);s=next(x for x in seats if x['table_id']==table);d=dealt_reader(im,table)
         need(c['platform']==s['platform']==d['platform'],'Layout mismatch')
-        out.append(dict(pts=str(p),file='observed_%05d.rgb'%len(out),rgb_sha256=frames[p]['rgb_sha256'],observations=obs,cards=[dict(c,seat_evidence=s,opponent_evidence=d,actor_candidate=hero_turn(im,table,c['platform']))]))
+        out.append(dict(pts=str(p),file='observed_%05d.rgb'%len(out),rgb_sha256=frames[p]['rgb_sha256'],observations=obs,cards=[dict(c,seat_evidence=s,opponent_evidence=d,actor_candidate=hero_turn(im,table,c['platform']),panel_evidence=panel_evidence(im,table,c['platform']))]))
     expected={p:f['rgb_sha256'] for p,f in frames.items()}
     for batch in groups(frames):decode(source,batch,expected,consume,120)
     need(digest(source)==h,'Source changed')
@@ -53,6 +61,8 @@ def observe(source,coarse,refined,table,money_reader,card_reader,seat_reader,dea
 def snapshot(frame,table,bb,*,partial=False):
     c=next(x for x in frame['cards'] if x['table_id']==table);h=card_state(c);e=c['seat_evidence'];d=c['opponent_evidence']
     need(c['platform'] in ('pppoker','suprema') and e['platform']==d['platform']==c['platform'] and e['table_id']==d['table_id']==table,'Layout unavailable')
+    if c['platform']=='suprema' and 'panel_evidence' in c:
+        marker=c['panel_evidence'];need(type(marker) is dict and marker.get('seated_panel_candidate') is True and marker.get('identity_verified') is False,'Suprema seated panel unavailable')
     need([s['seat'] for s in e['seats']]==list(SEATS),'Seat roster mismatch')
     opp={x['seat']:x['status'] for x in d['opponents']};need(len(d['opponents'])==5 and set(opp)==set(SEATS)-{'hero_bottom'},'Opponent roster mismatch')
     obs={r['field']:r for r in frame['observations'] if r['table_id']==table};need(set(obs)=={'stack','pot'} and all(r['platform']==c['platform'] and r['layout_candidate_active'] is True for r in obs.values()),'Money layout mismatch')
