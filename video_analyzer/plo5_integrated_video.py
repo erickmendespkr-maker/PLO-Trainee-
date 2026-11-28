@@ -110,15 +110,26 @@ def cfr_review(result,configs,streets,cache,*,native=None,rank=None,cancel=lambd
     return out
 
 
-def run(source,output,*,start=None,seconds=None,session=None,chunk=20,tables=(1,2,3,4),streets=STREETS,workers=2,backend='cli',seat_backend='cli',ppp=None,suprema=None,refine_budget=8,configs=None,cache=None,native=None,rank=None,cancel_file=None,progress=None):
+def run(source,output,*,start=None,seconds=None,session=None,chunk=20,tables=(1,2,3,4),streets=STREETS,workers=2,backend='cli',seat_backend='cli',ppp=None,suprema=None,refine_budget=8,configs=None,cache=None,native=None,rank=None,cancel_file=None,progress=None,observations_from=None):
     from plo5_fast_money import FastMoneyReader
     from plo5_mixed_cards_v2 import MixedCardReader
     from plo5_dealt_candidates import observe as dealt
     need(type(chunk) is int and 2<=chunk<=60 and type(refine_budget) is int and 0<=refine_budget<=32,'Invalid window/refinement budget')
     selected=street_filter(streets);need(type(tables) in (tuple,list) and 1<=len(tables)<=4 and len(set(tables))==len(tables) and all(type(t) is int and 1<=t<=4 for t in tables),'Invalid tables')
-    need(seat_backend in ('cli','native'),'Invalid seat backend');need(ppp or suprema,'Provide at least one card bank');source=Path(source);out=Path(output);need(not out.exists() and not out.is_symlink() and out.parent.is_dir(),'New output required');duration=probe(source);h=digest(source)
+    need(seat_backend in ('cli','native'),'Invalid seat backend');need(ppp or suprema or observations_from is not None,'Provide at least one card bank or prior observations');source=Path(source);out=Path(output);need(not out.exists() and not out.is_symlink() and out.parent.is_dir(),'New output required');duration=probe(source);h=digest(source)
     cfg={'terminal':{},'cfr':{},'bounds':{}} if configs is None else configs;need(type(cfg) is dict and {'terminal','cfr'}<=set(cfg)<={'terminal','cfr','bounds'} and all(type(x) is dict and len(x)<=512 for x in cfg.values()),'Invalid config roster');cfg=dict(cfg,bounds=cfg.get('bounds',{}));need(not cfg['cfr'] or cache is not None,'CFR cache required')
     banks={k:digest(v) for k,v in [('pppoker',ppp),('suprema',suprema)] if v};t0=perf_counter();counts=Counter();rows=[];used=set()
+    reused=None;prior_root=None;prior_hash=None;prior_files={}
+    if observations_from is not None:
+        from plo5_acceptance import audit,load
+        need(session is None and start is None and seconds is None and not banks,'Reanalysis uses the exact prior interval and banks')
+        prior_root=Path(observations_from);prior_hash=digest(prior_root/'summary.json');reused=load(prior_root,'summary.json')
+        need(type(reused.get('windows')) is list and 1<=len(reused['windows'])<=43200,'Invalid prior window roster')
+        for i,w in enumerate(reused['windows'],1):
+            name=f'window_{i:05d}';need(w['window']==name,'Invalid prior window name');p=prior_root/name/'candidates.json';need(p.is_file() and not p.is_symlink() and p.resolve().is_relative_to(prior_root.resolve()) and 0<p.stat().st_size<=64*1024**2,'Invalid prior window');prior_files[name]=digest(p)
+        audit(source,prior_root)
+        need(digest(prior_root/'summary.json')==prior_hash and reused['source_sha256']==h and reused['tables']==list(tables),'Prior source or tables mismatch')
+        banks=reused['bank_sha256']
     def cancel():
         if cancel_file is not None and Path(cancel_file).exists():raise Cancelled('Cancelled at safe checkpoint')
     def notify(**row):
@@ -130,21 +141,29 @@ def run(source,output,*,start=None,seconds=None,session=None,chunk=20,tables=(1,
             from plo5_rank_worker import RankWorker
             from plo5_rank_lru import CachedRankWorker
             ranker=CachedRankWorker(stack.enter_context(RankWorker(rank)))
-        if session is None:
-            start=0 if start is None else start;n=duration-start if seconds is None else seconds;need(type(start) is int and type(n) is int and 0<=start<duration and 2<=n<=duration-start,'Invalid interval')
-            def coarse_progress(w):cancel();notify(phase='recognition',**w)
-            scan_session(source,stage/'recognition',start,n,chunk=min(120,max(2,chunk)),workers=workers,backend=backend,ppp=ppp,suprema=suprema,progress=coarse_progress);session=stage/'recognition'/'session.json'
-        index=read(session);need(index.get('source_sha256')==h and index.get('windows'),'Session source mismatch');first=index['windows'][0]['start'];end=index['windows'][-1]['start']+index['windows'][-1]['seconds'];start=first if start is None else start;n=end-start if seconds is None else seconds
-        need(type(start) is int and type(n) is int and first<=start<end and 2<=n<=end-start,'Interval outside session');parts=list(windows(start,n,chunk));money=stack.enter_context(FastMoneyReader(workers=workers,backend=backend));card=MixedCardReader(ppp,suprema);seat_opts={}
-        if seat_backend=='native':
-            from plo5_native_seats import NativeSeatPool
-            decoder=NativeSeatPool(workers);stack.callback(decoder.close);seat_opts['decoder']=decoder
-        seat=SharedSeatReader(workers=workers,**seat_opts);stack.callback(seat.close)
+        if reused is not None:
+            parts=[(w['start'],w['seconds']) for w in reused['windows']];money=seat=None
+        else:
+            if session is None:
+                start=0 if start is None else start;n=duration-start if seconds is None else seconds;need(type(start) is int and type(n) is int and 0<=start<duration and 2<=n<=duration-start,'Invalid interval')
+                def coarse_progress(w):cancel();notify(phase='recognition',**w)
+                scan_session(source,stage/'recognition',start,n,chunk=min(120,max(2,chunk)),workers=workers,backend=backend,ppp=ppp,suprema=suprema,progress=coarse_progress);session=stage/'recognition'/'session.json'
+            index=read(session);need(index.get('source_sha256')==h and index.get('windows'),'Session source mismatch');first=index['windows'][0]['start'];end=index['windows'][-1]['start']+index['windows'][-1]['seconds'];start=first if start is None else start;n=end-start if seconds is None else seconds
+            need(type(start) is int and type(n) is int and first<=start<end and 2<=n<=end-start,'Interval outside session');parts=list(windows(start,n,chunk));money=stack.enter_context(FastMoneyReader(workers=workers,backend=backend));card=MixedCardReader(ppp,suprema);seat_opts={}
+            if seat_backend=='native':
+                from plo5_native_seats import NativeSeatPool
+                decoder=NativeSeatPool(workers);stack.callback(decoder.close);seat_opts['decoder']=decoder
+            seat=SharedSeatReader(workers=workers,**seat_opts);stack.callback(seat.close)
         streams={t:ReconstructionStream(t) for t in tables};display_transitions=DisplayTransitions()
         for i,(a,length) in enumerate(parts,1):
-            cancel();begin=perf_counter();coarse=load_interval(session,a,length);d=stage/f'window_{i:05d}';d.mkdir();timing={};t=perf_counter()
-            refined=refine(source,coarse,a,length,card,budget=refine_budget) if refine_budget else None;timing['refinement']=perf_counter()-t;cancel();t=perf_counter()
-            obs=observe_shared(source,coarse,refined,tables,money,card,seat,dealt,cancel=cancel);timing['observation']=perf_counter()-t;t=perf_counter();records=[];hands=[];metrics=[];models=[];continuations=[];counters={};anchors={};active_tables=[]
+            cancel();begin=perf_counter();d=stage/f'window_{i:05d}';d.mkdir();timing={};t=perf_counter()
+            if reused is not None:
+                from plo5_acceptance import load
+                p=prior_root/d.name/'candidates.json';need(digest(p)==prior_files[d.name],'Prior observations changed');saved=load(prior_root,d.name+'/candidates.json');need(digest(p)==prior_files[d.name],'Prior observations changed');obs=saved['observations'];refined=saved['refinement'];coarse_count=reused['windows'][i-1]['coarse_frames'];need(obs['source_sha256']==h and len(frame_index(obs))==reused['windows'][i-1]['decoded_frames'],'Prior observation scope mismatch');timing['refinement']=0.0;timing['observation']=perf_counter()-t
+            else:
+                coarse=load_interval(session,a,length);coarse_count=len(coarse['frames']);refined=refine(source,coarse,a,length,card,budget=refine_budget) if refine_budget else None;timing['refinement']=perf_counter()-t;cancel();t=perf_counter()
+                obs=observe_shared(source,coarse,refined,tables,money,card,seat,dealt,cancel=cancel);timing['observation']=perf_counter()-t;del coarse
+            t=perf_counter();records=[];hands=[];metrics=[];models=[];continuations=[];counters={};anchors={};active_tables=[]
             for table in sorted(tables):
                 cancel();m=table_manifest(obs,table);r=streams[table].feed(m,final=i==len(parts));anchors.update({f['pts']:f for f in r['anchor_frames']});active_tables.extend([table] if r['active_hand'] else []);ids={h['seed']['hand_id'] for h in r['hands']};need(not used&ids,'Duplicate candidate hand identity');used.update(ids)
                 terminal=terminal_review(r,{k:v for k,v in cfg['terminal'].items() if k in ids},selected,rank_worker=ranker);models.extend(terminal['estimates']);cancel();continuations.extend(continuation_review(r,{k:v for k,v in cfg['bounds'].items() if k in ids},selected,rank_worker=ranker)['estimates']);metrics.extend(cfr_review(r,cfg['cfr'],selected,cache,native=native,rank=ranker,cancel=cancel));records.extend(r['decision_records']);hands.extend(r['hands']);counters[str(table)]=r['counts']
@@ -153,11 +172,12 @@ def run(source,output,*,start=None,seconds=None,session=None,chunk=20,tables=(1,
             evidence=dict(obs,frames=carried+obs['frames']);frame_index(evidence)
             cap=capture(source,evidence,records,d/'capture',selected);report=build(records,d/'study',selected,prints=d/'capture'/'manifest.json');timing['capture_report']=perf_counter()-t
             write_json(d/'candidates.json',dict(observations=obs,display_transitions=display_transitions.feed(obs),carried_anchors=carried,active_tables=active_tables,hands=hands,decision_contract=dict(version=VERSION,decisions=records),metrics=metrics,terminal_models=models,continuation_models=continuations,table_counts=counters,refinement=refined,strategic_certification=False))
-            row=dict(window=d.name,start=a,seconds=length,coarse_frames=len(coarse['frames']),refined_frames=len(refined['frames']) if refined else 0,decoded_frames=len(obs['frames']),table_observations=sum(len(f['cards']) for f in obs['frames']),candidate_hands=len(hands),candidate_decisions=len(records),selected_pending=report['unresolved'],errors=report['errors'],prints=cap['unique_crops'],wall_seconds=perf_counter()-begin,stage_seconds=timing);rows.append(row)
+            row=dict(window=d.name,start=a,seconds=length,coarse_frames=coarse_count,refined_frames=len(refined['frames']) if refined else 0,decoded_frames=len(obs['frames']),table_observations=sum(len(f['cards']) for f in obs['frames']),candidate_hands=len(hands),candidate_decisions=len(records),selected_pending=report['unresolved'],errors=report['errors'],prints=cap['unique_crops'],wall_seconds=perf_counter()-begin,stage_seconds=timing);rows.append(row)
             for k in ('coarse_frames','refined_frames','decoded_frames','table_observations','candidate_hands','candidate_decisions','selected_pending','errors','prints'):counts[k]+=row[k]
-            notify(phase='reconstruction',completed=i,total=len(parts),**row);del obs,coarse,refined,records,hands,metrics,models,continuations,evidence,carried,anchors
+            notify(phase='reconstruction',completed=i,total=len(parts),**row);del obs,refined,records,hands,metrics,models,continuations,evidence,carried,anchors
         cancel();need(digest(source)==h and all(digest(v)==banks[k] for k,v in [('pppoker',ppp),('suprema',suprema)] if v),'Source or bank changed')
-        summary=dict(version='plo5-integrated-candidate-v1',source_sha256=h,bank_sha256=banks,streets=list(selected),tables=list(tables),windows=rows,counts=dict(counts),unused_config_hands=sorted((set(cfg['terminal'])|set(cfg['cfr'])|set(cfg['bounds']))-used),money_backend=backend,seat_backend=seat_backend,money_cache=money.cache.stats(),seat_cache=seat.stats(),rank_cache=ranker.stats() if ranker else None,wall_seconds=perf_counter()-t0,window_boundaries_split_hands=False,beta_ready=False,strategy_verified=False,drivehud_beta=False)
+        if reused is not None:need(digest(prior_root/'summary.json')==prior_hash and all(digest(prior_root/name/'candidates.json')==sha for name,sha in prior_files.items()),'Prior input changed')
+        summary=dict(version='plo5-integrated-candidate-v1',source_sha256=h,bank_sha256=banks,streets=list(selected),tables=list(tables),windows=rows,counts=dict(counts),unused_config_hands=sorted((set(cfg['terminal'])|set(cfg['cfr'])|set(cfg['bounds']))-used),money_backend=reused['money_backend'] if reused else backend,seat_backend=reused['seat_backend'] if reused else seat_backend,money_cache=money.cache.stats() if money else None,seat_cache=seat.stats() if seat else None,rank_cache=ranker.stats() if ranker else None,wall_seconds=perf_counter()-t0,window_boundaries_split_hands=False,observations_reused=reused is not None,prior_summary_sha256=prior_hash,beta_ready=False,strategy_verified=False,drivehud_beta=False)
         write_json(stage/'summary.json',summary)
         page=['<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PLO Trainee</title><style>body{font:16px system-ui;max-width:860px;margin:auto;padding:24px}section{border:1px solid #ddd;padding:16px;border-radius:8px;margin:12px 0}</style><h1>PLO Trainee — revisão offline PLO5</h1><p><strong>Candidato experimental, não beta validado.</strong> Não há certificação automática de estratégia; zero erros não significa jogo correto. O estado candidato continua entre janelas; lacunas, conflitos e limites de segurança ainda interrompem mãos. As decisões aparecem na janela de encerramento do candidato. DriveHUD em standby.</p>']
         for r in rows:page.append(f'<section><h2>{r["start"]}–{r["start"]+r["seconds"]} s</h2><p>Decisões candidatas: {r["candidate_decisions"]}; pendentes selecionadas: {r["selected_pending"]}; erros demonstrados: {r["errors"]}</p><a href="{r["window"]}/study/index.html">Relatório seletivo</a> · <a href="{r["window"]}/candidates.json">Diagnóstico técnico</a></section>')
@@ -166,8 +186,8 @@ def run(source,output,*,start=None,seconds=None,session=None,chunk=20,tables=(1,
 
 
 def main(argv=None):
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('video');p.add_argument('output');p.add_argument('--session');p.add_argument('--start',type=int);p.add_argument('--seconds',type=int);p.add_argument('--chunk',type=int,default=20);p.add_argument('--tables',type=int,nargs='+',default=[1,2,3,4]);p.add_argument('--streets',nargs='+',choices=STREETS,default=list(STREETS));p.add_argument('--workers',type=int,choices=(1,2,3),default=2);p.add_argument('--backend',choices=('cli','native'),default='cli');p.add_argument('--seat-backend',choices=('cli','native'),default='cli');p.add_argument('--ppp');p.add_argument('--suprema');p.add_argument('--refine-budget',type=int,default=8);p.add_argument('--configs');p.add_argument('--cache');p.add_argument('--native');p.add_argument('--rank');p.add_argument('--cancel-file');a=p.parse_args(argv)
-    try:r=run(a.video,a.output,start=a.start,seconds=a.seconds,session=a.session,chunk=a.chunk,tables=a.tables,streets=a.streets,workers=a.workers,backend=a.backend,seat_backend=a.seat_backend,ppp=a.ppp,suprema=a.suprema,refine_budget=a.refine_budget,configs=read(a.configs) if a.configs else None,cache=a.cache,native=a.native,rank=a.rank,cancel_file=a.cancel_file,progress=lambda w:print(json.dumps(dict(progress=w),ensure_ascii=False),flush=True))
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('video');p.add_argument('output');p.add_argument('--session');p.add_argument('--observations-from');p.add_argument('--start',type=int);p.add_argument('--seconds',type=int);p.add_argument('--chunk',type=int,default=20);p.add_argument('--tables',type=int,nargs='+',default=[1,2,3,4]);p.add_argument('--streets',nargs='+',choices=STREETS,default=list(STREETS));p.add_argument('--workers',type=int,choices=(1,2,3),default=2);p.add_argument('--backend',choices=('cli','native'),default='cli');p.add_argument('--seat-backend',choices=('cli','native'),default='cli');p.add_argument('--ppp');p.add_argument('--suprema');p.add_argument('--refine-budget',type=int,default=8);p.add_argument('--configs');p.add_argument('--cache');p.add_argument('--native');p.add_argument('--rank');p.add_argument('--cancel-file');a=p.parse_args(argv)
+    try:r=run(a.video,a.output,start=a.start,seconds=a.seconds,session=a.session,chunk=a.chunk,tables=a.tables,streets=a.streets,workers=a.workers,backend=a.backend,seat_backend=a.seat_backend,ppp=a.ppp,suprema=a.suprema,refine_budget=a.refine_budget,configs=read(a.configs) if a.configs else None,cache=a.cache,native=a.native,rank=a.rank,cancel_file=a.cancel_file,observations_from=a.observations_from,progress=lambda w:print(json.dumps(dict(progress=w),ensure_ascii=False),flush=True))
     except Cancelled:print('Cancelado em checkpoint seguro.',flush=True);return 2
     print(json.dumps(r,ensure_ascii=False),flush=True);return 0
 
