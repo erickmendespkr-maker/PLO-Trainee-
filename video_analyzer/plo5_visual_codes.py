@@ -125,7 +125,7 @@ class MixedReader:
             if p is None:result=dict(value_bb=None,raw='',confidence=None,source='NO_LAYOUT',visual_code=None)
             else:
                 x=STARTS[t-1];a,b,c,d=REGIONS[p][f];patch=pixels(image,(x+a,b,x+c,d),'L')
-                profile=p+'-1504x696-money-v1'
+                profile=p+'-1504x696-money-'+('v2' if p=='suprema' and f=='stack' else 'v1')
                 def produce():
                     if self.bank is not None:
                         m=self.bank.match(profile,f,patch)
