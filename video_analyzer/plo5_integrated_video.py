@@ -20,6 +20,7 @@ from plo5_selective_study_report import build
 from plo5_auto_reconstruct import ReconstructionStream, hero_turn, panel_evidence
 from plo5_seat_evidence import SeatReader, SEATS, STACKS, ACTIONS, STARTS, detect, dealer
 from plo5_terminal_bounds import review as terminal_review
+from plo5_display_transitions import DisplayTransitions
 from plo5_snapshot_replay import positions, reveal
 from plo5_decision_math import evaluate_model
 import plo5_pre_gto_tree as pre
@@ -138,7 +139,7 @@ def run(source,output,*,start=None,seconds=None,session=None,chunk=20,tables=(1,
             from plo5_native_seats import NativeSeatPool
             decoder=NativeSeatPool(workers);stack.callback(decoder.close);seat_opts['decoder']=decoder
         seat=SharedSeatReader(workers=workers,**seat_opts);stack.callback(seat.close)
-        streams={t:ReconstructionStream(t) for t in tables}
+        streams={t:ReconstructionStream(t) for t in tables};display_transitions=DisplayTransitions()
         for i,(a,length) in enumerate(parts,1):
             cancel();begin=perf_counter();coarse=load_interval(session,a,length);d=stage/f'window_{i:05d}';d.mkdir();timing={};t=perf_counter()
             refined=refine(source,coarse,a,length,card,budget=refine_budget) if refine_budget else None;timing['refinement']=perf_counter()-t;cancel();t=perf_counter()
@@ -150,7 +151,7 @@ def run(source,output,*,start=None,seconds=None,session=None,chunk=20,tables=(1,
             current_pts={f['pts'] for f in obs['frames']};carried=[f for p,f in anchors.items() if p not in current_pts];carried.sort(key=lambda f:Fraction(f['pts']))
             evidence=dict(obs,frames=carried+obs['frames']);frame_index(evidence)
             cap=capture(source,evidence,records,d/'capture',selected);report=build(records,d/'study',selected,prints=d/'capture'/'manifest.json');timing['capture_report']=perf_counter()-t
-            write_json(d/'candidates.json',dict(observations=obs,carried_anchors=carried,active_tables=active_tables,hands=hands,decision_contract=dict(version=VERSION,decisions=records),metrics=metrics,terminal_models=models,table_counts=counters,refinement=refined,strategic_certification=False))
+            write_json(d/'candidates.json',dict(observations=obs,display_transitions=display_transitions.feed(obs),carried_anchors=carried,active_tables=active_tables,hands=hands,decision_contract=dict(version=VERSION,decisions=records),metrics=metrics,terminal_models=models,table_counts=counters,refinement=refined,strategic_certification=False))
             row=dict(window=d.name,start=a,seconds=length,coarse_frames=len(coarse['frames']),refined_frames=len(refined['frames']) if refined else 0,decoded_frames=len(obs['frames']),table_observations=sum(len(f['cards']) for f in obs['frames']),candidate_hands=len(hands),candidate_decisions=len(records),selected_pending=report['unresolved'],errors=report['errors'],prints=cap['unique_crops'],wall_seconds=perf_counter()-begin,stage_seconds=timing);rows.append(row)
             for k in ('coarse_frames','refined_frames','decoded_frames','table_observations','candidate_hands','candidate_decisions','selected_pending','errors','prints'):counts[k]+=row[k]
             notify(phase='reconstruction',completed=i,total=len(parts),**row);del obs,coarse,refined,records,hands,metrics,models,evidence,carried,anchors
