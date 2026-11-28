@@ -83,7 +83,8 @@ class AutoTests(unittest.TestCase):
         self.assertEqual(r['counts'].get('CONTINUITY_PTS_GAP',0),0)
         self.assertEqual(r['counts']['DEFERRED_PARTIAL'],2)
         self.assertEqual(r['hands'][0]['events'][0],dict(position='SB',action='raise',amount=25))
-        self.assertEqual(r['hands'][0]['intervals'][-1]['checkpoint_pts'],['1','2'])
+        self.assertEqual(r['hands'][0]['intervals'][-1]['checkpoint_pts'],['1'])
+        self.assertEqual(r['counts']['DEFERRED_DUPLICATE'],1)
         d['cards'][0]['seat_evidence']['dealer']['seat']='top'
         r=reconstruct(manifest(a,b,c,d),1)
         self.assertEqual(r['counts']['CONTINUITY_DEALER_CONFLICT'],1)
