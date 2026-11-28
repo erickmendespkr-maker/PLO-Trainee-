@@ -75,3 +75,23 @@ The existing `plo5_mixed_money.read` (Tesseract 5.5.0) was exercised for stack/p
 `calibration/ppp_bank.json` and `calibration/suprema_bank.json` were absent from the complete GitHub tree (1,831 entries); Drive name searches did not return the bank files. The prior `PLO_Trainee_Macro32_Candidato_Integrado.zip` (375,098 bytes) and `PLO_Trainee_Macro22_Parte01_Manifestos.zip` (518,982 bytes) **were located in the user's Library**, but attempts to materialize their raw bytes failed with `This Project file does not have an authorized raw-byte materialization path.` Their internal calibration/observation files therefore have **not** been inspected or imported. Do not assert that those ZIP contents have been recovered.
 
 A complete Parte01 observation → event → legal reconstruction → financial reconciliation pass still requires authentic calibration banks (or verified prior observations). No real complete hands or strategic mistakes were certified in this follow-up. Preserve Parte06 as untouched holdout. DriveHUD remains in standby; no automation or RTA.
+
+### Additional reproducible preflight and combined regression
+
+New `video_analyzer/plo5_video_preflight.py` provides a **bank-independent diagnostic**:
+
+```bash
+python video_analyzer/plo5_video_preflight.py Poker_Parte_01.mp4 --step 15 --samples 512 --ocr-samples 6
+```
+
+The command samples the MP4 with OpenCV, calls the existing `plo5_mixed_money.detect` and optionally its stack/pot `read`, and emits **aggregate counts only** (no timestamps, hole cards, amounts, screenshots or reports of individual hands). A false or absent OCR candidate stays unknown. It never sets hand, financial, or strategic certification flags.
+
+Actual run on original Parte01: SHA-256 verified; 108 frames at 15-second intervals; detection counts exactly as in the table above; six evenly distributed OCR frames returned **23/24 numeric stack candidates** and **22/24 numeric pot candidates**. This differs from the separate manually selected six timestamps (44/46) above because the sampling times differ; neither measure is ground-truth accuracy.
+
+`test_plo5_video_preflight.py` adds 4 tests (invalid budgets, missing MP4, synthetic black video with no false-positive layout or financial claims, invalid geometry). All 4 passed locally with real FFmpeg/OpenCV. The combined Linux command:
+
+```bash
+python -m unittest -q test_plo5_auto_reconstruct test_plo5_snapshot_replay test_plo5_replay_audit test_plo5_observation_checkpoints test_plo5_visual_continuity test_plo5_financial_bridge test_plo5_macro32 test_plo5_integrated_video test_plo5_post_gto_multiway test_plo5_post_gto_river test_plo5_video_preflight
+```
+
+**Result: 81 tests, 74 passed, 7 skipped, zero failures, 2.878s wall-time**, with actual original engines and selected tests recovered by GitHub. No authentic bank means no certified full-video reconstruction, no hand denominator and no financial +EV classification. Remaining blocker stays the authentic card-bank or validated observation set, followed by complete Parte01 and independent ground truth.
