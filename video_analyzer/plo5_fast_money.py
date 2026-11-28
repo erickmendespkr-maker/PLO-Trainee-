@@ -86,7 +86,7 @@ class FastMoneyReader:
             t,p,f=j
             if p is None:r=dict(value_bb=None,raw='',confidence=None,source='NO_LAYOUT',visual_code=None)
             else:
-                x=STARTS[t-1];a,b,c,d=REGIONS[p][f];patch=pixels(image,(x+a,b,x+c,d),'L');profile=p+'-1504x696-money-v1'
+                x=STARTS[t-1];a,b,c,d=REGIONS[p][f];patch=pixels(image,(x+a,b,x+c,d),'L');profile=p+'-1504x696-money-'+('v2' if p=='suprema' and f=='stack' else 'v1')
                 def produce():
                     with self.lock:self.calls+=1
                     if self.backend=='cli':return dict(read(image,t,p,f),source='OCR_FALLBACK')
