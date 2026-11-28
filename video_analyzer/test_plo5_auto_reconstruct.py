@@ -155,4 +155,39 @@ class AutoTests(unittest.TestCase):
         self.assertFalse(r['decision_records'])
         self.assertEqual(r['hands'][0]['replay_audit']['status'],'TERMINAL_MISMATCH')
 
+    def test_unique_prior_street_close_recovers_board_transition_without_strategy_certification(self):
+        # Two-player preflop: SB calls the remaining blind, BB checks;
+        # both actions may be hidden between consecutive sampled screens.
+        initial=frame(0,9.5,9,1.5)
+        flop=frame(1,9,9,2,board=['2c','3d','4h'])
+        r=reconstruct(manifest(initial,flop),1)
+        self.assertEqual(len(r['hands']),1)
+        self.assertEqual(r['hands'][0]['events'],[
+            dict(position='SB',action='call',amount=5),
+            dict(position='BB',action='check',amount=0),
+            dict(cards=['2c','3d','4h'])])
+        self.assertEqual(r['counts']['BOUNDARY_UNIQUE_WITHIN_BOUNDS'],1)
+        self.assertEqual(r['counts']['BOUNDARY_ACTIONS_UNVERIFIED'],2)
+        self.assertEqual(r['hands'][0]['replay_audit']['status'],'LEGAL_PREFIX_CONSISTENT')
+        self.assertFalse(r['decision_records'])
+        self.assertFalse(r['hands'][0]['hand_verified'])
+        self.assertFalse(r['financial_result_verified'])
+
+    def test_boundary_without_conserving_pot_never_invents_prior_actions(self):
+        initial=frame(0,9.5,9,1.5)
+        impossible=frame(1,9,9,2.5,board=['2c','3d','4h'])
+        r=reconstruct(manifest(initial,impossible),1)
+        self.assertEqual(r['hands'][0]['end_reason'],'UNANCHORED_STREET')
+        self.assertFalse(r['hands'][0]['events'])
+        self.assertFalse(r['decision_records'])
+
+    def test_ambiguous_street_close_never_invents_actions(self):
+        initial=frame(0,9.5,9,1.5)
+        # Flop observed while the displayed pot and both stacks remain
+        # unchanged; BB and SB have not legally completed preflop.
+        premature=frame(1,9.5,9,1.5,board=['2c','3d','4h'])
+        r=reconstruct(manifest(initial,premature),1)
+        self.assertEqual(r['hands'][0]['end_reason'],'UNANCHORED_STREET')
+        self.assertFalse(r['decision_records'])
+
 if __name__=='__main__':unittest.main()
