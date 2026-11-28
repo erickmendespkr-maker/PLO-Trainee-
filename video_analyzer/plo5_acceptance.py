@@ -1,6 +1,7 @@
 """Audit the integrated candidate without promoting it to a validated beta."""
 import argparse
 from collections import Counter
+from bisect import bisect_right
 from fractions import Fraction
 import hashlib
 import json
@@ -29,11 +30,22 @@ def audit(source,folder):
     need(all(summary.get(k) is False for k in ('beta_ready','strategy_verified','drivehud_beta')),'Unexpected readiness claim')
     streets=street_filter(summary['streets']);tables=summary['tables'];need(type(tables) is list and 1<=len(tables)<=4 and len(set(tables))==len(tables) and all(type(t) is int and 1<=t<=4 for t in tables),'Invalid tables')
     rows=summary['windows'];need(type(rows) is list and 1<=len(rows)<=43200,'Invalid window roster');totals=Counter();previous=None;seen=set();ends=Counter();metrics_count=0
+    starts=[w['start'] for w in rows];need(starts==sorted(set(starts)),'Invalid window start roster')
     for i,w in enumerate(rows,1):
         name=f'window_{i:05d}';a,n=w['start'],w['seconds'];need(w['window']==name and type(a) is int and a>=0 and type(n) is int and 2<=n<=60 and (previous is None or previous==a),'Invalid window sequence');previous=a+n
         v=load(root,name+'/candidates.json');m=v['observations'];need(m.get('source_sha256')==h and m.get('actions_verified') is False and m.get('strategy_authorized') is False and v.get('strategic_certification') is False,'Unexpected observation status');frames=frame_index(m);need(all(a<=p<a+n for p in frames),'Out-of-window observation')
         for f in frames.values():
             ids=[c['table_id'] for c in f['cards']];need(len(ids)==len(set(ids)) and set(ids)<=set(tables),'Unexpected table observation')
+        # A hand can close in a later window. Recheck carried anchors against their
+        # original window; they are not new observations and do not inflate counts.
+        carried=v.get('carried_anchors',[]);need(type(carried) is list and len(carried)<=2048,'Invalid carried anchor roster')
+        old_index=frame_index(dict(variant=5,source_sha256=h,frames=carried));by_window={}
+        for p,f in old_index.items():
+            j=bisect_right(starts,p)-1;need(0<=j<i-1 and p<starts[j]+rows[j]['seconds'],'Carried anchor outside earlier window');by_window.setdefault(j,[]).append((p,f))
+        for j,items in by_window.items():
+            origin=load(root,f'window_{j+1:05d}/candidates.json')['observations'];need(origin['source_sha256']==h,'Carried anchor source mismatch');original=frame_index(origin)
+            need(all(original.get(p)==f for p,f in items),'Carried anchor mismatch')
+        evidence_frames={**old_index,**frames}
         hands=v['hands'];idx={x['seed']['hand_id']:x for x in hands};need(len(idx)==len(hands) and not seen&set(idx),'Duplicate candidate hands');seen.update(idx)
         for x in hands:
             need(x.get('hand_verified') is False and x['seed']['table_id'] in tables,'Unexpected hand verification');ends[x['end_reason']]+=1
@@ -46,7 +58,7 @@ def audit(source,folder):
             hand=idx[d['hand_id']];s,holding,actual=prefix(hand['seed'],hand['events'],int(d['decision_id']));board=[] if isinstance(s,pre.State) else list(s.board);street={0:'preflop',3:'flop',4:'turn',5:'river'}[len(board)];b=(pre if isinstance(s,pre.State) else post).bounds(s);call=b['call_payment'];odds=call/(s.pot+call) if call else None
             need(d['action']==actual and d['street']==street and d.get('pot_odds')==odds,'Decision math mismatch')
             if d.get('evidence') is not None:
-                e=d['evidence'];need(e['table_id']==hand['seed']['table_id'],'Decision table mismatch');expected=bind(m,d,e['pts'],e['table_id'],e['phase'],index=frames);need(e==expected,'Decision frame binding mismatch')
+                e=d['evidence'];need(e['table_id']==hand['seed']['table_id'],'Decision table mismatch');expected=bind(m,d,e['pts'],e['table_id'],e['phase'],index=evidence_frames);need(e==expected,'Decision frame binding mismatch')
             if street in streets:
                 key=identity(d);expected_metrics.add(key);r=metrics[key]
                 need(r['position']==s.actor and r['board']==board and r['pot_bb']==s.pot/s.bb and r['call_bb']==call/s.bb and r['pot_odds_gross']==odds,'Metric mismatch')
