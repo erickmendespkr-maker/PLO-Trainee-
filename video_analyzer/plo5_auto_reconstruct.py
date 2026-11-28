@@ -200,7 +200,10 @@ def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
         r=recover(s,target,x['pot'],active=active,folded=folded,labels=labels,expected_actor=mapping.get(x['actor']),checkpoints=pending,max_actions=max_actions,max_nodes=max_nodes)
         counts[r['status']]+=1;current['intervals'].append(dict(before_pts=old['pts'],after_pts=x['pts'],status=r['status'],visited=r['visited'],checkpoint_pts=[c['pts'] for c in pending]))
         if r['status']=='AMBIGUOUS' and not labels:
-            deferred=defer_checkpoint(pending,cp,max_span=Fraction(max_gap)*2)
+            # A complete, continuously observed board/holding can be stable while
+            # players decide. Allow time for later chip evidence to disambiguate;
+            # adjacent PTS and anchored identity are still checked every frame.
+            deferred=defer_checkpoint(pending,cp,max_span=min(Fraction(30),Fraction(max_gap)*10))
             if deferred in ('LIMIT','TIMEOUT'):
                 close('CHECKPOINT_'+deferred);continue
             if deferred=='DUPLICATE':counts['DEFERRED_DUPLICATE']+=1
