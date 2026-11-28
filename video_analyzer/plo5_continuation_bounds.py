@@ -1,6 +1,6 @@
 """Conservative offline PLO5 local EV envelopes, not equilibrium certificates."""
 from fractions import Fraction
-from itertools import combinations
+from itertools import combinations, islice
 from math import comb
 from functools import lru_cache
 import hashlib
@@ -89,10 +89,10 @@ def envelopes(s,hero,deals,actions,*,rake_bps,rake_cap,rake_on_fold,max_nodes=20
             j=st.order.index(hero)
             if st.folded[j]:return (Fraction(st.remaining[j]-initial,s.bb),)*2
             return lo,hi
-        def settle_value(st,deal,b):
+        def settle_value(st,deal,b,prepared=None):
             nonlocal leaves
             leaves+=1;j=st.order.index(hero);hs=tuple(deal[p] for p in st.order)
-            rr=[None]*len(hs) if len(st.active)==1 else ranks(hs,tuple(b))
+            rr=prepared if prepared is not None else [None]*len(hs) if len(st.active)==1 else ranks(hs,tuple(b))
             z=settle(base(st),paid(st),st.folded,rr,rake_bps,rake_cap,rake_on_fold=rake_on_fold)
             return Fraction(st.remaining[j]-initial,s.bb)+(z['awards'][j]+z['returned'][j])/s.bb
         def visit(st,deal,depth=0):
@@ -113,12 +113,26 @@ def envelopes(s,hero,deals,actions,*,rake_bps,rake_cap,rake_on_fold,max_nodes=20
                 return lower,upper
             need(status in ('flop_transition','chance_transition','all_in_showdown'),'Unknown state')
             dead=set(b).union(*(set(h) for h in deal.values()));deck=sorted(DECK-dead);k=5-len(b) if status=='all_in_showdown' else 3 if not b else 1;n=comb(len(deck),k);lower=upper=Fraction(0);done=0
-            for draw in combinations(deck,k):
-                if visited>=max_nodes:break
-                if status=='all_in_showdown':
-                    visited+=1;v=settle_value(st,deal,b+draw);x=y=v
-                else:x,y=visit(reveal(st,list(draw)),deal,depth+1)
-                lower+=x;upper+=y;done+=1
+            draws=iter(combinations(deck,k))
+            # Batch terminal chance leaves: identical enumeration order and budget,
+            # but one native IPC exchange per block instead of one per board.
+            if status=='all_in_showdown' and rank_worker is not None:
+                hs=tuple(deal[p] for p in st.order)
+                while visited<max_nodes:
+                    batch=list(islice(draws,min(128,max_nodes-visited)))
+                    if not batch:break
+                    queries=[(h,b+draw) for draw in batch for h in hs]
+                    rr=rank_worker.lookup(5,queries);need(len(rr)==len(queries),'Incomplete rank batch')
+                    for j,draw in enumerate(batch):
+                        v=settle_value(st,deal,b+draw,tuple((r['rank'],) for r in rr[j*len(hs):(j+1)*len(hs)]))
+                        lower+=v;upper+=v;visited+=1;done+=1
+            else:
+                for draw in draws:
+                    if visited>=max_nodes:break
+                    if status=='all_in_showdown':
+                        visited+=1;v=settle_value(st,deal,b+draw);x=y=v
+                    else:x,y=visit(reveal(st,list(draw)),deal,depth+1)
+                    lower+=x;upper+=y;done+=1
             if done<n:cutoffs+=1;x,y=limit(st);lower+=(n-done)*x;upper+=(n-done)*y
             return lower/n,upper/n
         a=z=Fraction(0);mass=Fraction(0)
