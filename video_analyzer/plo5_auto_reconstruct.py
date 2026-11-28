@@ -180,7 +180,12 @@ def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
         cp=dict(pts=x['pts'],remaining={v:n for v,n in target.items() if n is not None},pot=x['pot'],active=active,actor=mapping.get(x['actor']))
         if not complete or any(v is None for v in target.values()):
             # Keep only compatible partial observations as constraints, never impute cards.
-            if labels or x['board'] is not None and x['board']!=old['board'] or any(cp['remaining'].get(v,0)>s.remaining[i] for i,v in enumerate(s.order)):
+            # A displayed stack increase cannot be created by a betting action.
+            # Even with pot OCR temporarily unavailable, preserve the distinct
+            # payout-vs-rebuy uncertainty instead of calling it generic dropout.
+            if any(cp['remaining'].get(v,0)>s.remaining[i] for i,v in enumerate(s.order)):
+                close('PAYOUT_OR_REBUY_UNRESOLVED');continue
+            if labels or x['board'] is not None and x['board']!=old['board']:
                 close('INCOMPLETE_OBSERVATION');continue
             deferred=defer_checkpoint(pending,cp,max_span=Fraction(max_gap)*2)
             if deferred in ('LIMIT','TIMEOUT'):
