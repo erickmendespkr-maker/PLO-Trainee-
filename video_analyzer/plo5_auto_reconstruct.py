@@ -12,6 +12,7 @@ from plo5_snapshot_replay import positions, chips, reveal, SEATS, STREET
 from plo5_error_prints import frame_index, groups, decode, bind, stamp, read
 from plo5_video_stream import digest
 from plo5_selective_review import action_key, select
+from plo5_visual_continuity import continuity_flags
 import plo5_pre_gto_tree as pre
 import plo5_post_gto_tree as post
 
@@ -142,10 +143,13 @@ def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
         if current is not None and (len(current['events'])>512-max_actions-1 or len(current['intervals'])>=2048):close('ACTIVE_HAND_BUDGET')
         try:x=snapshot(f,table,bb,partial=True)
         except ValueError as exc:counts[str(exc)]+=1;close('INCOMPLETE_OBSERVATION');continue
-        complete=x['holding'] is not None and x['board'] is not None and x['pot'] is not None
+        complete=x['holding'] is not None and x['board'] is not None and x['pot'] is not None and x['button'] is not None
         counts['complete_snapshots' if complete else 'partial_snapshots']+=1
         if current is not None:
-            if p-stamp(old['pts'])>max_gap or (x['platform'],x['profile'],x['button'])!=(old['platform'],old['profile'],old['button']) or x['holding'] is not None and x['holding']!=old['holding']:close('CONTINUITY_UNKNOWN')
+            flags=continuity_flags(old,x,max_gap)
+            if flags:
+                for flag in flags:counts['CONTINUITY_'+flag]+=1
+                close('CONTINUITY_UNKNOWN')
             elif x['board'] is not None and x['board'][:len(old['board'])]!=old['board']:close('BOARD_RESET_OR_CONFLICT')
         if current is None:
             if not complete:continue
@@ -164,7 +168,9 @@ def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
             # Keep only compatible partial observations as constraints, never impute cards.
             if labels or len(pending)>=6 or x['board'] is not None and x['board']!=old['board'] or any(cp['remaining'].get(v,0)>s.remaining[i] for i,v in enumerate(s.order)):
                 close('INCOMPLETE_OBSERVATION');continue
-            pending.append(cp);counts['DEFERRED_PARTIAL']+=1;continue
+            pending.append(cp);counts['DEFERRED_PARTIAL']+=1
+            if x['button'] is None:counts['DEFERRED_DEALER_MISSING']+=1
+            continue
         if any(target[v]>s.remaining[i] for i,v in enumerate(s.order)):close('PAYOUT_OR_REBUY_UNRESOLVED');continue
         if x['board']!=old['board']:
             if pending:close('UNANCHORED_STREET');continue

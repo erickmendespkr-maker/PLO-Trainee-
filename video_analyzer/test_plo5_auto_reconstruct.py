@@ -58,4 +58,30 @@ class AutoTests(unittest.TestCase):
             m['source_sha256']='0'*64
             with self.assertRaisesRegex(ValueError,'Source mismatch'):observe(p,m,None,1,None,None,None,None)
 
+    def test_dealer_dropout_deferred_and_reanchored(self):
+        a=frame(0,9.5,9,1.5);b=frame('1/2',9.5,9,1.5)
+        b['cards'][0]['seat_evidence']['dealer']['seat']=None
+        c=frame(1,7,9,4,{'hero_bottom':'raise'})
+        r=reconstruct(manifest(a,b,c),1)
+        self.assertEqual(r['counts']['DEFERRED_DEALER_MISSING'],1)
+        self.assertEqual(r['hands'][0]['events'][0]['amount'],25)
+        self.assertEqual(r['hands'][0]['intervals'][-1]['checkpoint_pts'],['1/2'])
+        self.assertFalse(r['hands'][0]['hand_verified'])
+        c['cards'][0]['seat_evidence']['dealer']['seat']='top'
+        r=reconstruct(manifest(a,b,c),1)
+        self.assertEqual(r['counts']['CONTINUITY_DEALER_CONFLICT'],1)
+        self.assertEqual(r['hands'][0]['end_reason'],'CONTINUITY_UNKNOWN')
+        self.assertFalse(r['decision_records'])
+
+    def test_dealer_dropout_cannot_bridge_gap_or_advance_street(self):
+        a=frame(0,9.5,9,1.5);b=frame(1,9.5,9,1.5)
+        b['cards'][0]['seat_evidence']['dealer']['seat']=None
+        c=frame(3,7,9,4,{'hero_bottom':'raise'})
+        r=reconstruct(manifest(a,b,c),1)
+        self.assertEqual(r['counts']['CONTINUITY_PTS_GAP'],1)
+        self.assertFalse(r['decision_records'])
+        r=reconstruct(manifest(a,b),1)
+        self.assertEqual(r['hands'][0]['unresolved_checkpoint_pts'],['1'])
+        self.assertFalse(r['decision_records'])
+
 if __name__=='__main__':unittest.main()

@@ -46,7 +46,7 @@ class SharedSeatReader(SeatReader):
                 for f,boxes in [('stack',STACKS),('action',ACTIONS)]:
                     a,b,c,d=boxes[p][i];x=STARTS[t-1];patch=image.crop((x+a,b,x+c,d));jobs.append((seat,p,f,patch))
         def read(job):
-            seat,p,f,patch=job;key=(p,f,patch.size,patch.tobytes());seat[f]=self.cache.get(key,lambda:self.action_bank.match(patch,p) if f=='action' and self.action_bank is not None else self.decoder(patch,p,f))
+            seat,p,f,patch=job;key=self.roi_key(patch,p,f);seat[f]=self.cache.get(key,lambda:self.action_bank.match(patch,p) if f=='action' and self.action_bank is not None else self.decoder(patch,p,f))
         list(self.pool.map(read,jobs));return rows
 
 

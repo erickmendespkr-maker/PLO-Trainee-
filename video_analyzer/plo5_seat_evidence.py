@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from plo5_mixed_money import STARTS,detect,parse
 from plo5_singleflight import SingleFlight
+from plo5_visual_continuity import seat_ocr_key
 from plo5_pre_gto_context import need
 
 SEATS=('top','upper_right','lower_right','hero_bottom','lower_left','upper_left')
@@ -84,6 +85,9 @@ def dealer(image,t,p):
 class SeatReader:
     def __init__(self,capacity=1024,workers=2,decoder=decode,action_bank=None):
         need(type(workers) is int and 1<=workers<=3,'Invalid workers');self.cache=SingleFlight(capacity);self.workers=workers;self.decoder=decoder;self.action_bank=ActionBank(action_bank) if action_bank else None
+    def roi_key(self,patch,p,f):
+        gray=(self.decoder is decode or getattr(self.decoder,'exact_gray_roi',False) is True) and not (f=='action' and self.action_bank is not None)
+        return seat_ocr_key(patch,p,f,effective_gray=gray)
     def scan(self,image):
         need(image.size==(1504,696) and image.mode=='RGB','Unsupported geometry')
         rows=[];jobs=[]
@@ -95,7 +99,7 @@ class SeatReader:
                 for f,boxes in [('stack',STACKS),('action',ACTIONS)]:
                     a,b,c,d=boxes[p][i];x=STARTS[t-1];patch=image.crop((x+a,b,x+c,d));jobs.append((seat,p,f,patch))
         def read(job):
-            seat,p,f,patch=job;key=(p,f,patch.size,patch.tobytes());seat[f]=self.cache.get(key,lambda:self.action_bank.match(patch,p) if f=='action' and self.action_bank is not None else self.decoder(patch,p,f))
+            seat,p,f,patch=job;key=self.roi_key(patch,p,f);seat[f]=self.cache.get(key,lambda:self.action_bank.match(patch,p) if f=='action' and self.action_bank is not None else self.decoder(patch,p,f))
         with ThreadPoolExecutor(max_workers=self.workers) as pool:list(pool.map(read,jobs))
         return rows
     def stats(self):return self.cache.stats()

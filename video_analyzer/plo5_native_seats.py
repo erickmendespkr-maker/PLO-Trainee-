@@ -43,6 +43,7 @@ class NativeSeatOCR(NativeOCR):
 
 
 class NativeSeatPool:
+    exact_gray_roi = True  # Same grayscale crop as the built-in CLI decoder.
     def __init__(self,workers):
         need(type(workers) is int and 1<=workers<=3,'Invalid workers');self.engines=[];self.available=LifoQueue()
         try:
