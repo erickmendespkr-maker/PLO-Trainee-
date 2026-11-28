@@ -14,6 +14,7 @@ from plo5_video_stream import digest
 from plo5_selective_review import action_key, select
 from plo5_visual_continuity import continuity_chain_flags
 from plo5_observation_checkpoints import defer_checkpoint
+from plo5_replay_audit import audit_auto_events
 import plo5_pre_gto_tree as pre
 import plo5_post_gto_tree as post
 
@@ -136,7 +137,17 @@ def _machine(table,sb,bb,max_gap,max_actions,max_nodes,counts,emit):
     def close(reason):
         nonlocal current,pending,records,anchors,old_frame,last_seen
         if current is not None:
-            current['end_reason']=reason;current['unresolved_checkpoint_pts']=[c['pts'] for c in pending];current['terminal_candidate']=s.status;current['hand_verified']=False;counts['END_'+reason]+=1;emit(current,records,anchors);current=None;pending=[];records=[];anchors={};old_frame=None;last_seen=None
+            current['end_reason']=reason
+            current['unresolved_checkpoint_pts']=[c['pts'] for c in pending]
+            current['terminal_candidate']=s.status
+            current['hand_verified']=False
+            current['replay_audit']=audit_auto_events(current['seed'],current['events'],expected_terminal=s.status)
+            if current['replay_audit']['status']!='LEGAL_PREFIX_CONSISTENT':
+                counts['REPLAY_AUDIT_REJECTED']+=1
+                records.clear();anchors.clear()
+            counts['END_'+reason]+=1
+            emit(current,records,anchors)
+            current=None;pending=[];records=[];anchors={};old_frame=None;last_seen=None
     while True:
         item=yield current is not None
         if isinstance(item,str):close(item);return
